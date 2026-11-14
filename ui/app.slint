@@ -1,0 +1,278 @@
+import {
+    Button,
+    ComboBox,
+    GroupBox,
+    HorizontalBox,
+    LineEdit,
+    ListView,
+    VerticalBox,
+} from "std-widgets.slint";
+
+export struct UiSnapshot {
+    name: string,
+    created_at: string,
+}
+
+export struct UiInstance {
+    name: string,
+    status: string,
+    arch: string,
+    image: string,
+    ip: string,
+    memory: string,
+    is_running: bool,
+    snapshots: [UiSnapshot],
+}
+
+export component AppWindow inherits Window {
+    title: "IncusCubby";
+    preferred-width: 960px;
+    preferred-height: 640px;
+
+    in property <[UiInstance]> instances: [];
+    in-out property <int> selected_index: -1;
+    in property <bool> has_selection: false;
+    in property <UiInstance> selected_instance;
+    in property <bool> busy: false;
+    in property <string> status_message: "";
+    in property <string> socket_warning: "";
+
+    callback refresh();
+    callback select_instance(int);
+    callback create_instance(string, string, string);
+    callback start_instance(string);
+    callback stop_instance(string);
+    callback delete_instance(string);
+    callback open_shell(string);
+    callback open_code();
+    callback open_zed();
+    callback create_snapshot(string, string);
+    callback restore_snapshot(string, string);
+    callback delete_snapshot(string, string);
+
+    VerticalBox {
+        HorizontalBox {
+            Text {
+                text: "IncusCubby";
+                font-size: 18px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            if root.status_message != "": Text {
+                text: root.status_message;
+                vertical-alignment: center;
+            }
+
+            Button {
+                text: root.busy ? "Working..." : "Refresh";
+                enabled: !root.busy;
+                clicked => {
+                    root.refresh();
+                }
+            }
+        }
+
+        if root.socket_warning != "": GroupBox {
+            title: "Incus Socket Warning";
+            Text {
+                text: root.socket_warning;
+                wrap: word-wrap;
+            }
+        }
+
+        GroupBox {
+            title: "Create Sandbox";
+            HorizontalBox {
+                name_input := LineEdit {
+                    placeholder-text: "Sandbox name (e.g. dev-rust)";
+                    enabled: !root.busy;
+                }
+
+                image_combo := ComboBox {
+                    model: ["debian/12", "ubuntu/24.04", "alpine/3.20", "archlinux", "fedora/41"];
+                    current-value: "debian/12";
+                    enabled: !root.busy;
+                }
+
+                mem_combo := ComboBox {
+                    model: ["2GiB", "4GiB", "8GiB", "16GiB"];
+                    current-value: "4GiB";
+                    enabled: !root.busy;
+                }
+
+                Button {
+                    text: "Create";
+                    enabled: !root.busy && name_input.text != "";
+                    clicked => {
+                        root.create_instance(name_input.text, image_combo.current-value, mem_combo.current-value);
+                        name_input.text = "";
+                    }
+                }
+            }
+        }
+
+        HorizontalBox {
+            vertical-stretch: 1;
+
+            GroupBox {
+                title: "Sandboxes";
+                horizontal-stretch: 1;
+                min-width: 300px;
+
+                if root.instances.length == 0: Text {
+                    text: "No sandboxes found.";
+                }
+
+                if root.instances.length > 0: ListView {
+                    for inst[idx] in root.instances: HorizontalBox {
+                        Button {
+                            text: (idx == root.selected_index ? "> " : "") + inst.name + " [" + inst.status + "]";
+                            horizontal-stretch: 1;
+                            clicked => {
+                                root.select_instance(idx);
+                            }
+                        }
+                    }
+                }
+            }
+
+            GroupBox {
+                title: "Details";
+                horizontal-stretch: 2;
+
+                if !root.has_selection: Text {
+                    text: "Select a sandbox from the list.";
+                }
+
+                if root.has_selection: VerticalBox {
+                    HorizontalBox {
+                        Text {
+                            text: root.selected_instance.name;
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+
+                        Text {
+                            text: "(" + root.selected_instance.status + ")";
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch;
+                    }
+
+                    Text {
+                        text: "IP: " + root.selected_instance.ip + " | Memory: " + root.selected_instance.memory;
+                    }
+
+                    HorizontalBox {
+                        Button {
+                            text: "Start";
+                            enabled: !root.busy && !root.selected_instance.is_running;
+                            clicked => {
+                                root.start_instance(root.selected_instance.name);
+                            }
+                        }
+
+                        Button {
+                            text: "Stop";
+                            enabled: !root.busy && root.selected_instance.is_running;
+                            clicked => {
+                                root.stop_instance(root.selected_instance.name);
+                            }
+                        }
+
+                        Button {
+                            text: "Shell";
+                            enabled: root.selected_instance.is_running;
+                            clicked => {
+                                root.open_shell(root.selected_instance.name);
+                            }
+                        }
+
+                        Button {
+                            text: "VS Code";
+                            clicked => {
+                                root.open_code();
+                            }
+                        }
+
+                        Button {
+                            text: "Zed";
+                            clicked => {
+                                root.open_zed();
+                            }
+                        }
+
+                        Button {
+                            text: "Delete";
+                            enabled: !root.busy && !root.selected_instance.is_running;
+                            clicked => {
+                                root.delete_instance(root.selected_instance.name);
+                            }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "Snapshots";
+                        vertical-stretch: 1;
+
+                        VerticalBox {
+                            HorizontalBox {
+                                snap_input := LineEdit {
+                                    placeholder-text: "Snapshot name (e.g. clean-base)";
+                                    enabled: !root.busy;
+                                }
+
+                                Button {
+                                    text: "Take Snapshot";
+                                    enabled: !root.busy && snap_input.text != "";
+                                    clicked => {
+                                        root.create_snapshot(root.selected_instance.name, snap_input.text);
+                                        snap_input.text = "";
+                                    }
+                                }
+                            }
+
+                            if root.selected_instance.snapshots.length == 0: Text {
+                                text: "No snapshots.";
+                            }
+
+                            if root.selected_instance.snapshots.length > 0: ListView {
+                                for snap in root.selected_instance.snapshots: HorizontalBox {
+                                    Text {
+                                        text: snap.name + " (" + snap.created_at + ")";
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    Button {
+                                        text: "Restore";
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.restore_snapshot(root.selected_instance.name, snap.name);
+                                        }
+                                    }
+
+                                    Button {
+                                        text: "Delete";
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.delete_snapshot(root.selected_instance.name, snap.name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

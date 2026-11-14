@@ -11,10 +11,13 @@
 _Loose thoughts, not yet committed to._
 
 ## Active plans
-_What we're working toward now. Use `- [ ]` / `- [x]` checklists._
+- [x] Scaffold Cargo project (Rust 2024, Slint, Tokio, hyperlocal)
+- [x] Implement Incus 1.0 REST Unix socket client (`GET /1.0/instances?recursion=2`, create, state, delete, snapshots)
+- [x] Build Slint standard-widget UI and background Tokio worker with `upgrade_in_event_loop`
+- [x] Implement terminal shell (`incus exec <name> -- su -l root`) and IDE (`code`/`zed`) launchers
 
 ## Next
-_Queued, but not started._
+- Custom visual styling / theming (explicitly deferred)
 
 ## Someday / maybe
 
