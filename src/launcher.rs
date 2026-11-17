@@ -11,16 +11,7 @@ pub enum Ide {
     Zed,
 }
 
-impl Ide {
-    fn binary(self) -> &'static str {
-        match self {
-            Self::Codium => "codium",
-            Self::Zed => "zed",
-        }
-    }
-}
-
-pub fn open_shell(instance_name: &str) -> anyhow::Result<()> {
+pub fn open_shell(instance_name: &str, preferred_terminal: &str) -> anyhow::Result<()> {
     if instance_name.is_empty()
         || !instance_name
             .chars()
@@ -29,7 +20,7 @@ pub fn open_shell(instance_name: &str) -> anyhow::Result<()> {
         bail!("Invalid instance name: {instance_name}");
     }
 
-    let term = detect_terminal()
+    let term = detect_terminal(preferred_terminal)
         .context("No supported terminal emulator found in $TERMINAL or PATH")?;
 
     let mut cmd = Command::new(&term);
@@ -57,23 +48,52 @@ pub fn open_shell(instance_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn open_ide(ide: Ide, workspace_path: Option<&str>) -> anyhow::Result<()> {
-    let bin = ide.binary();
-    let mut cmd = Command::new(bin);
+pub fn open_ide(
+    ide: Ide,
+    preferred_ide: &str,
+    workspace_path: Option<&str>,
+) -> anyhow::Result<()> {
+    let bin = resolve_ide_binary(ide, preferred_ide)?;
+    let mut cmd = Command::new(&bin);
     if let Some(path) = workspace_path.map(str::trim).filter(|p| !p.is_empty()) {
         cmd.arg(path);
     }
     cmd.spawn().map_err(|err| {
         if err.kind() == io::ErrorKind::NotFound {
-            anyhow::anyhow!("IDE executable '{bin}' not found in PATH")
+            anyhow::anyhow!("IDE executable '{}' not found in PATH", bin.display())
         } else {
-            anyhow::anyhow!("Failed to launch '{bin}': {err}")
+            anyhow::anyhow!("Failed to launch '{}': {err}", bin.display())
         }
     })?;
     Ok(())
 }
 
-fn detect_terminal() -> Option<PathBuf> {
+fn resolve_ide_binary(ide: Ide, preferred_ide: &str) -> anyhow::Result<PathBuf> {
+    let pref = preferred_ide.trim();
+    if !pref.is_empty() && pref != "auto" {
+        return find_in_path(pref)
+            .with_context(|| format!("Preferred IDE '{pref}' not found in PATH"));
+    }
+
+    let candidates: &[&str] = match ide {
+        Ide::Codium => &["codium", "code"],
+        Ide::Zed => &["zed", "zeditor"],
+    };
+    candidates
+        .iter()
+        .find_map(|name| find_in_path(name))
+        .with_context(|| format!("IDE executable '{}' not found in PATH", candidates[0]))
+}
+
+fn detect_terminal(preferred_terminal: &str) -> Option<PathBuf> {
+    let pref = preferred_terminal.trim();
+    if !pref.is_empty()
+        && pref != "auto"
+        && let Some(path) = find_in_path(pref)
+    {
+        return Some(path);
+    }
+
     if let Ok(env_term) = env::var("TERMINAL") {
         let trimmed = env_term.trim();
         if !trimmed.is_empty()

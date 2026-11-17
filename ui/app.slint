@@ -5,6 +5,8 @@ import {
     HorizontalBox,
     LineEdit,
     ListView,
+    TabWidget,
+    TextEdit,
     VerticalBox,
 } from "std-widgets.slint";
 
@@ -13,47 +15,89 @@ export struct UiSnapshot {
     created_at: string,
 }
 
+export struct UiMount {
+    name: string,
+    host_path: string,
+    container_path: string,
+}
+
+export struct UiProxy {
+    name: string,
+    listen: string,
+    connect: string,
+}
+
 export struct UiInstance {
     name: string,
     status: string,
     arch: string,
     image: string,
+    image_os: string,
     ip: string,
     memory: string,
     cpu: string,
+    profiles: string,
     workspace_path: string,
     is_running: bool,
+    is_frozen: bool,
     snapshots: [UiSnapshot],
+    mounts: [UiMount],
+    proxies: [UiProxy],
+}
+
+export struct UiImage {
+    fingerprint: string,
+    short_fingerprint: string,
+    alias: string,
+    description: string,
+    architecture: string,
+    size_display: string,
 }
 
 export component AppWindow inherits Window {
     title: "IncusCubby";
-    preferred-width: 1020px;
-    preferred-height: 700px;
+    preferred-width: 1080px;
+    preferred-height: 760px;
 
     in property <[UiInstance]> instances: [];
     in-out property <int> selected_index: -1;
     in property <bool> has_selection: false;
     in property <UiInstance> selected_instance;
+    in property <[UiImage]> local_images: [];
+    in property <[string]> remote_aliases: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
+    in property <[string]> profile_names: ["default"];
+    in property <[string]> available_terminals: ["auto"];
+    in property <[string]> available_ides: ["auto"];
+    in-out property <string> preferred_terminal: "auto";
+    in-out property <string> preferred_ide: "auto";
+
     in property <bool> busy: false;
     in property <string> status_message: "";
     in property <string> socket_warning: "";
     in property <string> confirm_message: "";
-    in-out property <string> workspace_edit_text: "";
+    in property <string> exec_output: "";
 
     callback refresh();
     callback select_instance(int);
-    callback create_instance(string, string, string, string, string);
-    callback start_instance(string);
-    callback stop_instance(string);
+    callback create_instance(string, string, string, string, string, string, string);
+    callback clone_instance(string, string);
+    callback set_instance_state(string, string);
     callback request_delete_instance(string);
-    callback set_workspace_mount(string, string);
+    callback add_disk_mount(string, string, string, string);
+    callback add_proxy_device(string, string, string, string);
+    callback remove_device(string, string);
     callback open_shell(string);
     callback open_codium(string);
     callback open_zed(string);
     callback create_snapshot(string, string);
     callback request_restore_snapshot(string, string);
     callback request_delete_snapshot(string, string);
+    callback upgrade_packages(string, string);
+    callback install_packages(string, string, string);
+    callback fetch_remote_images();
+    callback refresh_local_images();
+    callback request_delete_image(string, string);
+    callback save_settings(string, string);
     callback confirm_action();
     callback cancel_confirm();
 
@@ -119,251 +163,596 @@ export component AppWindow inherits Window {
             }
         }
 
-        GroupBox {
-            title: "Create Sandbox";
-            VerticalBox {
-                HorizontalBox {
-                    name_input := LineEdit {
-                        placeholder-text: "Sandbox name (e.g. dev-rust)";
-                        enabled: !root.busy;
-                    }
-
-                    image_combo := ComboBox {
-                        model: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
-                        current-value: "debian/12";
-                        enabled: !root.busy;
-                        selected(val) => {
-                            image_input.text = val;
-                        }
-                    }
-
-                    image_input := LineEdit {
-                        text: "debian/12";
-                        placeholder-text: "Image alias";
-                        enabled: !root.busy;
-                    }
-
-                    mem_combo := ComboBox {
-                        model: ["2GiB", "4GiB", "8GiB", "16GiB"];
-                        current-value: "4GiB";
-                        enabled: !root.busy;
-                    }
-
-                    cpu_combo := ComboBox {
-                        model: ["1", "2", "4", "8"];
-                        current-value: "2";
-                        enabled: !root.busy;
-                    }
-                }
-
-                HorizontalBox {
-                    ws_create_input := LineEdit {
-                        placeholder-text: "Optional host workspace path (mounted at /workspace, e.g. ~/projects/app)";
-                        enabled: !root.busy;
-                        horizontal-stretch: 1;
-                    }
-
-                    Button {
-                        text: "Create";
-                        enabled: !root.busy && name_input.text != "" && image_input.text != "";
-                        clicked => {
-                            root.create_instance(
-                                name_input.text,
-                                image_input.text,
-                                mem_combo.current-value,
-                                cpu_combo.current-value,
-                                ws_create_input.text
-                            );
-                            name_input.text = "";
-                        }
-                    }
-                }
-            }
-        }
-
-        HorizontalBox {
+        TabWidget {
             vertical-stretch: 1;
 
-            GroupBox {
+            Tab {
                 title: "Sandboxes";
-                horizontal-stretch: 1;
-                min-width: 280px;
 
-                if root.instances.length == 0: Text {
-                    text: "No sandboxes found.";
-                }
+                HorizontalBox {
+                    GroupBox {
+                        title: "Sandboxes";
+                        horizontal-stretch: 1;
+                        min-width: 260px;
 
-                if root.instances.length > 0: ListView {
-                    for inst[idx] in root.instances: HorizontalBox {
-                        Button {
-                            text: (idx == root.selected_index ? "> " : "") + inst.name + " [" + inst.status + "]";
-                            horizontal-stretch: 1;
-                            clicked => {
-                                root.select_instance(idx);
-                            }
-                        }
-                    }
-                }
-            }
-
-            GroupBox {
-                title: "Details";
-                horizontal-stretch: 2;
-
-                if !root.has_selection: Text {
-                    text: "Select a sandbox from the list.";
-                }
-
-                if root.has_selection: VerticalBox {
-                    HorizontalBox {
-                        Text {
-                            text: root.selected_instance.name;
-                            font-size: 16px;
-                            font-weight: 700;
+                        if root.instances.length == 0: Text {
+                            text: "No sandboxes found.";
                         }
 
-                        Text {
-                            text: "(" + root.selected_instance.status + ")";
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    Text {
-                        text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch + " | CPU: " + root.selected_instance.cpu;
-                    }
-
-                    Text {
-                        text: "IP: " + root.selected_instance.ip + " | Memory: " + root.selected_instance.memory;
-                    }
-
-                    Text {
-                        text: "Workspace (/workspace): " + (root.selected_instance.workspace_path != "" ? root.selected_instance.workspace_path : "none");
-                    }
-
-                    HorizontalBox {
-                        LineEdit {
-                            text <=> root.workspace_edit_text;
-                            placeholder-text: "Host directory path to mount at /workspace";
-                            enabled: !root.busy;
-                            horizontal-stretch: 1;
-                        }
-
-                        Button {
-                            text: "Mount";
-                            enabled: !root.busy && root.workspace_edit_text != "";
-                            clicked => {
-                                root.set_workspace_mount(root.selected_instance.name, root.workspace_edit_text);
-                            }
-                        }
-
-                        Button {
-                            text: "Unmount";
-                            enabled: !root.busy && root.selected_instance.workspace_path != "";
-                            clicked => {
-                                root.set_workspace_mount(root.selected_instance.name, "");
-                            }
-                        }
-                    }
-
-                    HorizontalBox {
-                        Button {
-                            text: "Start";
-                            enabled: !root.busy && !root.selected_instance.is_running;
-                            clicked => {
-                                root.start_instance(root.selected_instance.name);
-                            }
-                        }
-
-                        Button {
-                            text: "Stop";
-                            enabled: !root.busy && root.selected_instance.is_running;
-                            clicked => {
-                                root.stop_instance(root.selected_instance.name);
-                            }
-                        }
-
-                        Button {
-                            text: "Shell";
-                            enabled: root.selected_instance.is_running;
-                            clicked => {
-                                root.open_shell(root.selected_instance.name);
-                            }
-                        }
-
-                        Button {
-                            text: "Codium";
-                            clicked => {
-                                root.open_codium(root.selected_instance.workspace_path);
-                            }
-                        }
-
-                        Button {
-                            text: "Zed";
-                            clicked => {
-                                root.open_zed(root.selected_instance.workspace_path);
-                            }
-                        }
-
-                        Button {
-                            text: "Delete";
-                            enabled: !root.busy && !root.selected_instance.is_running;
-                            clicked => {
-                                root.request_delete_instance(root.selected_instance.name);
+                        if root.instances.length > 0: ListView {
+                            for inst[idx] in root.instances: HorizontalBox {
+                                Button {
+                                    text: (idx == root.selected_index ? "> " : "") + inst.name + " [" + inst.status + "]";
+                                    horizontal-stretch: 1;
+                                    clicked => {
+                                        root.select_instance(idx);
+                                    }
+                                }
                             }
                         }
                     }
 
                     GroupBox {
-                        title: "Snapshots";
-                        vertical-stretch: 1;
+                        title: "Details";
+                        horizontal-stretch: 2;
 
-                        VerticalBox {
+                        if !root.has_selection: Text {
+                            text: "Select a sandbox from the list.";
+                        }
+
+                        if root.has_selection: VerticalBox {
                             HorizontalBox {
-                                snap_input := LineEdit {
-                                    placeholder-text: "Snapshot name (e.g. clean-base)";
-                                    enabled: !root.busy;
+                                Text {
+                                    text: root.selected_instance.name;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                }
+
+                                Text {
+                                    text: "(" + root.selected_instance.status + ")";
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch + " | CPU: " + root.selected_instance.cpu;
+                            }
+
+                            Text {
+                                text: "IP: " + root.selected_instance.ip + " | Memory: " + root.selected_instance.memory + " | Profiles: " + root.selected_instance.profiles;
+                            }
+
+                            HorizontalBox {
+                                Button {
+                                    text: "Start";
+                                    enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
+                                    clicked => {
+                                        root.set_instance_state(root.selected_instance.name, "start");
+                                    }
                                 }
 
                                 Button {
-                                    text: "Take Snapshot";
-                                    enabled: !root.busy && snap_input.text != "";
+                                    text: "Stop";
+                                    enabled: !root.busy && (root.selected_instance.is_running || root.selected_instance.is_frozen);
                                     clicked => {
-                                        root.create_snapshot(root.selected_instance.name, snap_input.text);
-                                        snap_input.text = "";
+                                        root.set_instance_state(root.selected_instance.name, "stop");
+                                    }
+                                }
+
+                                Button {
+                                    text: "Restart";
+                                    enabled: !root.busy && root.selected_instance.is_running;
+                                    clicked => {
+                                        root.set_instance_state(root.selected_instance.name, "restart");
+                                    }
+                                }
+
+                                Button {
+                                    text: root.selected_instance.is_frozen ? "Unfreeze" : "Freeze";
+                                    enabled: !root.busy && (root.selected_instance.is_running || root.selected_instance.is_frozen);
+                                    clicked => {
+                                        root.set_instance_state(
+                                            root.selected_instance.name,
+                                            root.selected_instance.is_frozen ? "unfreeze" : "freeze"
+                                        );
+                                    }
+                                }
+
+                                Button {
+                                    text: "Shell";
+                                    enabled: root.selected_instance.is_running;
+                                    clicked => {
+                                        root.open_shell(root.selected_instance.name);
+                                    }
+                                }
+
+                                Button {
+                                    text: "Codium";
+                                    clicked => {
+                                        root.open_codium(root.selected_instance.workspace_path);
+                                    }
+                                }
+
+                                Button {
+                                    text: "Zed";
+                                    clicked => {
+                                        root.open_zed(root.selected_instance.workspace_path);
+                                    }
+                                }
+
+                                Button {
+                                    text: "Delete";
+                                    enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
+                                    clicked => {
+                                        root.request_delete_instance(root.selected_instance.name);
                                     }
                                 }
                             }
 
-                            if root.selected_instance.snapshots.length == 0: Text {
-                                text: "No snapshots.";
-                            }
+                            TabWidget {
+                                vertical-stretch: 1;
 
-                            if root.selected_instance.snapshots.length > 0: ListView {
-                                for snap in root.selected_instance.snapshots: HorizontalBox {
-                                    Text {
-                                        text: snap.name + " (" + snap.created_at + ")";
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                    }
+                                Tab {
+                                    title: "Clone & Packages";
 
-                                    Button {
-                                        text: "Restore";
-                                        enabled: !root.busy;
-                                        clicked => {
-                                            root.request_restore_snapshot(root.selected_instance.name, snap.name);
+                                    VerticalBox {
+                                        GroupBox {
+                                            title: "Clone Sandbox (CoW)";
+                                            HorizontalBox {
+                                                clone_input := LineEdit {
+                                                    placeholder-text: "New sandbox name";
+                                                    enabled: !root.busy;
+                                                    horizontal-stretch: 1;
+                                                }
+
+                                                Button {
+                                                    text: "Clone";
+                                                    enabled: !root.busy && clone_input.text != "";
+                                                    clicked => {
+                                                        root.clone_instance(root.selected_instance.name, clone_input.text);
+                                                        clone_input.text = "";
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        GroupBox {
+                                            title: "Packages (" + (root.selected_instance.image_os != "" ? root.selected_instance.image_os : "unknown OS") + ")";
+                                            vertical-stretch: 1;
+
+                                            VerticalBox {
+                                                HorizontalBox {
+                                                    Button {
+                                                        text: "Upgrade All Packages";
+                                                        enabled: !root.busy && root.selected_instance.is_running;
+                                                        clicked => {
+                                                            root.upgrade_packages(root.selected_instance.name, root.selected_instance.image_os);
+                                                        }
+                                                    }
+
+                                                    pkg_input := LineEdit {
+                                                        placeholder-text: "Packages to install (e.g. git curl ripgrep)";
+                                                        enabled: !root.busy && root.selected_instance.is_running;
+                                                        horizontal-stretch: 1;
+                                                    }
+
+                                                    Button {
+                                                        text: "Install";
+                                                        enabled: !root.busy && root.selected_instance.is_running && pkg_input.text != "";
+                                                        clicked => {
+                                                            root.install_packages(root.selected_instance.name, root.selected_instance.image_os, pkg_input.text);
+                                                            pkg_input.text = "";
+                                                        }
+                                                    }
+                                                }
+
+                                                if root.exec_output != "": TextEdit {
+                                                    text: root.exec_output;
+                                                    read-only: true;
+                                                    vertical-stretch: 1;
+                                                }
+                                            }
                                         }
                                     }
+                                }
 
-                                    Button {
-                                        text: "Delete";
-                                        enabled: !root.busy;
-                                        clicked => {
-                                            root.request_delete_snapshot(root.selected_instance.name, snap.name);
+                                Tab {
+                                    title: "Mounts & Ports";
+
+                                    VerticalBox {
+                                        GroupBox {
+                                            title: "Disk Mounts";
+                                            vertical-stretch: 1;
+
+                                            VerticalBox {
+                                                HorizontalBox {
+                                                    mount_name_input := LineEdit {
+                                                        placeholder-text: "Name (e.g. workspace)";
+                                                        text: "workspace";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    mount_host_input := LineEdit {
+                                                        placeholder-text: "Host directory (e.g. ~/projects/app)";
+                                                        enabled: !root.busy;
+                                                        horizontal-stretch: 1;
+                                                    }
+
+                                                    mount_ctr_input := LineEdit {
+                                                        placeholder-text: "Container path (e.g. /workspace)";
+                                                        text: "/workspace";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    Button {
+                                                        text: "Add Mount";
+                                                        enabled: !root.busy && mount_name_input.text != "" && mount_host_input.text != "" && mount_ctr_input.text != "";
+                                                        clicked => {
+                                                            root.add_disk_mount(
+                                                                root.selected_instance.name,
+                                                                mount_name_input.text,
+                                                                mount_host_input.text,
+                                                                mount_ctr_input.text
+                                                            );
+                                                        }
+                                                    }
+                                                }
+
+                                                if root.selected_instance.mounts.length == 0: Text {
+                                                    text: "No disk mounts.";
+                                                }
+
+                                                if root.selected_instance.mounts.length > 0: ListView {
+                                                    for m in root.selected_instance.mounts: HorizontalBox {
+                                                        Text {
+                                                            text: m.name + ": " + m.host_path + " -> " + m.container_path;
+                                                            vertical-alignment: center;
+                                                            horizontal-stretch: 1;
+                                                        }
+
+                                                        Button {
+                                                            text: "Remove";
+                                                            enabled: !root.busy;
+                                                            clicked => {
+                                                                root.remove_device(root.selected_instance.name, m.name);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        GroupBox {
+                                            title: "Port Forwarding (Proxy Devices)";
+                                            vertical-stretch: 1;
+
+                                            VerticalBox {
+                                                HorizontalBox {
+                                                    proxy_name_input := LineEdit {
+                                                        placeholder-text: "Name (e.g. web)";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    proxy_host_port := LineEdit {
+                                                        placeholder-text: "Host port (e.g. 3000)";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    proxy_ctr_port := LineEdit {
+                                                        placeholder-text: "Container port (e.g. 3000)";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    Button {
+                                                        text: "Forward Port";
+                                                        enabled: !root.busy && proxy_name_input.text != "" && proxy_host_port.text != "" && proxy_ctr_port.text != "";
+                                                        clicked => {
+                                                            root.add_proxy_device(
+                                                                root.selected_instance.name,
+                                                                proxy_name_input.text,
+                                                                proxy_host_port.text,
+                                                                proxy_ctr_port.text
+                                                            );
+                                                            proxy_name_input.text = "";
+                                                            proxy_host_port.text = "";
+                                                            proxy_ctr_port.text = "";
+                                                        }
+                                                    }
+                                                }
+
+                                                if root.selected_instance.proxies.length == 0: Text {
+                                                    text: "No port forwards.";
+                                                }
+
+                                                if root.selected_instance.proxies.length > 0: ListView {
+                                                    for p in root.selected_instance.proxies: HorizontalBox {
+                                                        Text {
+                                                            text: p.name + ": " + p.listen + " -> " + p.connect;
+                                                            vertical-alignment: center;
+                                                            horizontal-stretch: 1;
+                                                        }
+
+                                                        Button {
+                                                            text: "Remove";
+                                                            enabled: !root.busy;
+                                                            clicked => {
+                                                                root.remove_device(root.selected_instance.name, p.name);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Tab {
+                                    title: "Snapshots";
+
+                                    VerticalBox {
+                                        HorizontalBox {
+                                            snap_input := LineEdit {
+                                                placeholder-text: "Snapshot name (e.g. clean-base)";
+                                                enabled: !root.busy;
+                                            }
+
+                                            Button {
+                                                text: "Take Snapshot";
+                                                enabled: !root.busy && snap_input.text != "";
+                                                clicked => {
+                                                    root.create_snapshot(root.selected_instance.name, snap_input.text);
+                                                    snap_input.text = "";
+                                                }
+                                            }
+                                        }
+
+                                        if root.selected_instance.snapshots.length == 0: Text {
+                                            text: "No snapshots.";
+                                        }
+
+                                        if root.selected_instance.snapshots.length > 0: ListView {
+                                            for snap in root.selected_instance.snapshots: HorizontalBox {
+                                                Text {
+                                                    text: snap.name + " (" + snap.created_at + ")";
+                                                    vertical-alignment: center;
+                                                    horizontal-stretch: 1;
+                                                }
+
+                                                Button {
+                                                    text: "Restore";
+                                                    enabled: !root.busy;
+                                                    clicked => {
+                                                        root.request_restore_snapshot(root.selected_instance.name, snap.name);
+                                                    }
+                                                }
+
+                                                Button {
+                                                    text: "Delete";
+                                                    enabled: !root.busy;
+                                                    clicked => {
+                                                        root.request_delete_snapshot(root.selected_instance.name, snap.name);
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Tab {
+                title: "Create Sandbox";
+
+                VerticalBox {
+                    GroupBox {
+                        title: "New Sandbox Configuration";
+                        VerticalBox {
+                            HorizontalBox {
+                                create_name_input := LineEdit {
+                                    placeholder-text: "Sandbox name (e.g. dev-rust)";
+                                    enabled: !root.busy;
+                                }
+
+                                remote_combo := ComboBox {
+                                    model: root.remote_aliases;
+                                    current-value: "debian/12";
+                                    enabled: !root.busy;
+                                    selected(val) => {
+                                        create_image_input.text = val;
+                                    }
+                                }
+
+                                create_image_input := LineEdit {
+                                    text: "debian/12";
+                                    placeholder-text: "Image alias";
+                                    enabled: !root.busy;
+                                }
+
+                                Button {
+                                    text: "Fetch Remote Aliases";
+                                    enabled: !root.busy;
+                                    clicked => {
+                                        root.fetch_remote_images();
+                                    }
+                                }
+                            }
+
+                            HorizontalBox {
+                                Text {
+                                    text: "Memory:";
+                                    vertical-alignment: center;
+                                }
+
+                                create_mem_combo := ComboBox {
+                                    model: ["2GiB", "4GiB", "8GiB", "16GiB"];
+                                    current-value: "4GiB";
+                                    enabled: !root.busy;
+                                }
+
+                                Text {
+                                    text: "CPU:";
+                                    vertical-alignment: center;
+                                }
+
+                                create_cpu_combo := ComboBox {
+                                    model: ["1", "2", "4", "8"];
+                                    current-value: "2";
+                                    enabled: !root.busy;
+                                }
+
+                                Text {
+                                    text: "Profile:";
+                                    vertical-alignment: center;
+                                }
+
+                                create_profile_combo := ComboBox {
+                                    model: root.profile_names;
+                                    current-value: "default";
+                                    enabled: !root.busy;
+                                }
+                            }
+
+                            HorizontalBox {
+                                create_ws_input := LineEdit {
+                                    placeholder-text: "Optional host workspace path (mounted at /workspace, e.g. ~/projects/app)";
+                                    enabled: !root.busy;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "Optional Cloud-Init User Data (for /cloud images)";
+                        vertical-stretch: 1;
+
+                        cloud_init_edit := TextEdit {
+                            placeholder-text: "#cloud-config\npackages:\n  - git\n  - curl";
+                            enabled: !root.busy;
+                        }
+                    }
+
+                    HorizontalBox {
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: "Create Sandbox";
+                            enabled: !root.busy && create_name_input.text != "" && create_image_input.text != "";
+                            clicked => {
+                                root.create_instance(
+                                    create_name_input.text,
+                                    create_image_input.text,
+                                    create_mem_combo.current-value,
+                                    create_cpu_combo.current-value,
+                                    create_ws_input.text,
+                                    create_profile_combo.current-value,
+                                    cloud_init_edit.text
+                                );
+                                create_name_input.text = "";
+                            }
+                        }
+                    }
+                }
+            }
+
+            Tab {
+                title: "Images";
+
+                VerticalBox {
+                    HorizontalBox {
+                        Text {
+                            text: "Locally cached base images in Incus";
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: "Refresh Images";
+                            enabled: !root.busy;
+                            clicked => {
+                                root.refresh_local_images();
+                            }
+                        }
+                    }
+
+                    if root.local_images.length == 0: Text {
+                        text: "No cached images found.";
+                    }
+
+                    if root.local_images.length > 0: ListView {
+                        vertical-stretch: 1;
+
+                        for img in root.local_images: HorizontalBox {
+                            Text {
+                                text: (img.alias != "" ? img.alias : img.short_fingerprint) + " — " + img.description + " (" + img.architecture + ", " + img.size_display + ")";
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Button {
+                                text: "Delete";
+                                enabled: !root.busy;
+                                clicked => {
+                                    root.request_delete_image(
+                                        img.fingerprint,
+                                        img.alias != "" ? img.alias : img.short_fingerprint
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Tab {
+                title: "Settings";
+
+                VerticalBox {
+                    GroupBox {
+                        title: "Preferred Terminal & IDE";
+                        VerticalBox {
+                            HorizontalBox {
+                                Text {
+                                    text: "Terminal Emulator:";
+                                    vertical-alignment: center;
+                                }
+
+                                term_combo := ComboBox {
+                                    model: root.available_terminals;
+                                    current-value <=> root.preferred_terminal;
+                                }
+                            }
+
+                            HorizontalBox {
+                                Text {
+                                    text: "External IDE:";
+                                    vertical-alignment: center;
+                                }
+
+                                ide_combo := ComboBox {
+                                    model: root.available_ides;
+                                    current-value <=> root.preferred_ide;
+                                }
+                            }
+
+                            HorizontalBox {
+                                Button {
+                                    text: "Save Settings";
+                                    clicked => {
+                                        root.save_settings(root.preferred_terminal, root.preferred_ide);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
                     }
                 }
             }

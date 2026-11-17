@@ -16,10 +16,10 @@ _Loose thoughts, not yet committed to._
 - [x] Build Slint standard-widget UI and background Tokio worker with `upgrade_in_event_loop`
 - [x] Implement terminal shell (`incus exec <name> -- su -l root`) and IDE (`codium`/`zed`) launchers
 - [x] Live state polling (3s interval), host workspace bind-mounts (`shift: "true"`), custom image/CPU creation options, inline delete/restore confirmations
+- [x] DistroShelf/BoxBuddyRS-inspired Incus features: CoW clone, restart/freeze/unfreeze, REST exec package upgrade/install, profiles + cloud-init user-data, multi-mounts + proxy port forwards, local image cache + simplestreams remote alias fetch, terminal/IDE settings persistence
 
 ## Next
 - Custom visual styling / theming (explicitly deferred)
-- Interactive `zeditor` fallback for Arch/CachyOS systems if `zed` is absent
 
 ## Someday / maybe
 

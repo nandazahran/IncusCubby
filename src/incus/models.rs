@@ -32,6 +32,8 @@ pub struct OperationMetadata {
     pub status_code: u16,
     #[serde(default)]
     pub err: String,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +43,8 @@ pub struct ApiInstance {
     pub status: String,
     #[serde(default)]
     pub architecture: String,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub profiles: Vec<String>,
     #[serde(default, deserialize_with = "null_to_default")]
     pub config: HashMap<String, String>,
     #[serde(default, deserialize_with = "null_to_default")]
@@ -143,6 +147,155 @@ pub struct RestoreSnapshotRequest {
     pub restore: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct CloneInstanceRequest {
+    pub name: String,
+    pub source: CloneSource,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CloneSource {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub source: String,
+    pub instance_only: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExecRequest {
+    pub command: Vec<String>,
+    #[serde(rename = "wait-for-websocket")]
+    pub wait_for_websocket: bool,
+    #[serde(rename = "record-output")]
+    pub record_output: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecOutput {
+    pub exit_code: i64,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiImage {
+    #[serde(default)]
+    pub fingerprint: String,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub aliases: Vec<ApiImageAlias>,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub properties: HashMap<String, String>,
+    #[serde(default)]
+    pub architecture: String,
+    #[serde(default)]
+    pub size: i64,
+    #[serde(default)]
+    pub update_source: Option<ApiImageUpdateSource>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiImageAlias {
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiImageUpdateSource {
+    #[serde(default)]
+    pub alias: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageSummary {
+    pub fingerprint: String,
+    pub alias: String,
+    pub description: String,
+    pub architecture: String,
+    pub size_bytes: u64,
+    pub size_display: String,
+}
+
+impl From<ApiImage> for ImageSummary {
+    fn from(api: ApiImage) -> Self {
+        let alias = api
+            .aliases
+            .iter()
+            .find(|a| !a.name.is_empty())
+            .map(|a| a.name.clone())
+            .or_else(|| {
+                api.update_source
+                    .as_ref()
+                    .map(|u| u.alias.clone())
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or_default();
+
+        let description = api
+            .properties
+            .get("description")
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .unwrap_or_else(|| {
+                format_os_release(
+                    api.properties.get("os").map(String::as_str),
+                    api.properties.get("release").map(String::as_str),
+                    "",
+                )
+            });
+
+        let size_bytes = api.size.max(0) as u64;
+        Self {
+            fingerprint: api.fingerprint,
+            alias,
+            description,
+            architecture: if api.architecture.is_empty() {
+                "-".to_string()
+            } else {
+                api.architecture
+            },
+            size_bytes,
+            size_display: format_bytes(size_bytes),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiProfile {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileSummary {
+    pub name: String,
+    pub description: String,
+}
+
+impl From<ApiProfile> for ProfileSummary {
+    fn from(api: ApiProfile) -> Self {
+        Self {
+            name: api.name,
+            description: api.description,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MountEntry {
+    pub name: String,
+    pub host_path: String,
+    pub container_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyEntry {
+    pub name: String,
+    pub listen: String,
+    pub connect: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotSummary {
     pub name: String,
@@ -154,23 +307,30 @@ pub struct InstanceSummary {
     pub name: String,
     pub status: String,
     pub is_running: bool,
+    pub is_frozen: bool,
     pub architecture: String,
     pub image: String,
+    pub image_os: String,
     pub ip: String,
     pub memory: String,
     pub cpu: String,
     pub workspace_path: String,
+    pub profiles: Vec<String>,
+    pub mounts: Vec<MountEntry>,
+    pub proxies: Vec<ProxyEntry>,
     pub snapshots: Vec<SnapshotSummary>,
 }
 
 impl From<ApiInstance> for InstanceSummary {
     fn from(api: ApiInstance) -> Self {
         let is_running = api.status.eq_ignore_ascii_case("Running");
-        let image = match (api.config.get("image.os"), api.config.get("image.release")) {
-            (Some(os), Some(rel)) if !os.is_empty() && !rel.is_empty() => format!("{os} {rel}"),
-            (Some(os), _) if !os.is_empty() => os.clone(),
-            _ => "-".to_string(),
-        };
+        let is_frozen = api.status.eq_ignore_ascii_case("Frozen");
+        let image_os = api.config.get("image.os").cloned().unwrap_or_default();
+        let image = format_os_release(
+            api.config.get("image.os").map(String::as_str),
+            api.config.get("image.release").map(String::as_str),
+            "-",
+        );
 
         let ip = api
             .state
@@ -200,6 +360,36 @@ impl From<ApiInstance> for InstanceSummary {
             .cloned()
             .unwrap_or_default();
 
+        let mut mounts = Vec::new();
+        let mut proxies = Vec::new();
+        for (dev_name, props) in &api.devices {
+            match props.get("type").map(String::as_str) {
+                Some("disk") => {
+                    if let (Some(source), Some(path)) = (props.get("source"), props.get("path")) {
+                        mounts.push(MountEntry {
+                            name: dev_name.clone(),
+                            host_path: source.clone(),
+                            container_path: path.clone(),
+                        });
+                    }
+                }
+                Some("proxy") => {
+                    if let (Some(listen), Some(connect)) =
+                        (props.get("listen"), props.get("connect"))
+                    {
+                        proxies.push(ProxyEntry {
+                            name: dev_name.clone(),
+                            listen: listen.clone(),
+                            connect: connect.clone(),
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        mounts.sort_by(|a, b| a.name.cmp(&b.name));
+        proxies.sort_by(|a, b| a.name.cmp(&b.name));
+
         let mut snapshots: Vec<SnapshotSummary> = api
             .snapshots
             .unwrap_or_default()
@@ -215,18 +405,31 @@ impl From<ApiInstance> for InstanceSummary {
             name: api.name,
             status: api.status,
             is_running,
+            is_frozen,
             architecture: if api.architecture.is_empty() {
                 "-".to_string()
             } else {
                 api.architecture
             },
             image,
+            image_os,
             ip,
             memory,
             cpu,
             workspace_path,
+            profiles: api.profiles,
+            mounts,
+            proxies,
             snapshots,
         }
+    }
+}
+
+fn format_os_release(os: Option<&str>, rel: Option<&str>, fallback: &str) -> String {
+    match (os, rel) {
+        (Some(os), Some(rel)) if !os.is_empty() && !rel.is_empty() => format!("{os} {rel}"),
+        (Some(os), _) if !os.is_empty() => os.to_string(),
+        _ => fallback.to_string(),
     }
 }
 
