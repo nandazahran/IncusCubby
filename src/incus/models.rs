@@ -1,5 +1,13 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ApiResponse<T> {
@@ -33,8 +41,10 @@ pub struct ApiInstance {
     pub status: String,
     #[serde(default)]
     pub architecture: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub config: HashMap<String, String>,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub devices: HashMap<String, HashMap<String, String>>,
     pub state: Option<InstanceState>,
     #[serde(default)]
     pub snapshots: Option<Vec<ApiSnapshot>>,
@@ -49,12 +59,12 @@ pub struct InstanceState {
 #[derive(Debug, Deserialize)]
 pub struct MemoryState {
     #[serde(default)]
-    pub usage: u64,
+    pub usage: i64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct NetworkState {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub addresses: Vec<NetworkAddress>,
 }
 
@@ -81,7 +91,27 @@ pub struct CreateInstanceRequest {
     pub architecture: String,
     pub profiles: Vec<String>,
     pub config: HashMap<String, String>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub devices: HashMap<String, HashMap<String, String>>,
     pub source: ImageSource,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct InstancePut {
+    #[serde(default)]
+    pub architecture: String,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub config: HashMap<String, String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub devices: HashMap<String, HashMap<String, String>>,
+    #[serde(default)]
+    pub ephemeral: bool,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub profiles: Vec<String>,
+    #[serde(default)]
+    pub stateful: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -128,6 +158,8 @@ pub struct InstanceSummary {
     pub image: String,
     pub ip: String,
     pub memory: String,
+    pub cpu: String,
+    pub workspace_path: String,
     pub snapshots: Vec<SnapshotSummary>,
 }
 
@@ -151,10 +183,22 @@ impl From<ApiInstance> for InstanceSummary {
             .state
             .as_ref()
             .and_then(|s| s.memory.as_ref())
-            .map(|m| m.usage)
+            .map(|m| m.usage.max(0) as u64)
             .unwrap_or(0);
         let limit = api.config.get("limits.memory").map(String::as_str);
         let memory = format_memory(is_running, usage_bytes, limit);
+        let cpu = api
+            .config
+            .get("limits.cpu")
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .unwrap_or_else(|| "-".to_string());
+        let workspace_path = api
+            .devices
+            .get("workspace")
+            .and_then(|d| d.get("source"))
+            .cloned()
+            .unwrap_or_default();
 
         let mut snapshots: Vec<SnapshotSummary> = api
             .snapshots
@@ -179,6 +223,8 @@ impl From<ApiInstance> for InstanceSummary {
             image,
             ip,
             memory,
+            cpu,
+            workspace_path,
             snapshots,
         }
     }

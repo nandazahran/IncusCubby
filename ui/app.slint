@@ -20,14 +20,16 @@ export struct UiInstance {
     image: string,
     ip: string,
     memory: string,
+    cpu: string,
+    workspace_path: string,
     is_running: bool,
     snapshots: [UiSnapshot],
 }
 
 export component AppWindow inherits Window {
     title: "IncusCubby";
-    preferred-width: 960px;
-    preferred-height: 640px;
+    preferred-width: 1020px;
+    preferred-height: 700px;
 
     in property <[UiInstance]> instances: [];
     in-out property <int> selected_index: -1;
@@ -36,19 +38,24 @@ export component AppWindow inherits Window {
     in property <bool> busy: false;
     in property <string> status_message: "";
     in property <string> socket_warning: "";
+    in property <string> confirm_message: "";
+    in-out property <string> workspace_edit_text: "";
 
     callback refresh();
     callback select_instance(int);
-    callback create_instance(string, string, string);
+    callback create_instance(string, string, string, string, string);
     callback start_instance(string);
     callback stop_instance(string);
-    callback delete_instance(string);
+    callback request_delete_instance(string);
+    callback set_workspace_mount(string, string);
     callback open_shell(string);
-    callback open_code();
-    callback open_zed();
+    callback open_codium(string);
+    callback open_zed(string);
     callback create_snapshot(string, string);
-    callback restore_snapshot(string, string);
-    callback delete_snapshot(string, string);
+    callback request_restore_snapshot(string, string);
+    callback request_delete_snapshot(string, string);
+    callback confirm_action();
+    callback cancel_confirm();
 
     VerticalBox {
         HorizontalBox {
@@ -85,32 +92,90 @@ export component AppWindow inherits Window {
             }
         }
 
-        GroupBox {
-            title: "Create Sandbox";
+        if root.confirm_message != "": GroupBox {
+            title: "Confirm Action";
             HorizontalBox {
-                name_input := LineEdit {
-                    placeholder-text: "Sandbox name (e.g. dev-rust)";
-                    enabled: !root.busy;
-                }
-
-                image_combo := ComboBox {
-                    model: ["debian/12", "ubuntu/24.04", "alpine/3.20", "archlinux", "fedora/41"];
-                    current-value: "debian/12";
-                    enabled: !root.busy;
-                }
-
-                mem_combo := ComboBox {
-                    model: ["2GiB", "4GiB", "8GiB", "16GiB"];
-                    current-value: "4GiB";
-                    enabled: !root.busy;
+                Text {
+                    text: root.confirm_message;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    wrap: word-wrap;
                 }
 
                 Button {
-                    text: "Create";
-                    enabled: !root.busy && name_input.text != "";
+                    text: "Confirm";
+                    enabled: !root.busy;
                     clicked => {
-                        root.create_instance(name_input.text, image_combo.current-value, mem_combo.current-value);
-                        name_input.text = "";
+                        root.confirm_action();
+                    }
+                }
+
+                Button {
+                    text: "Cancel";
+                    clicked => {
+                        root.cancel_confirm();
+                    }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Create Sandbox";
+            VerticalBox {
+                HorizontalBox {
+                    name_input := LineEdit {
+                        placeholder-text: "Sandbox name (e.g. dev-rust)";
+                        enabled: !root.busy;
+                    }
+
+                    image_combo := ComboBox {
+                        model: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
+                        current-value: "debian/12";
+                        enabled: !root.busy;
+                        selected(val) => {
+                            image_input.text = val;
+                        }
+                    }
+
+                    image_input := LineEdit {
+                        text: "debian/12";
+                        placeholder-text: "Image alias";
+                        enabled: !root.busy;
+                    }
+
+                    mem_combo := ComboBox {
+                        model: ["2GiB", "4GiB", "8GiB", "16GiB"];
+                        current-value: "4GiB";
+                        enabled: !root.busy;
+                    }
+
+                    cpu_combo := ComboBox {
+                        model: ["1", "2", "4", "8"];
+                        current-value: "2";
+                        enabled: !root.busy;
+                    }
+                }
+
+                HorizontalBox {
+                    ws_create_input := LineEdit {
+                        placeholder-text: "Optional host workspace path (mounted at /workspace, e.g. ~/projects/app)";
+                        enabled: !root.busy;
+                        horizontal-stretch: 1;
+                    }
+
+                    Button {
+                        text: "Create";
+                        enabled: !root.busy && name_input.text != "" && image_input.text != "";
+                        clicked => {
+                            root.create_instance(
+                                name_input.text,
+                                image_input.text,
+                                mem_combo.current-value,
+                                cpu_combo.current-value,
+                                ws_create_input.text
+                            );
+                            name_input.text = "";
+                        }
                     }
                 }
             }
@@ -122,7 +187,7 @@ export component AppWindow inherits Window {
             GroupBox {
                 title: "Sandboxes";
                 horizontal-stretch: 1;
-                min-width: 300px;
+                min-width: 280px;
 
                 if root.instances.length == 0: Text {
                     text: "No sandboxes found.";
@@ -164,11 +229,40 @@ export component AppWindow inherits Window {
                     }
 
                     Text {
-                        text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch;
+                        text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch + " | CPU: " + root.selected_instance.cpu;
                     }
 
                     Text {
                         text: "IP: " + root.selected_instance.ip + " | Memory: " + root.selected_instance.memory;
+                    }
+
+                    Text {
+                        text: "Workspace (/workspace): " + (root.selected_instance.workspace_path != "" ? root.selected_instance.workspace_path : "none");
+                    }
+
+                    HorizontalBox {
+                        LineEdit {
+                            text <=> root.workspace_edit_text;
+                            placeholder-text: "Host directory path to mount at /workspace";
+                            enabled: !root.busy;
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: "Mount";
+                            enabled: !root.busy && root.workspace_edit_text != "";
+                            clicked => {
+                                root.set_workspace_mount(root.selected_instance.name, root.workspace_edit_text);
+                            }
+                        }
+
+                        Button {
+                            text: "Unmount";
+                            enabled: !root.busy && root.selected_instance.workspace_path != "";
+                            clicked => {
+                                root.set_workspace_mount(root.selected_instance.name, "");
+                            }
+                        }
                     }
 
                     HorizontalBox {
@@ -197,16 +291,16 @@ export component AppWindow inherits Window {
                         }
 
                         Button {
-                            text: "VS Code";
+                            text: "Codium";
                             clicked => {
-                                root.open_code();
+                                root.open_codium(root.selected_instance.workspace_path);
                             }
                         }
 
                         Button {
                             text: "Zed";
                             clicked => {
-                                root.open_zed();
+                                root.open_zed(root.selected_instance.workspace_path);
                             }
                         }
 
@@ -214,7 +308,7 @@ export component AppWindow inherits Window {
                             text: "Delete";
                             enabled: !root.busy && !root.selected_instance.is_running;
                             clicked => {
-                                root.delete_instance(root.selected_instance.name);
+                                root.request_delete_instance(root.selected_instance.name);
                             }
                         }
                     }
@@ -256,7 +350,7 @@ export component AppWindow inherits Window {
                                         text: "Restore";
                                         enabled: !root.busy;
                                         clicked => {
-                                            root.restore_snapshot(root.selected_instance.name, snap.name);
+                                            root.request_restore_snapshot(root.selected_instance.name, snap.name);
                                         }
                                     }
 
@@ -264,7 +358,7 @@ export component AppWindow inherits Window {
                                         text: "Delete";
                                         enabled: !root.busy;
                                         clicked => {
-                                            root.delete_snapshot(root.selected_instance.name, snap.name);
+                                            root.request_delete_snapshot(root.selected_instance.name, snap.name);
                                         }
                                     }
                                 }

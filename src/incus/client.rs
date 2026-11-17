@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use super::models::{
     ApiInstance, ApiResponse, CreateInstanceRequest, CreateSnapshotRequest, ImageSource,
-    InstanceSummary, OperationMetadata, RestoreSnapshotRequest, StateActionRequest,
+    InstancePut, InstanceSummary, OperationMetadata, RestoreSnapshotRequest, StateActionRequest,
 };
 
 pub const DEFAULT_INCUS_SOCKET: &str = "/var/lib/incus/unix.socket";
@@ -92,6 +92,8 @@ impl IncusClient {
         name: &str,
         image_alias: &str,
         memory_limit: &str,
+        cpu_limit: &str,
+        workspace_path: &str,
     ) -> Result<(), IncusError> {
         validate_name(name, "instance name")?;
         let alias = image_alias.trim();
@@ -104,12 +106,22 @@ impl IncusClient {
         if !mem.is_empty() {
             config.insert("limits.memory".to_string(), mem.to_string());
         }
+        let cpu = cpu_limit.trim();
+        if !cpu.is_empty() {
+            config.insert("limits.cpu".to_string(), cpu.to_string());
+        }
+
+        let mut devices = HashMap::new();
+        if let Some(ws_device) = build_workspace_device(workspace_path)? {
+            devices.insert("workspace".to_string(), ws_device);
+        }
 
         let payload = CreateInstanceRequest {
             name: name.to_string(),
             architecture: host_incus_arch().to_string(),
             profiles: vec!["default".to_string()],
             config,
+            devices,
             source: ImageSource {
                 source_type: "image".to_string(),
                 mode: "pull".to_string(),
@@ -120,6 +132,31 @@ impl IncusClient {
         };
 
         self.execute_async(Method::POST, "/1.0/instances", Some(&payload)).await
+    }
+
+    pub async fn set_workspace_mount(
+        &self,
+        name: &str,
+        workspace_path: &str,
+    ) -> Result<(), IncusError> {
+        validate_name(name, "instance name")?;
+        let new_device = build_workspace_device(workspace_path)?;
+        let path = format!("/1.0/instances/{name}");
+        let resp: ApiResponse<InstancePut> =
+            self.send_json(Method::GET, &path, None::<&()>).await?;
+        let mut put = resp.metadata.ok_or_else(|| IncusError::Api {
+            code: 500,
+            message: format!("Missing instance metadata for '{name}'"),
+        })?;
+        match new_device {
+            Some(dev) => {
+                put.devices.insert("workspace".to_string(), dev);
+            }
+            None => {
+                put.devices.remove("workspace");
+            }
+        }
+        self.execute_async(Method::PUT, &path, Some(&put)).await
     }
 
     pub async fn set_instance_state(&self, name: &str, action: &str) -> Result<(), IncusError> {
@@ -285,6 +322,36 @@ fn validate_name(value: &str, label: &str) -> Result<(), IncusError> {
         )));
     }
     Ok(())
+}
+
+fn build_workspace_device(workspace_path: &str) -> Result<Option<HashMap<String, String>>, IncusError> {
+    let trimmed = workspace_path.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let resolved = if let Some(rest) = trimmed.strip_prefix("~/") {
+        let home = std::env::var_os("HOME").ok_or_else(|| {
+            IncusError::InvalidInput("Cannot expand '~': HOME is not set".into())
+        })?;
+        PathBuf::from(home).join(rest)
+    } else {
+        PathBuf::from(trimmed)
+    };
+    if !resolved.is_absolute() || !resolved.is_dir() {
+        return Err(IncusError::InvalidInput(format!(
+            "Workspace path must be an existing absolute directory: {}",
+            resolved.display()
+        )));
+    }
+    let mut device = HashMap::new();
+    device.insert("type".to_string(), "disk".to_string());
+    device.insert(
+        "source".to_string(),
+        resolved.to_string_lossy().into_owned(),
+    );
+    device.insert("path".to_string(), "/workspace".to_string());
+    device.insert("shift".to_string(), "true".to_string());
+    Ok(Some(device))
 }
 
 fn host_incus_arch() -> &'static str {
@@ -453,7 +520,11 @@ mod tests {
         .await;
 
         let client = IncusClient::new(&sock);
-        client.create_instance("box1", "debian/12", "4GiB").await.unwrap();
+        let ws_dir = sock.parent().unwrap();
+        client
+            .create_instance("box1", "debian/12", "4GiB", "2", &ws_dir.to_string_lossy())
+            .await
+            .unwrap();
 
         let calls = seen.lock().unwrap();
         assert_eq!(calls.len(), 2);
@@ -462,6 +533,10 @@ mod tests {
         let sent: serde_json::Value = serde_json::from_str(&calls[0].2).unwrap();
         assert_eq!(sent["name"], "box1");
         assert_eq!(sent["config"]["limits.memory"], "4GiB");
+        assert_eq!(sent["config"]["limits.cpu"], "2");
+        assert_eq!(sent["devices"]["workspace"]["type"], "disk");
+        assert_eq!(sent["devices"]["workspace"]["path"], "/workspace");
+        assert_eq!(sent["devices"]["workspace"]["shift"], "true");
         assert_eq!(sent["source"]["server"], "https://images.linuxcontainers.org");
         assert_eq!(sent["source"]["protocol"], "simplestreams");
         assert_eq!(sent["source"]["alias"], "debian/12");
@@ -486,13 +561,20 @@ mod tests {
                 let err_resp = r#"{"type":"error","error_code":404,"error":"Snapshot not found"}"#;
                 return (StatusCode::NOT_FOUND, err_resp.to_string());
             }
+            if uri == "/1.0/instances/box1" && method == "GET" {
+                let get_resp = r#"{"type":"sync","status":"Success","status_code":200,"metadata":{"architecture":"x86_64","config":{},"description":"","devices":{"workspace":{"type":"disk","source":"/tmp","path":"/workspace","shift":"true"}},"ephemeral":false,"profiles":["default"],"stateful":false}}"#;
+                return (StatusCode::OK, get_resp.to_string());
+            }
             let ok = r#"{"type":"sync","status":"Success","status_code":200,"metadata":{}}"#;
             (StatusCode::OK, ok.to_string())
         })
         .await;
 
         let client = IncusClient::new(&sock);
+        let ws_dir = sock.parent().unwrap().to_string_lossy().into_owned();
         client.set_instance_state("box1", "start").await.unwrap();
+        client.set_workspace_mount("box1", &ws_dir).await.unwrap();
+        client.set_workspace_mount("box1", "").await.unwrap();
         client.create_snapshot("box1", "s1").await.unwrap();
         client.restore_snapshot("box1", "s1").await.unwrap();
         client.delete_snapshot("box1", "s1").await.unwrap();
@@ -504,17 +586,101 @@ mod tests {
         let calls = seen.lock().unwrap();
         assert_eq!(calls[0].0, "PUT");
         assert_eq!(calls[0].1, "/1.0/instances/box1/state");
-        assert_eq!(calls[1].0, "POST");
-        assert_eq!(calls[1].1, "/1.0/instances/box1/snapshots");
+        assert_eq!(calls[1].0, "GET");
+        assert_eq!(calls[1].1, "/1.0/instances/box1");
         assert_eq!(calls[2].0, "PUT");
         assert_eq!(calls[2].1, "/1.0/instances/box1");
-        assert!(calls[2].2.contains(r#""restore":"s1""#));
-        assert_eq!(calls[3].0, "DELETE");
-        assert_eq!(calls[3].1, "/1.0/instances/box1/snapshots/s1");
-        assert_eq!(calls[4].0, "DELETE");
+        assert!(calls[2].2.contains(r#""shift":"true""#));
+        assert_eq!(calls[3].0, "GET");
+        assert_eq!(calls[3].1, "/1.0/instances/box1");
+        assert_eq!(calls[4].0, "PUT");
         assert_eq!(calls[4].1, "/1.0/instances/box1");
+        assert!(!calls[4].2.contains("workspace"));
+        assert_eq!(calls[5].0, "POST");
+        assert_eq!(calls[5].1, "/1.0/instances/box1/snapshots");
+        assert_eq!(calls[6].0, "PUT");
+        assert_eq!(calls[6].1, "/1.0/instances/box1");
+        assert!(calls[6].2.contains(r#""restore":"s1""#));
+        assert_eq!(calls[7].0, "DELETE");
+        assert_eq!(calls[7].1, "/1.0/instances/box1/snapshots/s1");
+        assert_eq!(calls[8].0, "DELETE");
+        assert_eq!(calls[8].1, "/1.0/instances/box1");
 
         handle.abort();
         let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local running incusd socket at /var/lib/incus/unix.socket"]
+    async fn live_incus_full_lifecycle_smoke() {
+        let client = IncusClient::default_socket();
+        let name = format!("cubby-smoke-{}", std::process::id());
+        let ws_dir = std::env::temp_dir().join(format!("cubby-ws-{}", std::process::id()));
+        std::fs::create_dir_all(&ws_dir).unwrap();
+        let ws_str = ws_dir.to_string_lossy().into_owned();
+
+        // Cleanup helper in case a prior run left anything behind.
+        let _ = client.set_instance_state(&name, "stop").await;
+        let _ = client.delete_instance(&name).await;
+
+        let initial = client.list_instances().await.expect("list_instances");
+        assert!(initial.iter().all(|i| i.name != name));
+
+        client
+            .create_instance(&name, "alpine/3.24", "512MiB", "1", &ws_str)
+            .await
+            .expect("create_instance");
+
+        let res = async {
+            client
+                .set_instance_state(&name, "start")
+                .await
+                .expect("start");
+
+            let after_start = client.list_instances().await.expect("list after start");
+            let created = after_start
+                .iter()
+                .find(|i| i.name == name)
+                .expect("created instance present");
+            assert!(created.is_running);
+            assert_eq!(created.cpu, "1");
+            assert_eq!(created.workspace_path, ws_str);
+
+            client
+                .set_workspace_mount(&name, "")
+                .await
+                .expect("unmount workspace");
+            let after_unmount = client.list_instances().await.expect("list after unmount");
+            let unmounted = after_unmount.iter().find(|i| i.name == name).unwrap();
+            assert_eq!(unmounted.workspace_path, "");
+
+            client
+                .create_snapshot(&name, "snap1")
+                .await
+                .expect("create_snapshot");
+
+            let with_snap = client.list_instances().await.expect("list with snap");
+            let found = with_snap.iter().find(|i| i.name == name).unwrap();
+            assert!(found.snapshots.iter().any(|s| s.name == "snap1"));
+
+            client
+                .set_instance_state(&name, "stop")
+                .await
+                .expect("stop");
+            client
+                .restore_snapshot(&name, "snap1")
+                .await
+                .expect("restore_snapshot");
+            client
+                .delete_snapshot(&name, "snap1")
+                .await
+                .expect("delete_snapshot");
+        }
+        .await;
+
+        let _ = client.set_instance_state(&name, "stop").await;
+        client.delete_instance(&name).await.expect("delete_instance");
+        let _ = std::fs::remove_dir_all(&ws_dir);
+        res
     }
 }

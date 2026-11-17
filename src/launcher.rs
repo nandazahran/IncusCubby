@@ -7,14 +7,14 @@ use anyhow::{Context, bail};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ide {
-    Code,
+    Codium,
     Zed,
 }
 
 impl Ide {
     fn binary(self) -> &'static str {
         match self {
-            Self::Code => "code",
+            Self::Codium => "codium",
             Self::Zed => "zed",
         }
     }
@@ -57,9 +57,13 @@ pub fn open_shell(instance_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn open_ide(ide: Ide) -> anyhow::Result<()> {
+pub fn open_ide(ide: Ide, workspace_path: Option<&str>) -> anyhow::Result<()> {
     let bin = ide.binary();
-    Command::new(bin).spawn().map_err(|err| {
+    let mut cmd = Command::new(bin);
+    if let Some(path) = workspace_path.map(str::trim).filter(|p| !p.is_empty()) {
+        cmd.arg(path);
+    }
+    cmd.spawn().map_err(|err| {
         if err.kind() == io::ErrorKind::NotFound {
             anyhow::anyhow!("IDE executable '{bin}' not found in PATH")
         } else {
