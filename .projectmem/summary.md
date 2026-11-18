@@ -13,7 +13,6 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - Use Linux-only GitHub Actions CI (with non-code paths-ignore and cargo-deny) and x86_64/aarch64 AppImage+tarball release workflow modeled on KineAnchor [.github/workflows/]
 
 ## Notes
-- New feature: Add Incus Web UI features, harden Rust idioms, and enable clippy pedantic lints [src/incus/client.rs]
 - Added IncusCubby documentation suite modeled on KineAnchor: README.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/INCUS_API.md, docs/ROADMAP.md, and docs/PRIVACY.md
 - New feature: Add documentation suite for IncusCubby [CONTRIBUTING.md]
 - gotcha: community-scripts/Incus only mirrors stable ProxmoxVE scripts; dev/new apps like surfsense and t3code live in community-scripts/DevScripts and are listed on community-scripts.org [src/incus/community.rs:1]
@@ -23,6 +22,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - New feature: Add GitHub Actions CI/CD, Linux packaging, and cargo-deny gate [packaging/linux/build-appimage.sh]
 - Published v0.1.0 release (run 44298031256) with x86_64/aarch64 AppImage, tar.gz, and SHA256SUMS.txt; updated PKGBUILD sha256sums [.github/workflows/release.yml]
 - Added private .deb and .rpm GitHub release packaging scripts (dpkg-deb and rpmbuild) without publishing to external repos or stores [packaging/linux/build-deb.sh]
+- New feature: Add .deb and .rpm packaging to GitHub release workflow [packaging/linux/build-deb.sh]
 
 ## Key files
 - `.gitattributes`
