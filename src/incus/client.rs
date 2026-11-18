@@ -61,6 +61,13 @@ impl IncusError {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NestingMode {
+    #[default]
+    Disabled,
+    Enabled,
+}
+
 pub struct CreateInstanceParams<'a> {
     pub name: &'a str,
     pub instance_type: &'a str,
@@ -70,6 +77,7 @@ pub struct CreateInstanceParams<'a> {
     pub workspace_path: &'a str,
     pub profiles: Vec<String>,
     pub cloud_init_user_data: &'a str,
+    pub nesting: NestingMode,
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +149,9 @@ impl IncusClient {
                 "cloud-init.user-data".to_string(),
                 params.cloud_init_user_data.to_string(),
             );
+        }
+        if params.nesting == NestingMode::Enabled {
+            config.insert("security.nesting".to_string(), "true".to_string());
         }
 
         let profiles: Vec<String> = params
@@ -749,14 +760,10 @@ pub(super) mod tests {
             + Sync
             + 'static,
     {
-        let dir = std::env::temp_dir().join(format!(
-            "incus_cubby_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        static NEXT_MOCK_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = NEXT_MOCK_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("incus_cubby_test_{}_{id}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let sock_path = dir.join("unix.socket");
         let listener = UnixListener::bind(&sock_path).unwrap();
@@ -929,6 +936,7 @@ pub(super) mod tests {
                 workspace_path: &ws_str,
                 profiles: vec!["default".to_string(), "dev".to_string()],
                 cloud_init_user_data: "#cloud-config\npackages:\n  - git\n",
+                nesting: NestingMode::Disabled,
             })
             .await
             .unwrap();
@@ -947,6 +955,7 @@ pub(super) mod tests {
             sent["config"]["cloud-init.user-data"],
             "#cloud-config\npackages:\n  - git\n"
         );
+        assert!(sent["config"].get("security.nesting").is_none());
         assert_eq!(sent["devices"]["workspace"]["type"], "disk");
         assert_eq!(sent["devices"]["workspace"]["path"], "/workspace");
         assert_eq!(sent["devices"]["workspace"]["shift"], "true");
@@ -1189,6 +1198,7 @@ pub(super) mod tests {
                 workspace_path: &ws_str,
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
+                nesting: NestingMode::Disabled,
             })
             .await
             .expect("create_instance");
@@ -1705,6 +1715,7 @@ pub(super) mod tests {
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
+                nesting: NestingMode::Disabled,
             })
             .await
             .unwrap();
@@ -1719,6 +1730,7 @@ pub(super) mod tests {
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
+                nesting: NestingMode::Disabled,
             })
             .await
             .unwrap_err();
@@ -1814,5 +1826,52 @@ pub(super) mod tests {
                 "expected InvalidInput for '{bad_path}', got {err:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn create_instance_sets_security_nesting_when_enabled() {
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let seen_clone = Arc::clone(&seen);
+
+        let (sock, handle) = spawn_mock_incus(move |method, uri, body| {
+            if method == "POST" && uri == "/1.0/instances" {
+                seen_clone.lock().unwrap().push(body);
+                (
+                    StatusCode::OK,
+                    r#"{"type":"sync","status":"Success","status_code":200,"metadata":{}}"#
+                        .to_string(),
+                )
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    r#"{"type":"error","error":"unexpected"}"#.to_string(),
+                )
+            }
+        })
+        .await;
+
+        let client = IncusClient::new(&sock);
+        client
+            .create_instance(CreateInstanceParams {
+                name: "nested-box",
+                instance_type: "container",
+                image_alias: "debian/12",
+                memory_limit: "",
+                cpu_limit: "",
+                workspace_path: "",
+                profiles: Vec::new(),
+                cloud_init_user_data: "",
+                nesting: NestingMode::Enabled,
+            })
+            .await
+            .unwrap();
+
+        let bodies = seen.lock().unwrap();
+        assert_eq!(bodies.len(), 1);
+        let sent: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
+        assert_eq!(sent["config"]["security.nesting"], "true");
+
+        handle.abort();
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
     }
 }

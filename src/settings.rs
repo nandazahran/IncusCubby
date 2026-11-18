@@ -85,10 +85,13 @@ pub fn available_terminals() -> Vec<String> {
     result
 }
 
+pub const IDE_CANDIDATES: &[&str] = &[
+    "codium", "code", "zed", "zeditor", "kate", "subl", "hx", "nvim", "emacs",
+];
+
 pub fn available_ides() -> Vec<String> {
-    const IDES: &[&str] = &["codium", "zed", "zeditor", "code"];
     let mut result = vec!["auto".to_string()];
-    for &name in IDES {
+    for &name in IDE_CANDIDATES {
         if exists_in_path(name) {
             result.push(name.to_string());
         }

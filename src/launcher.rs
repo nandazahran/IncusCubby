@@ -5,11 +5,7 @@ use std::process::Command;
 
 use anyhow::{Context, bail};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Ide {
-    Codium,
-    Zed,
-}
+use crate::settings::IDE_CANDIDATES;
 
 pub fn open_shell(instance_name: &str, preferred_terminal: &str) -> anyhow::Result<()> {
     if instance_name.is_empty()
@@ -48,8 +44,8 @@ pub fn open_shell(instance_name: &str, preferred_terminal: &str) -> anyhow::Resu
     Ok(())
 }
 
-pub fn open_ide(ide: Ide, preferred_ide: &str, workspace_path: Option<&str>) -> anyhow::Result<()> {
-    let bin = resolve_ide_binary(ide, preferred_ide)?;
+pub fn open_ide(preferred_ide: &str, workspace_path: Option<&str>) -> anyhow::Result<()> {
+    let bin = resolve_ide_binary(preferred_ide)?;
     let mut cmd = Command::new(&bin);
     if let Some(path) = workspace_path.map(str::trim).filter(|p| !p.is_empty()) {
         cmd.arg(path);
@@ -64,21 +60,17 @@ pub fn open_ide(ide: Ide, preferred_ide: &str, workspace_path: Option<&str>) -> 
     Ok(())
 }
 
-fn resolve_ide_binary(ide: Ide, preferred_ide: &str) -> anyhow::Result<PathBuf> {
+fn resolve_ide_binary(preferred_ide: &str) -> anyhow::Result<PathBuf> {
     let pref = preferred_ide.trim();
     if !pref.is_empty() && pref != "auto" {
         return find_in_path(pref)
             .with_context(|| format!("Preferred IDE '{pref}' not found in PATH"));
     }
 
-    let candidates: &[&str] = match ide {
-        Ide::Codium => &["codium", "code"],
-        Ide::Zed => &["zed", "zeditor"],
-    };
-    candidates
+    IDE_CANDIDATES
         .iter()
         .find_map(|name| find_in_path(name))
-        .with_context(|| format!("IDE executable '{}' not found in PATH", candidates[0]))
+        .context("No IDE executable found in PATH; set a custom command in Settings")
 }
 
 fn detect_terminal(preferred_terminal: &str) -> Option<PathBuf> {

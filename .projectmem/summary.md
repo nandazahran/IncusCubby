@@ -20,6 +20,8 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - New feature: Add DistroShelf/BoxBuddyRS features: clone, freeze/restart, exec packages, mounts/proxies, image cache, and settings [src/incus/client.rs]
 - New feature: Add Incus Web UI features, harden Rust idioms, and enable clippy pedantic lints [src/incus/client.rs]
 - Added IncusCubby documentation suite modeled on KineAnchor: README.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/INCUS_API.md, docs/ROADMAP.md, and docs/PRIVACY.md
+- New feature: Add documentation suite for IncusCubby [CONTRIBUTING.md]
+- gotcha: community-scripts/Incus only mirrors stable ProxmoxVE scripts; dev/new apps like surfsense and t3code live in community-scripts/DevScripts and are listed on community-scripts.org [src/incus/community.rs:1]
 
 ## Key files
 - `.gitattributes`

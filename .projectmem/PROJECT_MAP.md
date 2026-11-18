@@ -12,10 +12,11 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - [src/incus/models.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/models.rs) — Incus 1.0 REST API request/response structs and UI summary mapping
 - [src/incus/client.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/client.rs) — `hyperlocal` Unix socket client (instances, VMs, clone, limits, state, devices/proxies, snapshots, images, profiles, exec)
 - [src/incus/infra.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/infra.rs) — storage pools & custom volumes, networks & DHCP leases, profile CRUD, instance logs, file push/pull
+- [src/incus/community.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/community.rs) — `community-scripts/Incus` catalog fetcher, `ct/` metadata parser, and REST-API container runner builder
 - [src/incus/remote_images.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/remote_images.rs) — `reqwest` simplestreams alias fetcher for `images.linuxcontainers.org`
 - [src/incus/packages.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/packages.rs) — OS-aware package upgrade/install command builders with token validation
 - [src/settings.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/settings.rs) — XDG JSON preferences (`preferred_terminal`, `preferred_ide`) and PATH detection
-- [src/launcher.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/launcher.rs) — host terminal (`incus exec <name> -- su -l root`) and external IDE (`codium`/`code`, `zed`/`zeditor`) launchers
+- [src/launcher.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/launcher.rs) — host terminal (`incus exec <name> -- su -l root`) and external IDE launcher (user-configured or auto-detected)
 
 ## Relationships
 - `src/main.rs` routes UI actions to the background Tokio thread (`mpsc::unbounded_channel`) and updates Slint strictly via `ui_weak.upgrade_in_event_loop`.

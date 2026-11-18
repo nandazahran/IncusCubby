@@ -5,19 +5,24 @@ mod settings;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use slint::{Model, ModelRc, SharedString, VecModel, Weak};
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
+use crate::incus::community::{
+    CommunityApp, CommunityAppSpec, CommunityRepo, build_container_runner_script,
+    curated_community_apps, fetch_community_app_spec, fetch_community_catalog, fetch_install_func,
+};
 use crate::incus::packages::{install_command, upgrade_command};
 use crate::incus::remote_images::{default_preset_aliases, fetch_remote_images};
 use crate::incus::{
     BridgeNat, CreateInstanceParams, ExecOutput, ImageSummary, IncusClient, IncusError,
-    InstanceSummary, NetworkSummary, ProfileSummary, StoragePoolSummary, StorageVolumeSummary,
+    InstanceSummary, NestingMode, NetworkSummary, ProfileSummary, StoragePoolSummary,
+    StorageVolumeSummary,
 };
-use crate::launcher::Ide;
 use crate::settings::{AppSettings, available_ides, available_terminals};
 
 slint::include_modules!();
@@ -38,6 +43,7 @@ enum BackendCommand {
         workspace: String,
         profiles: Vec<String>,
         cloud_init: String,
+        nesting: NestingMode,
     },
     Clone {
         source: String,
@@ -143,6 +149,23 @@ enum BackendCommand {
     DeleteImage {
         fingerprint: String,
     },
+    FetchCommunityCatalog,
+    LoadCommunityAppSpec {
+        slug: String,
+    },
+    DeployCommunityApp {
+        slug: String,
+        instance_name: String,
+        image_alias: String,
+        cpu: String,
+        memory: String,
+        nesting: NestingMode,
+    },
+    RunCommunityInInstance {
+        slug: String,
+        instance_name: String,
+        image_alias: String,
+    },
 }
 
 impl BackendCommand {
@@ -200,6 +223,18 @@ impl BackendCommand {
                 let short: String = fingerprint.chars().take(12).collect();
                 format!("Deleting cached image {short}...")
             }
+            Self::FetchCommunityCatalog => "Loading community-scripts/Incus catalog...".to_string(),
+            Self::LoadCommunityAppSpec { slug } => format!("Loading '{slug}' script..."),
+            Self::DeployCommunityApp {
+                slug,
+                instance_name,
+                ..
+            } => format!("Deploying community app '{slug}' into {instance_name}..."),
+            Self::RunCommunityInInstance {
+                slug,
+                instance_name,
+                ..
+            } => format!("Running '{slug}' script inside {instance_name}..."),
         }
     }
 }
@@ -213,18 +248,23 @@ struct InfraSnapshot {
 fn main() -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
     let app_settings = AppSettings::load();
-    init_settings_ui(&ui, &app_settings);
+    let community_catalog = Arc::new(Mutex::new(curated_community_apps()));
+    init_settings_ui(&ui, &app_settings, &community_catalog);
 
     let (tx, rx) = mpsc::unbounded_channel::<BackendCommand>();
-    spawn_backend_worker(ui.as_weak(), rx);
-    wire_ui_callbacks(&ui, &tx, app_settings);
+    spawn_backend_worker(ui.as_weak(), rx, Arc::clone(&community_catalog));
+    wire_ui_callbacks(&ui, &tx, app_settings, &community_catalog);
 
     let _ = tx.send(BackendCommand::Refresh);
     ui.run()?;
     Ok(())
 }
 
-fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings) {
+fn init_settings_ui(
+    ui: &AppWindow,
+    app_settings: &AppSettings,
+    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+) {
     let terms = available_terminals();
     let ides = available_ides();
 
@@ -235,21 +275,30 @@ fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings) {
     } else {
         "auto".to_string()
     };
-    let ide_pref =
-        if !app_settings.preferred_ide.is_empty() && ides.contains(&app_settings.preferred_ide) {
-            app_settings.preferred_ide.clone()
-        } else {
-            "auto".to_string()
-        };
+    let ide_pref = if app_settings.preferred_ide.trim().is_empty() {
+        "auto".to_string()
+    } else {
+        app_settings.preferred_ide.clone()
+    };
 
     ui.set_available_terminals(to_shared_string_model(terms));
     ui.set_available_ides(to_shared_string_model(ides));
     ui.set_preferred_terminal(term_pref.into());
     ui.set_preferred_ide(ide_pref.into());
     ui.set_remote_aliases(to_shared_string_model(default_preset_aliases()));
+
+    let apps = community_catalog
+        .lock()
+        .expect("community catalog mutex poisoned")
+        .clone();
+    apply_community_apps(ui, &apps, "");
 }
 
-fn spawn_backend_worker(ui_weak: Weak<AppWindow>, mut rx: mpsc::UnboundedReceiver<BackendCommand>) {
+fn spawn_backend_worker(
+    ui_weak: Weak<AppWindow>,
+    mut rx: mpsc::UnboundedReceiver<BackendCommand>,
+    community_catalog: Arc<Mutex<Vec<CommunityApp>>>,
+) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -264,6 +313,24 @@ fn spawn_backend_worker(ui_weak: Weak<AppWindow>, mut rx: mpsc::UnboundedReceive
 
             let mut last_instances: Option<Vec<InstanceSummary>> = None;
             let mut last_socket_err = false;
+            let mut cached_spec: Option<CommunityAppSpec> = None;
+
+            {
+                let weak_startup = ui_weak.clone();
+                let catalog_startup = Arc::clone(&community_catalog);
+                tokio::spawn(async move {
+                    if let Ok(apps) = fetch_community_catalog().await {
+                        catalog_startup
+                            .lock()
+                            .expect("community catalog mutex poisoned")
+                            .clone_from(&apps);
+                        let _ = weak_startup.upgrade_in_event_loop(move |ui| {
+                            let query = ui.get_community_search_query().to_string();
+                            apply_community_apps(&ui, &apps, &query);
+                        });
+                    }
+                });
+            }
 
             loop {
                 tokio::select! {
@@ -276,7 +343,16 @@ fn spawn_backend_worker(ui_weak: Weak<AppWindow>, mut rx: mpsc::UnboundedReceive
                             ui.set_status_message(busy_msg.into());
                         });
 
-                        handle_command(&client, cmd, &ui_weak, &mut last_instances, &mut last_socket_err).await;
+                        handle_command(
+                            &client,
+                            cmd,
+                            &ui_weak,
+                            &mut last_instances,
+                            &mut last_socket_err,
+                            &community_catalog,
+                            &mut cached_spec,
+                        )
+                        .await;
                     }
                     _ = poll_tick.tick() => {
                         match client.list_instances().await {
@@ -319,8 +395,142 @@ async fn handle_command(
     ui_weak: &Weak<AppWindow>,
     last_instances: &mut Option<Vec<InstanceSummary>>,
     last_socket_err: &mut bool,
+    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    cached_spec: &mut Option<CommunityAppSpec>,
 ) {
     match cmd {
+        BackendCommand::FetchCommunityCatalog => {
+            let res = fetch_community_catalog().await;
+            if let Ok(ref apps) = res {
+                community_catalog
+                    .lock()
+                    .expect("community catalog mutex poisoned")
+                    .clone_from(apps);
+            }
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match res {
+                    Ok(apps) => {
+                        let count = apps.len();
+                        let query = ui.get_community_search_query().to_string();
+                        apply_community_apps(&ui, &apps, &query);
+                        ui.set_status_message(format!("Loaded {count} community apps").into());
+                    }
+                    Err(err) => {
+                        ui.set_status_message(format!("Community catalog failed: {err}").into());
+                    }
+                }
+            });
+            return;
+        }
+        BackendCommand::LoadCommunityAppSpec { slug } => {
+            let res = load_or_cached_spec(&slug, community_catalog, cached_spec).await;
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match res {
+                    Ok(spec) => {
+                        ui.set_community_selected_slug(spec.slug.into());
+                        ui.set_community_app_name(spec.app_name.into());
+                        ui.set_community_description(spec.description.into());
+                        ui.set_community_tags(spec.tags.into());
+                        ui.set_community_image_alias(spec.image_alias.into());
+                        ui.set_community_cpu(spec.cpu_limit.into());
+                        ui.set_community_memory(spec.memory_limit.into());
+                        ui.set_community_nesting(spec.nesting);
+                        ui.set_community_install_script(spec.install_script.into());
+                        ui.set_community_output("".into());
+                        ui.set_status_message(format!("Loaded script '{slug}'").into());
+                    }
+                    Err(err) => {
+                        ui.set_status_message(format!("Failed loading '{slug}': {err}").into());
+                    }
+                }
+            });
+            return;
+        }
+        BackendCommand::DeployCommunityApp {
+            slug,
+            instance_name,
+            image_alias,
+            cpu,
+            memory,
+            nesting,
+        } => {
+            let deploy_res = deploy_community_sandbox(
+                client,
+                DeployCommunityRequest {
+                    slug: &slug,
+                    instance_name: &instance_name,
+                    image_alias: &image_alias,
+                    cpu: &cpu,
+                    memory: &memory,
+                    nesting,
+                },
+                community_catalog,
+                cached_spec,
+            )
+            .await;
+            let list_res = client.list_instances().await;
+            if let Ok(ref instances) = list_res {
+                *last_instances = Some(instances.clone());
+                *last_socket_err = false;
+            }
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                if let Ok(instances) = list_res {
+                    apply_instances(&ui, instances);
+                }
+                match deploy_res {
+                    Ok(out) => {
+                        ui.set_community_output(format_exec_output(&out).into());
+                        ui.set_status_message(
+                            format!(
+                                "Deployed '{slug}' -> {instance_name} (exit {})",
+                                out.exit_code
+                            )
+                            .into(),
+                        );
+                    }
+                    Err(err) => {
+                        ui.set_community_output(format!("Deploy error:\n{err:#}").into());
+                        ui.set_status_message(format!("Deploy failed: {err}").into());
+                    }
+                }
+            });
+            return;
+        }
+        BackendCommand::RunCommunityInInstance {
+            slug,
+            instance_name,
+            image_alias,
+        } => {
+            let run_res = async {
+                let spec = load_or_cached_spec(&slug, community_catalog, cached_spec).await?;
+                execute_community_install(client, &spec, &instance_name, &image_alias).await
+            }
+            .await;
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match run_res {
+                    Ok(out) => {
+                        ui.set_community_output(format_exec_output(&out).into());
+                        ui.set_status_message(
+                            format!("Ran '{slug}' in {instance_name} (exit {})", out.exit_code)
+                                .into(),
+                        );
+                    }
+                    Err(err) => {
+                        ui.set_community_output(format!("Run error:\n{err:#}").into());
+                        ui.set_status_message(format!("Community run failed: {err}").into());
+                    }
+                }
+            });
+            return;
+        }
         BackendCommand::FetchRemoteImages => {
             let res = fetch_remote_images().await;
             let weak = ui_weak.clone();
@@ -675,6 +885,115 @@ fn expand_host_path(raw: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(trimmed))
 }
 
+async fn load_or_cached_spec(
+    slug: &str,
+    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    cached_spec: &mut Option<CommunityAppSpec>,
+) -> anyhow::Result<CommunityAppSpec> {
+    if let Some(existing) = cached_spec
+        && existing.slug == slug
+    {
+        return Ok(existing.clone());
+    }
+    let (repo, description) = {
+        let guard = community_catalog
+            .lock()
+            .expect("community catalog mutex poisoned");
+        guard
+            .iter()
+            .find(|a| a.slug == slug)
+            .map_or((CommunityRepo::Incus, String::new()), |a| {
+                (a.repo, a.description.clone())
+            })
+    };
+    let spec = fetch_community_app_spec(slug, repo, &description).await?;
+    *cached_spec = Some(spec.clone());
+    Ok(spec)
+}
+
+struct DeployCommunityRequest<'a> {
+    slug: &'a str,
+    instance_name: &'a str,
+    image_alias: &'a str,
+    cpu: &'a str,
+    memory: &'a str,
+    nesting: NestingMode,
+}
+
+async fn deploy_community_sandbox(
+    client: &IncusClient,
+    req: DeployCommunityRequest<'_>,
+    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    cached_spec: &mut Option<CommunityAppSpec>,
+) -> anyhow::Result<ExecOutput> {
+    let spec = load_or_cached_spec(req.slug, community_catalog, cached_spec).await?;
+    client
+        .create_instance(CreateInstanceParams {
+            name: req.instance_name,
+            instance_type: "container",
+            image_alias: req.image_alias,
+            memory_limit: req.memory,
+            cpu_limit: req.cpu,
+            workspace_path: "",
+            profiles: Vec::new(),
+            cloud_init_user_data: "",
+            nesting: req.nesting,
+        })
+        .await?;
+    client
+        .set_instance_state(req.instance_name, "start")
+        .await?;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if let Ok(list) = client.list_instances().await
+            && list
+                .iter()
+                .any(|i| i.name == req.instance_name && i.ip != "-")
+        {
+            break;
+        }
+    }
+    execute_community_install(client, &spec, req.instance_name, req.image_alias).await
+}
+
+async fn execute_community_install(
+    client: &IncusClient,
+    spec: &CommunityAppSpec,
+    instance_name: &str,
+    image_alias: &str,
+) -> anyhow::Result<ExecOutput> {
+    let bootstrap = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        "command -v bash >/dev/null 2>&1 || (command -v apk >/dev/null 2>&1 && apk update >/dev/null && apk add --no-cache bash curl >/dev/null)".to_string(),
+    ];
+    let _ = client.exec_command(instance_name, &bootstrap).await?;
+
+    let install_func = fetch_install_func().await?;
+    let runner = build_container_runner_script(spec, instance_name, image_alias);
+
+    client
+        .push_instance_file(
+            instance_name,
+            "/tmp/incus-functions",
+            install_func.into_bytes(),
+        )
+        .await?;
+    client
+        .push_instance_file(
+            instance_name,
+            "/tmp/cubby-install.sh",
+            spec.install_script.as_bytes().to_vec(),
+        )
+        .await?;
+    client
+        .push_instance_file(instance_name, "/tmp/cubby-run.sh", runner.into_bytes())
+        .await?;
+
+    let exec_cmd = vec!["bash".to_string(), "/tmp/cubby-run.sh".to_string()];
+    Ok(client.exec_command(instance_name, &exec_cmd).await?)
+}
+
 async fn execute_instance_command(
     client: &IncusClient,
     cmd: BackendCommand,
@@ -689,6 +1008,7 @@ async fn execute_instance_command(
             workspace,
             profiles,
             cloud_init,
+            nesting,
         } => {
             client
                 .create_instance(CreateInstanceParams {
@@ -700,6 +1020,7 @@ async fn execute_instance_command(
                     workspace_path: &workspace,
                     profiles,
                     cloud_init_user_data: &cloud_init,
+                    nesting,
                 })
                 .await
         }
@@ -764,6 +1085,7 @@ fn wire_ui_callbacks(
     ui: &AppWindow,
     tx: &mpsc::UnboundedSender<BackendCommand>,
     initial_settings: AppSettings,
+    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
 ) {
     let pending_confirm: Rc<RefCell<Option<BackendCommand>>> = Rc::new(RefCell::new(None));
     let settings_state: Rc<RefCell<AppSettings>> = Rc::new(RefCell::new(initial_settings));
@@ -789,12 +1111,25 @@ fn wire_ui_callbacks(
     {
         let tx = tx.clone();
         ui.on_create_instance(
-            move |name, instance_type, image, memory, cpu, workspace, profiles_raw, cloud_init| {
+            move |name,
+                  instance_type,
+                  image,
+                  memory,
+                  cpu,
+                  workspace,
+                  profiles_raw,
+                  cloud_init,
+                  nesting| {
                 let profiles: Vec<String> = profiles_raw
                     .split(',')
                     .map(|p| p.trim().to_string())
                     .filter(|p| !p.is_empty())
                     .collect();
+                let nesting = if nesting {
+                    NestingMode::Enabled
+                } else {
+                    NestingMode::Disabled
+                };
                 let _ = tx.send(BackendCommand::Create {
                     name: name.trim().to_string(),
                     instance_type: instance_type.trim().to_string(),
@@ -804,6 +1139,7 @@ fn wire_ui_callbacks(
                     workspace: workspace.trim().to_string(),
                     profiles,
                     cloud_init: cloud_init.to_string(),
+                    nesting,
                 });
             },
         );
@@ -1248,9 +1584,9 @@ fn wire_ui_callbacks(
     {
         let weak = ui.as_weak();
         let settings = Rc::clone(&settings_state);
-        ui.on_open_codium(move |workspace_path| {
+        ui.on_open_ide(move |workspace_path| {
             let ide = settings.borrow().preferred_ide.clone();
-            if let Err(err) = launcher::open_ide(Ide::Codium, &ide, Some(workspace_path.as_str()))
+            if let Err(err) = launcher::open_ide(&ide, Some(workspace_path.as_str()))
                 && let Some(ui) = weak.upgrade()
             {
                 ui.set_status_message(err.to_string().into());
@@ -1259,14 +1595,75 @@ fn wire_ui_callbacks(
     }
 
     {
+        let tx = tx.clone();
+        ui.on_fetch_community_catalog(move || {
+            let _ = tx.send(BackendCommand::FetchCommunityCatalog);
+        });
+    }
+
+    {
         let weak = ui.as_weak();
-        let settings = Rc::clone(&settings_state);
-        ui.on_open_zed(move |workspace_path| {
-            let ide = settings.borrow().preferred_ide.clone();
-            if let Err(err) = launcher::open_ide(Ide::Zed, &ide, Some(workspace_path.as_str()))
-                && let Some(ui) = weak.upgrade()
-            {
-                ui.set_status_message(err.to_string().into());
+        let catalog = Arc::clone(community_catalog);
+        ui.on_filter_community_apps(move |query| {
+            if let Some(ui) = weak.upgrade() {
+                let apps = catalog
+                    .lock()
+                    .expect("community catalog mutex poisoned")
+                    .clone();
+                apply_community_apps(&ui, &apps, query.as_str());
+            }
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_select_community_app(move |slug| {
+            let _ = tx.send(BackendCommand::LoadCommunityAppSpec {
+                slug: slug.to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_deploy_community_app(move |slug, name, image, cpu, memory, nesting| {
+            let nesting = if nesting {
+                NestingMode::Enabled
+            } else {
+                NestingMode::Disabled
+            };
+            let _ = tx.send(BackendCommand::DeployCommunityApp {
+                slug: slug.to_string(),
+                instance_name: name.trim().to_string(),
+                image_alias: image.trim().to_string(),
+                cpu: cpu.trim().to_string(),
+                memory: memory.trim().to_string(),
+                nesting,
+            });
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let pending = Rc::clone(&pending_confirm);
+        ui.on_request_run_community_in_instance(move |slug, instance_name| {
+            if let Some(ui) = weak.upgrade() {
+                let slug = slug.to_string();
+                let inst = instance_name.to_string();
+                let image_alias = ui.get_community_image_alias().to_string();
+                let msg = format!(
+                    "Execute community-scripts '{slug}' installer inside running sandbox '{inst}'?"
+                );
+                request_confirm(
+                    &ui,
+                    &pending,
+                    &msg,
+                    BackendCommand::RunCommunityInInstance {
+                        slug,
+                        instance_name: inst,
+                        image_alias,
+                    },
+                );
             }
         });
     }
@@ -1300,11 +1697,43 @@ fn apply_instances(ui: &AppWindow, instances: Vec<InstanceSummary>) {
         .and_then(|prev| ui_rows.iter().position(|row| row.name == prev))
         .map_or(if count > 0 { 0 } else { -1 }, |i| i as i32);
 
+    let running_names: Vec<String> = ui_rows
+        .iter()
+        .filter(|r| r.is_running)
+        .map(|r| r.name.to_string())
+        .collect();
+    let current_target = ui.get_community_target_instance().to_string();
+    let next_target = if running_names.contains(&current_target) {
+        current_target
+    } else {
+        running_names.first().cloned().unwrap_or_default()
+    };
+
     let model = ModelRc::from(Rc::new(VecModel::from(ui_rows)));
     ui.set_instances(model);
+    ui.set_running_instance_names(to_shared_string_model(running_names));
+    ui.set_community_target_instance(next_target.into());
     ui.set_socket_warning("".into());
     ui.set_status_message(format!("{count} sandbox(es)").into());
     select_row(ui, next_idx);
+}
+
+fn apply_community_apps(ui: &AppWindow, apps: &[CommunityApp], query: &str) {
+    let needle = query.trim().to_ascii_lowercase();
+    let rows: Vec<UiCommunityApp> = apps
+        .iter()
+        .filter(|a| {
+            needle.is_empty()
+                || a.slug.to_ascii_lowercase().contains(&needle)
+                || a.name.to_ascii_lowercase().contains(&needle)
+        })
+        .map(|a| UiCommunityApp {
+            slug: a.slug.clone().into(),
+            name: a.name.clone().into(),
+            is_dev: a.is_dev,
+        })
+        .collect();
+    ui.set_community_apps(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
 fn apply_images(ui: &AppWindow, images: Vec<ImageSummary>) {
@@ -1390,7 +1819,7 @@ fn apply_infra(ui: &AppWindow, infra: InfraSnapshot) {
     ui.set_networks(ModelRc::from(Rc::new(VecModel::from(ui_networks))));
 }
 
-fn apply_exec_output(ui: &AppWindow, label: &str, out: &ExecOutput) {
+fn format_exec_output(out: &ExecOutput) -> String {
     let mut text = format!("[exit {}]\n", out.exit_code);
     if !out.stdout.is_empty() {
         text.push_str(&out.stdout);
@@ -1402,7 +1831,11 @@ fn apply_exec_output(ui: &AppWindow, label: &str, out: &ExecOutput) {
         text.push_str("[stderr]\n");
         text.push_str(&out.stderr);
     }
-    ui.set_exec_output(text.into());
+    text
+}
+
+fn apply_exec_output(ui: &AppWindow, label: &str, out: &ExecOutput) {
+    ui.set_exec_output(format_exec_output(out).into());
     ui.set_status_message(format!("{label} finished (exit {})", out.exit_code).into());
 }
 

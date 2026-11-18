@@ -89,6 +89,12 @@ export struct UiProfile {
     description: string,
 }
 
+export struct UiCommunityApp {
+    slug: string,
+    name: string,
+    is_dev: bool,
+}
+
 export component AppWindow inherits Window {
     title: "IncusCubby";
     preferred-width: 1120px;
@@ -103,6 +109,20 @@ export component AppWindow inherits Window {
     in property <[UiStorageVolume]> storage_volumes: [];
     in property <[UiNetwork]> networks: [];
     in property <[UiProfile]> profiles: [];
+    in property <[UiCommunityApp]> community_apps: [];
+    in-out property <string> community_search_query: "";
+    in property <[string]> running_instance_names: [];
+    in-out property <string> community_target_instance: "";
+    in property <string> community_selected_slug: "";
+    in property <string> community_app_name: "";
+    in property <string> community_description: "";
+    in property <string> community_tags: "";
+    in-out property <string> community_image_alias: "";
+    in-out property <string> community_cpu: "";
+    in-out property <string> community_memory: "";
+    in-out property <bool> community_nesting: true;
+    in property <string> community_install_script: "";
+    in property <string> community_output: "";
     in property <[string]> remote_aliases: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
     in property <[string]> profile_names: ["default"];
     in property <[string]> pool_names: ["default"];
@@ -122,7 +142,7 @@ export component AppWindow inherits Window {
 
     callback refresh();
     callback select_instance(int);
-    callback create_instance(string, string, string, string, string, string, string, string);
+    callback create_instance(string, string, string, string, string, string, string, string, bool);
     callback clone_instance(string, string);
     callback set_instance_state(string, string);
     callback update_instance_limits(string, string, string);
@@ -132,8 +152,7 @@ export component AppWindow inherits Window {
     callback add_proxy_device(string, string, string, string);
     callback remove_device(string, string);
     callback open_shell(string);
-    callback open_codium(string);
-    callback open_zed(string);
+    callback open_ide(string);
     callback create_snapshot(string, string);
     callback request_restore_snapshot(string, string);
     callback request_delete_snapshot(string, string);
@@ -154,6 +173,11 @@ export component AppWindow inherits Window {
     callback refresh_local_images();
     callback request_delete_image(string, string);
     callback save_settings(string, string);
+    callback fetch_community_catalog();
+    callback filter_community_apps(string);
+    callback select_community_app(string);
+    callback deploy_community_app(string, string, string, string, string, bool);
+    callback request_run_community_in_instance(string, string);
     callback confirm_action();
     callback cancel_confirm();
 
@@ -330,16 +354,9 @@ export component AppWindow inherits Window {
                                 }
 
                                 Button {
-                                    text: "Codium";
+                                    text: "IDE";
                                     clicked => {
-                                        root.open_codium(root.selected_instance.workspace_path);
-                                    }
-                                }
-
-                                Button {
-                                    text: "Zed";
-                                    clicked => {
-                                        root.open_zed(root.selected_instance.workspace_path);
+                                        root.open_ide(root.selected_instance.workspace_path);
                                     }
                                 }
 
@@ -829,6 +846,12 @@ export component AppWindow inherits Window {
                                     enabled: !root.busy;
                                     horizontal-stretch: 1;
                                 }
+
+                                create_nesting_check := CheckBox {
+                                    text: "Nesting";
+                                    checked: false;
+                                    enabled: !root.busy;
+                                }
                             }
                         }
                     }
@@ -860,7 +883,8 @@ export component AppWindow inherits Window {
                                     create_cpu_combo.current-value,
                                     create_ws_input.text,
                                     create_profiles_input.text,
-                                    cloud_init_edit.text
+                                    cloud_init_edit.text,
+                                    create_nesting_check.checked
                                 );
                                 create_name_input.text = "";
                             }
@@ -1149,6 +1173,182 @@ export component AppWindow inherits Window {
             }
 
             Tab {
+                title: "Community Apps";
+
+                HorizontalBox {
+                    GroupBox {
+                        title: "community-scripts/Incus";
+                        horizontal-stretch: 1;
+                        min-width: 260px;
+
+                        VerticalBox {
+                            HorizontalBox {
+                                cs_search_input := LineEdit {
+                                    text <=> root.community_search_query;
+                                    placeholder-text: "Search apps (e.g. surfsense, t3code, docker)";
+                                    horizontal-stretch: 1;
+                                    edited(q) => {
+                                        root.filter_community_apps(q);
+                                    }
+                                }
+
+                                Button {
+                                    text: "Reload";
+                                    enabled: !root.busy;
+                                    clicked => {
+                                        root.fetch_community_catalog();
+                                    }
+                                }
+                            }
+
+                            if root.community_apps.length == 0: Text {
+                                text: "No matching community apps.";
+                            }
+
+                            if root.community_apps.length > 0: ListView {
+                                vertical-stretch: 1;
+                                for app in root.community_apps: HorizontalBox {
+                                    Button {
+                                        text: (app.slug == root.community_selected_slug ? "> " : "")
+                                            + (app.is_dev ? "[dev] " : "")
+                                            + app.name
+                                            + " (" + app.slug + ")";
+                                        horizontal-stretch: 1;
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.select_community_app(app.slug);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "App Script & Deploy";
+                        horizontal-stretch: 2;
+
+                        if root.community_selected_slug == "": Text {
+                            text: "Select a community app to inspect its ct/install scripts before deploying.";
+                        }
+
+                        if root.community_selected_slug != "": VerticalBox {
+                            HorizontalBox {
+                                Text {
+                                    text: root.community_app_name + " (" + root.community_selected_slug + ")";
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                }
+
+                                if root.community_tags != "": Text {
+                                    text: "[" + root.community_tags + "]";
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.community_description != "": Text {
+                                text: root.community_description;
+                                wrap: word-wrap;
+                            }
+
+                            HorizontalBox {
+                                cs_name_input := LineEdit {
+                                    placeholder-text: "New sandbox name (e.g. " + root.community_selected_slug + ")";
+                                    enabled: !root.busy;
+                                    horizontal-stretch: 1;
+                                }
+
+                                LineEdit {
+                                    text <=> root.community_image_alias;
+                                    placeholder-text: "Image alias";
+                                    enabled: !root.busy;
+                                }
+
+                                LineEdit {
+                                    text <=> root.community_cpu;
+                                    placeholder-text: "CPU";
+                                    enabled: !root.busy;
+                                }
+
+                                LineEdit {
+                                    text <=> root.community_memory;
+                                    placeholder-text: "Memory";
+                                    enabled: !root.busy;
+                                }
+
+                                CheckBox {
+                                    text: "Nesting";
+                                    checked <=> root.community_nesting;
+                                    enabled: !root.busy;
+                                }
+
+                                Button {
+                                    text: "Deploy New";
+                                    enabled: !root.busy && cs_name_input.text != "" && root.community_image_alias != "";
+                                    clicked => {
+                                        root.deploy_community_app(
+                                            root.community_selected_slug,
+                                            cs_name_input.text,
+                                            root.community_image_alias,
+                                            root.community_cpu,
+                                            root.community_memory,
+                                            root.community_nesting
+                                        );
+                                        cs_name_input.text = "";
+                                    }
+                                }
+                            }
+
+                            HorizontalBox {
+                                Text {
+                                    text: "Or run in running sandbox:";
+                                    vertical-alignment: center;
+                                }
+
+                                cs_target_combo := ComboBox {
+                                    model: root.running_instance_names;
+                                    current-value <=> root.community_target_instance;
+                                    enabled: !root.busy;
+                                    horizontal-stretch: 1;
+                                }
+
+                                Button {
+                                    text: "Run in Selected";
+                                    enabled: !root.busy && root.community_target_instance != "";
+                                    clicked => {
+                                        root.request_run_community_in_instance(
+                                            root.community_selected_slug,
+                                            root.community_target_instance
+                                        );
+                                    }
+                                }
+                            }
+
+                            TabWidget {
+                                vertical-stretch: 1;
+
+                                Tab {
+                                    title: "Install Script Preview";
+                                    TextEdit {
+                                        text: root.community_install_script;
+                                        read-only: true;
+                                    }
+                                }
+
+                                Tab {
+                                    title: "Deploy Output";
+                                    TextEdit {
+                                        text: root.community_output;
+                                        read-only: true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Tab {
                 title: "Settings";
 
                 VerticalBox {
@@ -1175,7 +1375,16 @@ export component AppWindow inherits Window {
 
                                 ide_combo := ComboBox {
                                     model: root.available_ides;
-                                    current-value <=> root.preferred_ide;
+                                    current-value: "auto";
+                                    selected(val) => {
+                                        root.preferred_ide = val;
+                                    }
+                                }
+
+                                ide_input := LineEdit {
+                                    text <=> root.preferred_ide;
+                                    placeholder-text: "Command (auto or executable)";
+                                    horizontal-stretch: 1;
                                 }
                             }
 
