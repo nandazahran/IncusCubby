@@ -6,14 +6,13 @@ _Last updated: 2026-11-18_
 Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC developer sandboxes over `/var/lib/incus/unix.socket`.
 
 ## Recent issues
-- No issues logged yet.
+- [DONE] #0001 CI Rust 1.100.0 clippy failed on Option::map().unwrap_or_default() and assert_is_empty in tests [src/settings.rs:39] -> Used Option::map_or_default and assert_ne! / Vec::first; CI run 44296315315 passed all checks [src/settings.rs:39] (fixed)
 
 ## Decisions
 - Use custom-styled Slint Precision Instrument components (Geist/Geist Mono fonts, Dark Graphite & Light Studio themes, Simple & Advanced modes) directly implementing the Doop design system without std-widgets styling lock-in [ui/app.slint]
 - Use Linux-only GitHub Actions CI (with non-code paths-ignore and cargo-deny) and x86_64/aarch64 AppImage+tarball release workflow modeled on KineAnchor [.github/workflows/]
 
 ## Notes
-- gotcha: Incus PATCH /1.0/instances/{name} rejects null device entries ("type <nil> is not supported in *api.DevicesMap"); use GET + PUT InstancePut to remove devices [src/incus/client.rs:140]
 - New feature: Add workspace mounts, live polling, codium launcher, and delete confirmations [src/incus/client.rs]
 - New feature: Add DistroShelf/BoxBuddyRS features: clone, freeze/restart, exec packages, mounts/proxies, image cache, and settings [src/incus/client.rs]
 - New feature: Add Incus Web UI features, harden Rust idioms, and enable clippy pedantic lints [src/incus/client.rs]
@@ -23,6 +22,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - New feature: Add About & Legal tab and set license to GPL-3.0-or-later [src/main.rs]
 - Implemented Doop Precision Instrument UI in Slint across ui/theme.slint, ui/components.slint, ui/advanced.slint, ui/simple.slint, and ui/app.slint with bundled Geist/Geist Mono TTFs and 18 local distro/app SVG icons [ui/theme.slint]
 - gotcha: IncusCubby uses let_chains (Rust 1.88+), cmake (aws-lc-sys), libfontconfig1-dev (yeslogic-fontconfig-sys), and Slint GPL-3.0-only in deny.toml [.github/workflows/ci.yml]
+- New feature: Add GitHub Actions CI/CD, Linux packaging, and cargo-deny gate [packaging/linux/build-appimage.sh]
 
 ## Key files
 - `.gitattributes`

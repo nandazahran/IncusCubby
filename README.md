@@ -42,7 +42,7 @@ Verify downloaded artifacts against `SHA256SUMS.txt` before installing. Arch/Cac
 
 ### Building from source
 
-Requires **Rust 1.88+** (`edition = "2024"` + `let_chains`).
+Requires **Rust 1.91+** (`edition = "2024"`).
 
 ```bash
 git clone https://github.com/nandazahran/IncusCubby.git
