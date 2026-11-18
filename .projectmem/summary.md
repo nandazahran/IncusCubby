@@ -9,10 +9,9 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - No issues logged yet.
 
 ## Decisions
-- No decisions logged yet.
+- Use custom-styled Slint Precision Instrument components (Geist/Geist Mono fonts, Dark Graphite & Light Studio themes, Simple & Advanced modes) directly implementing the Doop design system without std-widgets styling lock-in [ui/app.slint]
 
 ## Notes
-- New feature: Add Incus sandbox manager GUI and Unix socket client [build.rs]
 - gotcha: Incus REST API serializes Go nil slices/maps (config, addresses) as JSON null; use null_to_default deserializer and i64 for memory usage [src/incus/models.rs:4]
 - gotcha: Incus PATCH /1.0/instances/{name} rejects null device entries ("type <nil> is not supported in *api.DevicesMap"); use GET + PUT InstancePut to remove devices [src/incus/client.rs:140]
 - New feature: Add workspace mounts, live polling, codium launcher, and delete confirmations [src/incus/client.rs]
@@ -22,6 +21,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - New feature: Add documentation suite for IncusCubby [CONTRIBUTING.md]
 - gotcha: community-scripts/Incus only mirrors stable ProxmoxVE scripts; dev/new apps like surfsense and t3code live in community-scripts/DevScripts and are listed on community-scripts.org [src/incus/community.rs:1]
 - New feature: Add About & Legal tab and set license to GPL-3.0-or-later [src/main.rs]
+- Implemented Doop Precision Instrument UI in Slint across ui/theme.slint, ui/components.slint, ui/advanced.slint, ui/simple.slint, and ui/app.slint with bundled Geist/Geist Mono TTFs and 18 local distro/app SVG icons [ui/theme.slint]
 
 ## Key files
 - `.gitattributes`

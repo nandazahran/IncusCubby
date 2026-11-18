@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct AppSettings {
     pub preferred_terminal: String,
     pub preferred_ide: String,
+    pub simple_mode: bool,
+    pub light_theme: bool,
 }
 
 impl AppSettings {
@@ -26,6 +28,13 @@ impl AppSettings {
         )
     }
 
+    pub fn display_config_path() -> String {
+        Self::config_path().map_or_else(
+            || "~/.config/incus-cubby/settings.json".to_string(),
+            |p| p.display().to_string(),
+        )
+    }
+
     pub fn load() -> Self {
         Self::config_path()
             .map(|path| Self::load_from(&path))
@@ -36,6 +45,12 @@ impl AppSettings {
         let path = Self::config_path()
             .context("Cannot resolve config directory (XDG_CONFIG_HOME and HOME are unset)")?;
         self.save_to(&path)
+    }
+
+    pub fn reset_file() -> anyhow::Result<()> {
+        let path = Self::config_path()
+            .context("Cannot resolve config directory (XDG_CONFIG_HOME and HOME are unset)")?;
+        Self::delete_from(&path)
     }
 
     pub fn load_from(path: &Path) -> Self {
@@ -55,6 +70,14 @@ impl AppSettings {
         fs::write(path, json)?;
         Ok(())
     }
+
+    pub fn delete_from(path: &Path) -> anyhow::Result<()> {
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
 }
 
 fn exists_in_path(bin: &str) -> bool {
@@ -64,20 +87,22 @@ fn exists_in_path(bin: &str) -> bool {
     env::split_paths(&path_var).any(|dir| dir.join(bin).is_file())
 }
 
+pub const TERMINAL_CANDIDATES: &[&str] = &[
+    "x-terminal-emulator",
+    "gnome-terminal",
+    "konsole",
+    "ghostty",
+    "alacritty",
+    "kitty",
+    "foot",
+    "wezterm",
+    "xfce4-terminal",
+    "xterm",
+];
+
 pub fn available_terminals() -> Vec<String> {
-    const TERMINALS: &[&str] = &[
-        "x-terminal-emulator",
-        "gnome-terminal",
-        "konsole",
-        "alacritty",
-        "kitty",
-        "foot",
-        "wezterm",
-        "xfce4-terminal",
-        "xterm",
-    ];
     let mut result = vec!["auto".to_string()];
-    for &name in TERMINALS {
+    for &name in TERMINAL_CANDIDATES {
         if exists_in_path(name) {
             result.push(name.to_string());
         }
@@ -97,6 +122,73 @@ pub fn available_ides() -> Vec<String> {
         }
     }
     result
+}
+
+#[must_use]
+pub fn display_terminal_label(preferred_terminal: &str) -> String {
+    let pref = preferred_terminal.trim();
+    let resolved = if !pref.is_empty() && pref != "auto" {
+        Some(pref.to_string())
+    } else if let Ok(env_term) = env::var("TERMINAL")
+        && !env_term.trim().is_empty()
+        && exists_in_path(env_term.trim())
+    {
+        Some(env_term.trim().to_string())
+    } else {
+        TERMINAL_CANDIDATES
+            .iter()
+            .find(|&&name| exists_in_path(name))
+            .map(|&s| s.to_string())
+    };
+    match resolved.as_deref() {
+        Some("x-terminal-emulator") => "System Terminal".to_string(),
+        Some("gnome-terminal") => "GNOME Terminal".to_string(),
+        Some("xfce4-terminal") => "Xfce Terminal".to_string(),
+        Some("ghostty") => "Ghostty".to_string(),
+        Some("alacritty") => "Alacritty".to_string(),
+        Some("konsole") => "Konsole".to_string(),
+        Some("wezterm") => "WezTerm".to_string(),
+        Some("kitty") => "Kitty".to_string(),
+        Some("foot") => "Foot".to_string(),
+        Some("xterm") => "XTerm".to_string(),
+        Some(other) => Path::new(other)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(other)
+            .to_string(),
+        None => "Terminal".to_string(),
+    }
+}
+
+#[must_use]
+pub fn display_ide_label(preferred_ide: &str) -> String {
+    let pref = preferred_ide.trim();
+    let resolved = if !pref.is_empty() && pref != "auto" {
+        Some(pref)
+    } else {
+        IDE_CANDIDATES
+            .iter()
+            .copied()
+            .find(|name| exists_in_path(name))
+    };
+    let Some(bin) = resolved else {
+        return "IDE".to_string();
+    };
+    let base = Path::new(bin)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(bin);
+    match base {
+        "codium" => "Codium".to_string(),
+        "code" => "VS Code".to_string(),
+        "zed" | "zeditor" => "Zed".to_string(),
+        "kate" => "Kate".to_string(),
+        "subl" => "Sublime".to_string(),
+        "hx" => "Helix".to_string(),
+        "nvim" => "Neovim".to_string(),
+        "emacs" => "Emacs".to_string(),
+        other => other.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -120,15 +212,50 @@ mod tests {
         let settings = AppSettings {
             preferred_terminal: "alacritty".to_string(),
             preferred_ide: "zeditor".to_string(),
+            simple_mode: true,
+            light_theme: true,
         };
 
         settings.save_to(&path).expect("save_to should succeed");
         let loaded = AppSettings::load_from(&path);
         assert_eq!(loaded, settings);
 
+        AppSettings::delete_from(&path).expect("delete_from should succeed");
+        assert_eq!(AppSettings::load_from(&path), AppSettings::default());
+        AppSettings::delete_from(&path).expect("deleting missing settings should be a no-op");
+
         if let Some(dir) = path.parent() {
             let _ = fs::remove_dir_all(dir);
         }
+    }
+
+    #[test]
+    fn load_from_legacy_json_defaults_new_fields() {
+        let path = temp_settings_path("legacy");
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(
+            &path,
+            r#"{"preferred_terminal":"kitty","preferred_ide":"codium"}"#,
+        )
+        .unwrap();
+        let loaded = AppSettings::load_from(&path);
+        assert_eq!(loaded.preferred_terminal, "kitty");
+        assert_eq!(loaded.preferred_ide, "codium");
+        assert!(!loaded.simple_mode);
+        assert!(!loaded.light_theme);
+
+        if let Some(dir) = path.parent() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn display_labels_format_known_tools() {
+        assert_eq!(display_ide_label("zeditor"), "Zed");
+        assert_eq!(display_ide_label("codium"), "Codium");
+        assert_eq!(display_terminal_label("ghostty"), "Ghostty");
     }
 
     #[test]

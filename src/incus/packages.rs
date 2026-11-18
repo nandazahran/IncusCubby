@@ -1,3 +1,16 @@
+#[must_use]
+pub fn package_manager_label(image_os: &str) -> &'static str {
+    let os = image_os.trim().to_ascii_lowercase();
+    match os.as_str() {
+        "debian" | "ubuntu" => "apt",
+        "alpine" => "apk",
+        "archlinux" | "arch" => "pacman",
+        "fedora" | "almalinux" | "rocky" | "rockylinux" | "centos" => "dnf",
+        s if s.starts_with("opensuse") => "zypper",
+        _ => "",
+    }
+}
+
 pub fn upgrade_command(image_os: &str) -> Option<Vec<String>> {
     let os = image_os.trim().to_ascii_lowercase();
     let args: Vec<&str> = match os.as_str() {

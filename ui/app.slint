@@ -1,114 +1,73 @@
+import { Palette } from "std-widgets.slint";
 import {
-    Button,
-    CheckBox,
-    ComboBox,
-    GroupBox,
-    HorizontalBox,
-    LineEdit,
-    ListView,
-    TabWidget,
-    TextEdit,
-    VerticalBox,
-} from "std-widgets.slint";
+    CubbyTheme,
+    UiCommunityApp,
+    UiImage,
+    UiInstance,
+    UiNetwork,
+    UiNetworkLease,
+    UiProfile,
+    UiProxy,
+    UiRemoteAlias,
+    UiSnapshot,
+    UiStoragePool,
+    UiStorageVolume,
+    UiMount,
+} from "theme.slint";
+import { AdvancedShell } from "advanced.slint";
+import { SimpleShell } from "simple.slint";
 
-export struct UiSnapshot {
-    name: string,
-    created_at: string,
-}
-
-export struct UiMount {
-    name: string,
-    host_path: string,
-    container_path: string,
-}
-
-export struct UiProxy {
-    name: string,
-    listen: string,
-    connect: string,
-}
-
-export struct UiInstance {
-    name: string,
-    status: string,
-    instance_type: string,
-    arch: string,
-    image: string,
-    image_os: string,
-    ip: string,
-    memory: string,
-    cpu: string,
-    profiles: string,
-    workspace_path: string,
-    cpu_usage_display: string,
-    disk_usage_display: string,
-    net_rx_display: string,
-    net_tx_display: string,
-    processes_display: string,
-    is_running: bool,
-    is_frozen: bool,
-    snapshots: [UiSnapshot],
-    mounts: [UiMount],
-    proxies: [UiProxy],
-}
-
-export struct UiImage {
-    fingerprint: string,
-    short_fingerprint: string,
-    alias: string,
-    description: string,
-    architecture: string,
-    size_display: string,
-}
-
-export struct UiStoragePool {
-    name: string,
-    driver: string,
-    status: string,
-    used_display: string,
-    total_display: string,
-}
-
-export struct UiStorageVolume {
-    name: string,
-    pool: string,
-    content_type: string,
-}
-
-export struct UiNetwork {
-    name: string,
-    net_type: string,
-    managed: bool,
-    ipv4: string,
-    nat: bool,
-    leases_display: string,
-}
-
-export struct UiProfile {
-    name: string,
-    description: string,
-}
-
-export struct UiCommunityApp {
-    slug: string,
-    name: string,
-    is_dev: bool,
+export {
+    CubbyTheme,
+    UiSnapshot,
+    UiMount,
+    UiProxy,
+    UiInstance,
+    UiImage,
+    UiRemoteAlias,
+    UiStoragePool,
+    UiStorageVolume,
+    UiNetworkLease,
+    UiNetwork,
+    UiProfile,
+    UiCommunityApp,
 }
 
 export component AppWindow inherits Window {
     title: "IncusCubby";
-    preferred-width: 1120px;
-    preferred-height: 800px;
+    icon: @image-url("icons/generic.svg");
+    preferred-width: root.simple_mode ? 520px : 1120px;
+    preferred-height: root.simple_mode ? 580px : 760px;
+    min-width: root.simple_mode ? 480px : 960px;
+    min-height: root.simple_mode ? 520px : 640px;
+    background: CubbyTheme.bg;
+    default-font-family: CubbyTheme.font_sans;
+
+    in-out property <bool> simple_mode: false;
+    in-out property <bool> light_theme <=> CubbyTheme.is_light;
+    in-out property <string> active_tab: "sandboxes";
+    in-out property <string> simple_view: "hub";
 
     in property <[UiInstance]> instances: [];
+    in property <int> total_instance_count: 0;
+    in property <string> running_count_summary: "0 running";
     in-out property <int> selected_index: -1;
     in property <bool> has_selection: false;
     in property <UiInstance> selected_instance;
+    in-out property <string> sandbox_search_query: "";
+    in-out property <string> edit_limit_cpu: "";
+    in-out property <string> edit_limit_mem: "";
+
     in property <[UiImage]> local_images: [];
+    in-out property <string> image_search_query: "";
+    in property <[UiRemoteAlias]> remote_aliases: [];
+    in-out property <string> remote_search_query: "";
+
     in property <[UiStoragePool]> storage_pools: [];
     in property <[UiStorageVolume]> storage_volumes: [];
     in property <[UiNetwork]> networks: [];
     in property <[UiProfile]> profiles: [];
+
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
@@ -119,18 +78,21 @@ export component AppWindow inherits Window {
     in-out property <string> create_workspace: "";
     in-out property <bool> create_nesting: false;
     in-out property <string> create_cloud_init: "";
-    in-out property <string> remote_search_query: "";
+
     in property <[UiCommunityApp]> community_apps: [];
     in-out property <string> community_search_query: "";
+    in-out property <string> community_repo_filter: "all";
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_tags: "";
+    in property <bool> community_is_dev: false;
+    in property <string> community_source_repo: "";
     in property <string> community_install_script: "";
     in property <string> community_output: "";
-    in property <[string]> remote_aliases: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
+
     in property <[string]> profile_names: ["default"];
     in property <[string]> pool_names: ["default"];
     in property <[string]> instance_logs: [];
@@ -139,8 +101,13 @@ export component AppWindow inherits Window {
     in property <[string]> available_ides: ["auto"];
     in-out property <string> preferred_terminal: "auto";
     in-out property <string> preferred_ide: "auto";
+    in property <string> resolved_terminal_name: "Terminal";
+    in property <string> resolved_ide_name: "IDE";
+    in property <string> settings_file_path: "";
 
     in property <bool> busy: false;
+    in property <bool> socket_connected: false;
+    in property <bool> status_is_idle: true;
     in property <string> status_message: "";
     in property <string> socket_warning: "";
     in property <string> confirm_message: "";
@@ -152,7 +119,11 @@ export component AppWindow inherits Window {
     in property <string> about_license_text: "";
 
     callback refresh();
+    callback toggle_simple_mode(bool);
+    callback toggle_theme(bool);
+    callback filter_sandboxes(string);
     callback select_instance(int);
+    callback select_instance_by_name(string);
     callback create_instance(string, string, string, string, string, string, string, string, bool);
     callback clone_instance(string, string);
     callback set_instance_state(string, string);
@@ -182,1326 +153,208 @@ export component AppWindow inherits Window {
     callback request_delete_profile(string);
     callback fetch_remote_images();
     callback filter_remote_aliases(string);
+    callback filter_local_images(string);
     callback refresh_local_images();
     callback request_delete_image(string, string);
     callback save_settings(string, string);
+    callback request_reset_settings();
     callback fetch_community_catalog();
     callback filter_community_apps(string);
     callback select_community_app(string);
     callback deploy_community_app(string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
+    callback browse_workspace_folder();
+    callback open_url(string);
     callback confirm_action();
     callback cancel_confirm();
 
-    VerticalBox {
-        HorizontalBox {
-            Text {
-                text: "IncusCubby";
-                font-size: 18px;
-                font-weight: 700;
-                vertical-alignment: center;
-            }
-
-            Rectangle {
-                horizontal-stretch: 1;
-            }
-
-            if root.status_message != "": Text {
-                text: root.status_message;
-                vertical-alignment: center;
-            }
-
-            Button {
-                text: root.busy ? "Working..." : "Refresh";
-                enabled: !root.busy;
-                clicked => {
-                    root.refresh();
-                }
-            }
-        }
-
-        if root.socket_warning != "": GroupBox {
-            title: "Incus Socket Warning";
-            Text {
-                text: root.socket_warning;
-                wrap: word-wrap;
-            }
-        }
-
-        if root.confirm_message != "": GroupBox {
-            title: "Confirm Action";
-            HorizontalBox {
-                Text {
-                    text: root.confirm_message;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    wrap: word-wrap;
-                }
-
-                Button {
-                    text: "Confirm";
-                    enabled: !root.busy;
-                    clicked => {
-                        root.confirm_action();
-                    }
-                }
-
-                Button {
-                    text: "Cancel";
-                    clicked => {
-                        root.cancel_confirm();
-                    }
-                }
-            }
-        }
-
-        TabWidget {
-            vertical-stretch: 1;
-
-            Tab {
-                title: "Sandboxes";
-
-                HorizontalBox {
-                    GroupBox {
-                        title: "Sandboxes";
-                        horizontal-stretch: 1;
-                        min-width: 250px;
-
-                        if root.instances.length == 0: Text {
-                            text: "No sandboxes found.";
-                        }
-
-                        if root.instances.length > 0: ListView {
-                            for inst[idx] in root.instances: HorizontalBox {
-                                Button {
-                                    text: (idx == root.selected_index ? "> " : "") + inst.name + " [" + inst.status + "]";
-                                    horizontal-stretch: 1;
-                                    clicked => {
-                                        root.select_instance(idx);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    GroupBox {
-                        title: "Details";
-                        horizontal-stretch: 2;
-
-                        if !root.has_selection: Text {
-                            text: "Select a sandbox from the list.";
-                        }
-
-                        if root.has_selection: VerticalBox {
-                            HorizontalBox {
-                                Text {
-                                    text: root.selected_instance.name;
-                                    font-size: 16px;
-                                    font-weight: 700;
-                                }
-
-                                Text {
-                                    text: "(" + root.selected_instance.status + ", " + root.selected_instance.instance_type + ")";
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            Text {
-                                text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch + " | Profiles: " + root.selected_instance.profiles;
-                            }
-
-                            Text {
-                                text: "IP: " + root.selected_instance.ip + " | CPU Limit: " + root.selected_instance.cpu + " | Memory: " + root.selected_instance.memory;
-                            }
-
-                            Text {
-                                text: "Telemetry — CPU time: " + root.selected_instance.cpu_usage_display
-                                    + " | Disk: " + root.selected_instance.disk_usage_display
-                                    + " | Net RX/TX: " + root.selected_instance.net_rx_display + " / " + root.selected_instance.net_tx_display
-                                    + " | Procs: " + root.selected_instance.processes_display;
-                            }
-
-                            HorizontalBox {
-                                Button {
-                                    text: "Start";
-                                    enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
-                                    clicked => {
-                                        root.set_instance_state(root.selected_instance.name, "start");
-                                    }
-                                }
-
-                                Button {
-                                    text: "Stop";
-                                    enabled: !root.busy && (root.selected_instance.is_running || root.selected_instance.is_frozen);
-                                    clicked => {
-                                        root.set_instance_state(root.selected_instance.name, "stop");
-                                    }
-                                }
-
-                                Button {
-                                    text: "Restart";
-                                    enabled: !root.busy && root.selected_instance.is_running;
-                                    clicked => {
-                                        root.set_instance_state(root.selected_instance.name, "restart");
-                                    }
-                                }
-
-                                Button {
-                                    text: root.selected_instance.is_frozen ? "Unfreeze" : "Freeze";
-                                    enabled: !root.busy && (root.selected_instance.is_running || root.selected_instance.is_frozen);
-                                    clicked => {
-                                        root.set_instance_state(
-                                            root.selected_instance.name,
-                                            root.selected_instance.is_frozen ? "unfreeze" : "freeze"
-                                        );
-                                    }
-                                }
-
-                                Button {
-                                    text: "Shell";
-                                    enabled: root.selected_instance.is_running;
-                                    clicked => {
-                                        root.open_shell(root.selected_instance.name);
-                                    }
-                                }
-
-                                Button {
-                                    text: "IDE";
-                                    clicked => {
-                                        root.open_ide(root.selected_instance.workspace_path);
-                                    }
-                                }
-
-                                Button {
-                                    text: "Delete";
-                                    enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
-                                    clicked => {
-                                        root.request_delete_instance(root.selected_instance.name);
-                                    }
-                                }
-                            }
-
-                            TabWidget {
-                                vertical-stretch: 1;
-
-                                Tab {
-                                    title: "Clone, Limits & Packages";
-
-                                    VerticalBox {
-                                        HorizontalBox {
-                                            GroupBox {
-                                                title: "Clone (CoW)";
-                                                horizontal-stretch: 1;
-                                                HorizontalBox {
-                                                    clone_input := LineEdit {
-                                                        placeholder-text: "New sandbox name";
-                                                        enabled: !root.busy;
-                                                        horizontal-stretch: 1;
-                                                    }
-
-                                                    Button {
-                                                        text: "Clone";
-                                                        enabled: !root.busy && clone_input.text != "";
-                                                        clicked => {
-                                                            root.clone_instance(root.selected_instance.name, clone_input.text);
-                                                            clone_input.text = "";
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            GroupBox {
-                                                title: "Live Limits";
-                                                horizontal-stretch: 1;
-                                                HorizontalBox {
-                                                    limit_cpu_input := LineEdit {
-                                                        placeholder-text: "CPU (e.g. 2)";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    limit_mem_input := LineEdit {
-                                                        placeholder-text: "Memory (e.g. 4GiB)";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    Button {
-                                                        text: "Apply";
-                                                        enabled: !root.busy;
-                                                        clicked => {
-                                                            root.update_instance_limits(
-                                                                root.selected_instance.name,
-                                                                limit_cpu_input.text,
-                                                                limit_mem_input.text
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        GroupBox {
-                                            title: "Packages (" + (root.selected_instance.image_os != "" ? root.selected_instance.image_os : "unknown OS") + ")";
-                                            vertical-stretch: 1;
-
-                                            VerticalBox {
-                                                HorizontalBox {
-                                                    Button {
-                                                        text: "Upgrade All Packages";
-                                                        enabled: !root.busy && root.selected_instance.is_running;
-                                                        clicked => {
-                                                            root.upgrade_packages(root.selected_instance.name, root.selected_instance.image_os);
-                                                        }
-                                                    }
-
-                                                    pkg_input := LineEdit {
-                                                        placeholder-text: "Packages to install (e.g. git curl ripgrep)";
-                                                        enabled: !root.busy && root.selected_instance.is_running;
-                                                        horizontal-stretch: 1;
-                                                    }
-
-                                                    Button {
-                                                        text: "Install";
-                                                        enabled: !root.busy && root.selected_instance.is_running && pkg_input.text != "";
-                                                        clicked => {
-                                                            root.install_packages(root.selected_instance.name, root.selected_instance.image_os, pkg_input.text);
-                                                            pkg_input.text = "";
-                                                        }
-                                                    }
-                                                }
-
-                                                if root.exec_output != "": TextEdit {
-                                                    text: root.exec_output;
-                                                    read-only: true;
-                                                    vertical-stretch: 1;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Tab {
-                                    title: "Mounts & Ports";
-
-                                    VerticalBox {
-                                        GroupBox {
-                                            title: "Disk Mounts (Host Path or Custom Volume)";
-                                            vertical-stretch: 1;
-
-                                            VerticalBox {
-                                                HorizontalBox {
-                                                    mount_name_input := LineEdit {
-                                                        placeholder-text: "Device name";
-                                                        text: "workspace";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    mount_host_input := LineEdit {
-                                                        placeholder-text: "Host dir (~/app) or volume name";
-                                                        enabled: !root.busy;
-                                                        horizontal-stretch: 1;
-                                                    }
-
-                                                    mount_ctr_input := LineEdit {
-                                                        placeholder-text: "Container path";
-                                                        text: "/workspace";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    Button {
-                                                        text: "Host Mount";
-                                                        enabled: !root.busy && mount_name_input.text != "" && mount_host_input.text != "" && mount_ctr_input.text != "";
-                                                        clicked => {
-                                                            root.add_disk_mount(
-                                                                root.selected_instance.name,
-                                                                mount_name_input.text,
-                                                                mount_host_input.text,
-                                                                mount_ctr_input.text
-                                                            );
-                                                        }
-                                                    }
-
-                                                    Button {
-                                                        text: "Attach Volume";
-                                                        enabled: !root.busy && mount_name_input.text != "" && mount_host_input.text != "" && mount_ctr_input.text != "";
-                                                        clicked => {
-                                                            root.attach_custom_volume(
-                                                                root.selected_instance.name,
-                                                                mount_name_input.text,
-                                                                "default",
-                                                                mount_host_input.text,
-                                                                mount_ctr_input.text
-                                                            );
-                                                        }
-                                                    }
-                                                }
-
-                                                if root.selected_instance.mounts.length == 0: Text {
-                                                    text: "No disk mounts.";
-                                                }
-
-                                                if root.selected_instance.mounts.length > 0: ListView {
-                                                    for m in root.selected_instance.mounts: HorizontalBox {
-                                                        Text {
-                                                            text: m.name + ": " + m.host_path + " -> " + m.container_path;
-                                                            vertical-alignment: center;
-                                                            horizontal-stretch: 1;
-                                                        }
-
-                                                        Button {
-                                                            text: "Remove";
-                                                            enabled: !root.busy;
-                                                            clicked => {
-                                                                root.remove_device(root.selected_instance.name, m.name);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        GroupBox {
-                                            title: "Port Forwarding (Proxy Devices)";
-                                            vertical-stretch: 1;
-
-                                            VerticalBox {
-                                                HorizontalBox {
-                                                    proxy_name_input := LineEdit {
-                                                        placeholder-text: "Name (e.g. web)";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    proxy_host_port := LineEdit {
-                                                        placeholder-text: "Host port (3000)";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    proxy_ctr_port := LineEdit {
-                                                        placeholder-text: "Container port (3000)";
-                                                        enabled: !root.busy;
-                                                    }
-
-                                                    Button {
-                                                        text: "Forward Port";
-                                                        enabled: !root.busy && proxy_name_input.text != "" && proxy_host_port.text != "" && proxy_ctr_port.text != "";
-                                                        clicked => {
-                                                            root.add_proxy_device(
-                                                                root.selected_instance.name,
-                                                                proxy_name_input.text,
-                                                                proxy_host_port.text,
-                                                                proxy_ctr_port.text
-                                                            );
-                                                            proxy_name_input.text = "";
-                                                            proxy_host_port.text = "";
-                                                            proxy_ctr_port.text = "";
-                                                        }
-                                                    }
-                                                }
-
-                                                if root.selected_instance.proxies.length == 0: Text {
-                                                    text: "No port forwards.";
-                                                }
-
-                                                if root.selected_instance.proxies.length > 0: ListView {
-                                                    for p in root.selected_instance.proxies: HorizontalBox {
-                                                        Text {
-                                                            text: p.name + ": " + p.listen + " -> " + p.connect;
-                                                            vertical-alignment: center;
-                                                            horizontal-stretch: 1;
-                                                        }
-
-                                                        Button {
-                                                            text: "Remove";
-                                                            enabled: !root.busy;
-                                                            clicked => {
-                                                                root.remove_device(root.selected_instance.name, p.name);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Tab {
-                                    title: "Snapshots";
-
-                                    VerticalBox {
-                                        HorizontalBox {
-                                            snap_input := LineEdit {
-                                                placeholder-text: "Snapshot name (e.g. clean-base)";
-                                                enabled: !root.busy;
-                                            }
-
-                                            Button {
-                                                text: "Take Snapshot";
-                                                enabled: !root.busy && snap_input.text != "";
-                                                clicked => {
-                                                    root.create_snapshot(root.selected_instance.name, snap_input.text);
-                                                    snap_input.text = "";
-                                                }
-                                            }
-                                        }
-
-                                        if root.selected_instance.snapshots.length == 0: Text {
-                                            text: "No snapshots.";
-                                        }
-
-                                        if root.selected_instance.snapshots.length > 0: ListView {
-                                            for snap in root.selected_instance.snapshots: HorizontalBox {
-                                                Text {
-                                                    text: snap.name + " (" + snap.created_at + ")";
-                                                    vertical-alignment: center;
-                                                    horizontal-stretch: 1;
-                                                }
-
-                                                Button {
-                                                    text: "Restore";
-                                                    enabled: !root.busy;
-                                                    clicked => {
-                                                        root.request_restore_snapshot(root.selected_instance.name, snap.name);
-                                                    }
-                                                }
-
-                                                Button {
-                                                    text: "Delete";
-                                                    enabled: !root.busy;
-                                                    clicked => {
-                                                        root.request_delete_snapshot(root.selected_instance.name, snap.name);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Tab {
-                                    title: "Logs & Files";
-
-                                    VerticalBox {
-                                        GroupBox {
-                                            title: "File Transfer";
-                                            HorizontalBox {
-                                                file_host_input := LineEdit {
-                                                    placeholder-text: "Host file path (e.g. ~/.env)";
-                                                    enabled: !root.busy;
-                                                    horizontal-stretch: 1;
-                                                }
-
-                                                file_ctr_input := LineEdit {
-                                                    placeholder-text: "Container file path (e.g. /root/.env)";
-                                                    enabled: !root.busy;
-                                                    horizontal-stretch: 1;
-                                                }
-
-                                                Button {
-                                                    text: "Push ->";
-                                                    enabled: !root.busy && file_host_input.text != "" && file_ctr_input.text != "";
-                                                    clicked => {
-                                                        root.push_instance_file(
-                                                            root.selected_instance.name,
-                                                            file_host_input.text,
-                                                            file_ctr_input.text
-                                                        );
-                                                    }
-                                                }
-
-                                                Button {
-                                                    text: "<- Pull";
-                                                    enabled: !root.busy && file_host_input.text != "" && file_ctr_input.text != "";
-                                                    clicked => {
-                                                        root.pull_instance_file(
-                                                            root.selected_instance.name,
-                                                            file_ctr_input.text,
-                                                            file_host_input.text
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        GroupBox {
-                                            title: "Instance Logs";
-                                            vertical-stretch: 1;
-
-                                            VerticalBox {
-                                                HorizontalBox {
-                                                    Button {
-                                                        text: "List Logs";
-                                                        enabled: !root.busy;
-                                                        clicked => {
-                                                            root.refresh_instance_logs(root.selected_instance.name);
-                                                        }
-                                                    }
-
-                                                    log_combo := ComboBox {
-                                                        model: root.instance_logs;
-                                                        current-value <=> root.selected_log;
-                                                        enabled: !root.busy;
-                                                        horizontal-stretch: 1;
-                                                    }
-
-                                                    Button {
-                                                        text: "View Log";
-                                                        enabled: !root.busy && log_combo.current-value != "";
-                                                        clicked => {
-                                                            root.read_instance_log(root.selected_instance.name, log_combo.current-value);
-                                                        }
-                                                    }
-                                                }
-
-                                                TextEdit {
-                                                    text: root.log_content;
-                                                    read-only: true;
-                                                    vertical-stretch: 1;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Tab {
-                title: "Create";
-
-                HorizontalBox {
-                    GroupBox {
-                        title: "Source & Catalog";
-                        horizontal-stretch: 1;
-                        min-width: 270px;
-
-                        VerticalBox {
-                            HorizontalBox {
-                                Button {
-                                    text: "Official Images";
-                                    primary: !root.create_use_community;
-                                    horizontal-stretch: 1;
-                                    clicked => {
-                                        root.create_use_community = false;
-                                    }
-                                }
-
-                                Button {
-                                    text: "Community Scripts";
-                                    primary: root.create_use_community;
-                                    horizontal-stretch: 1;
-                                    clicked => {
-                                        root.create_use_community = true;
-                                        root.create_type = "container";
-                                    }
-                                }
-                            }
-
-                            if !root.create_use_community: VerticalBox {
-                                vertical-stretch: 1;
-
-                                HorizontalBox {
-                                    LineEdit {
-                                        text <=> root.remote_search_query;
-                                        placeholder-text: "Filter aliases (e.g. ubuntu, alpine)";
-                                        horizontal-stretch: 1;
-                                        edited(q) => {
-                                            root.filter_remote_aliases(q);
-                                        }
-                                    }
-
-                                    Button {
-                                        text: "Fetch";
-                                        enabled: !root.busy;
-                                        clicked => {
-                                            root.fetch_remote_images();
-                                        }
-                                    }
-                                }
-
-                                if root.remote_aliases.length == 0: Text {
-                                    text: "No matching official aliases.";
-                                }
-
-                                if root.remote_aliases.length > 0: ListView {
-                                    vertical-stretch: 1;
-                                    for alias in root.remote_aliases: HorizontalBox {
-                                        Button {
-                                            text: (alias == root.create_image_alias ? "> " : "") + alias;
-                                            horizontal-stretch: 1;
-                                            enabled: !root.busy;
-                                            clicked => {
-                                                root.create_image_alias = alias;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if root.create_use_community: VerticalBox {
-                                vertical-stretch: 1;
-
-                                HorizontalBox {
-                                    LineEdit {
-                                        text <=> root.community_search_query;
-                                        placeholder-text: "Search apps (e.g. surfsense, t3code, docker)";
-                                        horizontal-stretch: 1;
-                                        edited(q) => {
-                                            root.filter_community_apps(q);
-                                        }
-                                    }
-
-                                    Button {
-                                        text: "Reload";
-                                        enabled: !root.busy;
-                                        clicked => {
-                                            root.fetch_community_catalog();
-                                        }
-                                    }
-                                }
-
-                                if root.community_apps.length == 0: Text {
-                                    text: "No matching community apps.";
-                                }
-
-                                if root.community_apps.length > 0: ListView {
-                                    vertical-stretch: 1;
-                                    for app in root.community_apps: HorizontalBox {
-                                        Button {
-                                            text: (app.slug == root.community_selected_slug ? "> " : "")
-                                                + (app.is_dev ? "[dev] " : "")
-                                                + app.name
-                                                + " (" + app.slug + ")";
-                                            horizontal-stretch: 1;
-                                            enabled: !root.busy;
-                                            clicked => {
-                                                root.select_community_app(app.slug);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    VerticalBox {
-                        horizontal-stretch: 2;
-
-                        GroupBox {
-                            title: "Sandbox Configuration";
-                            VerticalBox {
-                                HorizontalBox {
-                                    LineEdit {
-                                        text <=> root.create_name;
-                                        placeholder-text: root.create_use_community && root.community_selected_slug != ""
-                                            ? "Sandbox name (e.g. " + root.community_selected_slug + ")"
-                                            : "Sandbox name (e.g. dev-rust)";
-                                        enabled: !root.busy;
-                                        horizontal-stretch: 1;
-                                    }
-
-                                    ComboBox {
-                                        model: ["container", "virtual-machine"];
-                                        current-value <=> root.create_type;
-                                        enabled: !root.busy && !root.create_use_community;
-                                    }
-
-                                    LineEdit {
-                                        text <=> root.create_image_alias;
-                                        placeholder-text: "Image alias";
-                                        enabled: !root.busy;
-                                    }
-                                }
-
-                                HorizontalBox {
-                                    Text {
-                                        text: "Memory:";
-                                        vertical-alignment: center;
-                                    }
-
-                                    ComboBox {
-                                        model: ["2GiB", "4GiB", "8GiB", "16GiB"];
-                                        current-value: "4GiB";
-                                        enabled: !root.busy;
-                                        selected(val) => {
-                                            root.create_memory = val;
-                                        }
-                                    }
-
-                                    LineEdit {
-                                        text <=> root.create_memory;
-                                        placeholder-text: "e.g. 4GiB";
-                                        enabled: !root.busy;
-                                    }
-
-                                    Text {
-                                        text: "CPU:";
-                                        vertical-alignment: center;
-                                    }
-
-                                    ComboBox {
-                                        model: ["1", "2", "4", "8"];
-                                        current-value: "2";
-                                        enabled: !root.busy;
-                                        selected(val) => {
-                                            root.create_cpu = val;
-                                        }
-                                    }
-
-                                    LineEdit {
-                                        text <=> root.create_cpu;
-                                        placeholder-text: "e.g. 2";
-                                        enabled: !root.busy;
-                                    }
-                                }
-
-                                HorizontalBox {
-                                    Text {
-                                        text: "Profiles:";
-                                        vertical-alignment: center;
-                                    }
-
-                                    ComboBox {
-                                        model: root.profile_names;
-                                        current-value: "default";
-                                        enabled: !root.busy;
-                                        selected(val) => {
-                                            root.create_profiles = val;
-                                        }
-                                    }
-
-                                    LineEdit {
-                                        text <=> root.create_profiles;
-                                        placeholder-text: "Comma-separated profiles";
-                                        enabled: !root.busy;
-                                    }
-
-                                    LineEdit {
-                                        text <=> root.create_workspace;
-                                        placeholder-text: "Optional host workspace path -> /workspace";
-                                        enabled: !root.busy;
-                                        horizontal-stretch: 1;
-                                    }
-
-                                    CheckBox {
-                                        text: "Nesting";
-                                        checked <=> root.create_nesting;
-                                        enabled: !root.busy;
-                                    }
-                                }
-                            }
-                        }
-
-                        if !root.create_use_community: GroupBox {
-                            title: "Optional Cloud-Init User Data (for /cloud images)";
-                            vertical-stretch: 1;
-
-                            TextEdit {
-                                text <=> root.create_cloud_init;
-                                placeholder-text: "#cloud-config\npackages:\n  - git\n  - curl";
-                                enabled: !root.busy;
-                            }
-                        }
-
-                        if root.create_use_community && root.community_selected_slug == "": GroupBox {
-                            title: "Community Script";
-                            vertical-stretch: 1;
-
-                            Text {
-                                text: "Select an app from Community Scripts on the left to fill defaults, inspect its install script, or deploy.";
-                                wrap: word-wrap;
-                            }
-                        }
-
-                        if root.create_use_community && root.community_selected_slug != "": GroupBox {
-                            title: "Community Script Details";
-                            vertical-stretch: 1;
-
-                            VerticalBox {
-                                HorizontalBox {
-                                    Text {
-                                        text: root.community_app_name + " (" + root.community_selected_slug + ")";
-                                        font-size: 15px;
-                                        font-weight: 700;
-                                    }
-
-                                    if root.community_tags != "": Text {
-                                        text: "[" + root.community_tags + "]";
-                                        vertical-alignment: center;
-                                    }
-                                }
-
-                                if root.community_description != "": Text {
-                                    text: root.community_description;
-                                    wrap: word-wrap;
-                                }
-
-                                HorizontalBox {
-                                    Text {
-                                        text: "Or run in running sandbox:";
-                                        vertical-alignment: center;
-                                    }
-
-                                    ComboBox {
-                                        model: root.running_instance_names;
-                                        current-value <=> root.community_target_instance;
-                                        enabled: !root.busy;
-                                        horizontal-stretch: 1;
-                                    }
-
-                                    Button {
-                                        text: "Run in Selected";
-                                        enabled: !root.busy && root.community_target_instance != "";
-                                        clicked => {
-                                            root.request_run_community_in_instance(
-                                                root.community_selected_slug,
-                                                root.community_target_instance
-                                            );
-                                        }
-                                    }
-                                }
-
-                                TabWidget {
-                                    vertical-stretch: 1;
-
-                                    Tab {
-                                        title: "Install Script Preview";
-                                        TextEdit {
-                                            text: root.community_install_script;
-                                            read-only: true;
-                                        }
-                                    }
-
-                                    Tab {
-                                        title: "Deploy Output";
-                                        TextEdit {
-                                            text: root.community_output;
-                                            read-only: true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        HorizontalBox {
-                            Rectangle {
-                                horizontal-stretch: 1;
-                            }
-
-                            Button {
-                                primary: true;
-                                text: root.create_use_community ? "Create & Run Script" : "Create Sandbox";
-                                enabled: !root.busy
-                                    && root.create_name != ""
-                                    && root.create_image_alias != ""
-                                    && (!root.create_use_community || root.community_selected_slug != "");
-                                clicked => {
-                                    if root.create_use_community {
-                                        root.deploy_community_app(
-                                            root.community_selected_slug,
-                                            root.create_name,
-                                            root.create_image_alias,
-                                            root.create_cpu,
-                                            root.create_memory,
-                                            root.create_workspace,
-                                            root.create_profiles,
-                                            root.create_nesting
-                                        );
-                                    } else {
-                                        root.create_instance(
-                                            root.create_name,
-                                            root.create_type,
-                                            root.create_image_alias,
-                                            root.create_memory,
-                                            root.create_cpu,
-                                            root.create_workspace,
-                                            root.create_profiles,
-                                            root.create_cloud_init,
-                                            root.create_nesting
-                                        );
-                                    }
-                                    root.create_name = "";
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Tab {
-                title: "Storage & Networks";
-
-                VerticalBox {
-                    HorizontalBox {
-                        Text {
-                            text: "Local Storage Pools, Shared Cache Volumes, and Networks";
-                            vertical-alignment: center;
-                            horizontal-stretch: 1;
-                        }
-
-                        Button {
-                            text: "Refresh Storage & Networks";
-                            enabled: !root.busy;
-                            clicked => {
-                                root.refresh_infra();
-                            }
-                        }
-                    }
-
-                    HorizontalBox {
-                        vertical-stretch: 1;
-
-                        GroupBox {
-                            title: "Storage Pools & Custom Volumes";
-                            horizontal-stretch: 1;
-
-                            VerticalBox {
-                                if root.storage_pools.length == 0: Text {
-                                    text: "No storage pools.";
-                                }
-
-                                for pool in root.storage_pools: Text {
-                                    text: pool.name + " (" + pool.driver + ", " + pool.status + ") — " + pool.used_display + " / " + pool.total_display;
-                                }
-
-                                HorizontalBox {
-                                    vol_pool_combo := ComboBox {
-                                        model: root.pool_names;
-                                        current-value: "default";
-                                        enabled: !root.busy;
-                                    }
-
-                                    vol_name_input := LineEdit {
-                                        placeholder-text: "Volume name (e.g. cargo-cache)";
-                                        enabled: !root.busy;
-                                        horizontal-stretch: 1;
-                                    }
-
-                                    Button {
-                                        text: "Create Volume";
-                                        enabled: !root.busy && vol_name_input.text != "";
-                                        clicked => {
-                                            root.create_storage_volume(vol_pool_combo.current-value, vol_name_input.text);
-                                            vol_name_input.text = "";
-                                        }
-                                    }
-                                }
-
-                                if root.storage_volumes.length == 0: Text {
-                                    text: "No custom volumes.";
-                                }
-
-                                if root.storage_volumes.length > 0: ListView {
-                                    vertical-stretch: 1;
-                                    for v in root.storage_volumes: HorizontalBox {
-                                        Text {
-                                            text: v.pool + "/" + v.name + " (" + v.content_type + ")";
-                                            vertical-alignment: center;
-                                            horizontal-stretch: 1;
-                                        }
-
-                                        Button {
-                                            text: "Delete";
-                                            enabled: !root.busy;
-                                            clicked => {
-                                                root.request_delete_storage_volume(v.pool, v.name);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        GroupBox {
-                            title: "Networks & DHCP Leases";
-                            horizontal-stretch: 1;
-
-                            VerticalBox {
-                                HorizontalBox {
-                                    net_name_input := LineEdit {
-                                        placeholder-text: "Bridge name (e.g. cubby-offline)";
-                                        enabled: !root.busy;
-                                        horizontal-stretch: 1;
-                                    }
-
-                                    net_nat_check := CheckBox {
-                                        text: "NAT";
-                                        checked: true;
-                                        enabled: !root.busy;
-                                    }
-
-                                    Button {
-                                        text: "Create Bridge";
-                                        enabled: !root.busy && net_name_input.text != "";
-                                        clicked => {
-                                            root.create_network(net_name_input.text, net_nat_check.checked);
-                                            net_name_input.text = "";
-                                        }
-                                    }
-                                }
-
-                                if root.networks.length == 0: Text {
-                                    text: "No networks.";
-                                }
-
-                                if root.networks.length > 0: ListView {
-                                    vertical-stretch: 1;
-                                    for n in root.networks: HorizontalBox {
-                                        VerticalBox {
-                                            horizontal-stretch: 1;
-                                            Text {
-                                                text: n.name + " (" + n.net_type + ", NAT: " + (n.nat ? "on" : "off") + ", IPv4: " + n.ipv4 + ")";
-                                            }
-
-                                            if n.leases_display != "": Text {
-                                                text: "  Leases: " + n.leases_display;
-                                            }
-                                        }
-
-                                        if n.managed: Button {
-                                            text: "Delete";
-                                            enabled: !root.busy;
-                                            clicked => {
-                                                root.request_delete_network(n.name);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Tab {
-                title: "Profiles";
-
-                VerticalBox {
-                    GroupBox {
-                        title: "Create or Update Profile";
-                        VerticalBox {
-                            HorizontalBox {
-                                prof_name_input := LineEdit {
-                                    placeholder-text: "Profile name (e.g. rust-dev)";
-                                    enabled: !root.busy;
-                                }
-
-                                prof_desc_input := LineEdit {
-                                    placeholder-text: "Description";
-                                    enabled: !root.busy;
-                                    horizontal-stretch: 1;
-                                }
-
-                                prof_cpu_input := LineEdit {
-                                    placeholder-text: "CPU (e.g. 4)";
-                                    enabled: !root.busy;
-                                }
-
-                                prof_mem_input := LineEdit {
-                                    placeholder-text: "Memory (e.g. 8GiB)";
-                                    enabled: !root.busy;
-                                }
-
-                                Button {
-                                    text: "Create";
-                                    enabled: !root.busy && prof_name_input.text != "";
-                                    clicked => {
-                                        root.save_profile(
-                                            prof_name_input.text,
-                                            prof_desc_input.text,
-                                            prof_cpu_input.text,
-                                            prof_mem_input.text,
-                                            true
-                                        );
-                                    }
-                                }
-
-                                Button {
-                                    text: "Update";
-                                    enabled: !root.busy && prof_name_input.text != "";
-                                    clicked => {
-                                        root.save_profile(
-                                            prof_name_input.text,
-                                            prof_desc_input.text,
-                                            prof_cpu_input.text,
-                                            prof_mem_input.text,
-                                            false
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if root.profiles.length == 0: Text {
-                        text: "No profiles found.";
-                    }
-
-                    if root.profiles.length > 0: ListView {
-                        vertical-stretch: 1;
-                        for p in root.profiles: HorizontalBox {
-                            Text {
-                                text: p.name + (p.description != "" ? " — " + p.description : "");
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                            }
-
-                            Button {
-                                text: "Delete";
-                                enabled: !root.busy && p.name != "default";
-                                clicked => {
-                                    root.request_delete_profile(p.name);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Tab {
-                title: "Images";
-
-                VerticalBox {
-                    HorizontalBox {
-                        Text {
-                            text: "Locally cached base images in Incus";
-                            vertical-alignment: center;
-                            horizontal-stretch: 1;
-                        }
-
-                        Button {
-                            text: "Refresh Images";
-                            enabled: !root.busy;
-                            clicked => {
-                                root.refresh_local_images();
-                            }
-                        }
-                    }
-
-                    if root.local_images.length == 0: Text {
-                        text: "No cached images found.";
-                    }
-
-                    if root.local_images.length > 0: ListView {
-                        vertical-stretch: 1;
-
-                        for img in root.local_images: HorizontalBox {
-                            Text {
-                                text: (img.alias != "" ? img.alias : img.short_fingerprint) + " — " + img.description + " (" + img.architecture + ", " + img.size_display + ")";
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                            }
-
-                            Button {
-                                text: "Delete";
-                                enabled: !root.busy;
-                                clicked => {
-                                    root.request_delete_image(
-                                        img.fingerprint,
-                                        img.alias != "" ? img.alias : img.short_fingerprint
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Tab {
-                title: "Settings";
-
-                VerticalBox {
-                    GroupBox {
-                        title: "Preferred Terminal & IDE";
-                        VerticalBox {
-                            HorizontalBox {
-                                Text {
-                                    text: "Terminal Emulator:";
-                                    vertical-alignment: center;
-                                }
-
-                                term_combo := ComboBox {
-                                    model: root.available_terminals;
-                                    current-value <=> root.preferred_terminal;
-                                }
-                            }
-
-                            HorizontalBox {
-                                Text {
-                                    text: "External IDE:";
-                                    vertical-alignment: center;
-                                }
-
-                                ide_combo := ComboBox {
-                                    model: root.available_ides;
-                                    current-value: "auto";
-                                    selected(val) => {
-                                        root.preferred_ide = val;
-                                    }
-                                }
-
-                                ide_input := LineEdit {
-                                    text <=> root.preferred_ide;
-                                    placeholder-text: "Command (auto or executable)";
-                                    horizontal-stretch: 1;
-                                }
-                            }
-
-                            HorizontalBox {
-                                Button {
-                                    text: "Save Settings";
-                                    clicked => {
-                                        root.save_settings(root.preferred_terminal, root.preferred_ide);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        vertical-stretch: 1;
-                    }
-                }
-            }
-
-            Tab {
-                title: "About & Legal";
-
-                VerticalBox {
-                    GroupBox {
-                        title: "About IncusCubby";
-                        VerticalBox {
-                            Text {
-                                text: root.about_header;
-                                font-size: 16px;
-                                font-weight: 700;
-                            }
-
-                            Text {
-                                text: root.about_description;
-                                wrap: word-wrap;
-                            }
-                        }
-                    }
-
-                    GroupBox {
-                        title: "Third-Party & Ecosystem Notices";
-                        Text {
-                            text: root.about_notices;
-                            wrap: word-wrap;
-                        }
-                    }
-
-                    GroupBox {
-                        title: "License (GPL-3.0-or-later)";
-                        vertical-stretch: 1;
-
-                        TextEdit {
-                            text: root.about_license_text;
-                            read-only: true;
-                        }
-                    }
-                }
-            }
-        }
+    init => {
+        Palette.color-scheme = root.light_theme ? ColorScheme.light : ColorScheme.dark;
+    }
+
+    changed light_theme => {
+        Palette.color-scheme = root.light_theme ? ColorScheme.light : ColorScheme.dark;
+    }
+
+    if !root.simple_mode: AdvancedShell {
+        width: 100%;
+        height: 100%;
+        active_tab <=> root.active_tab;
+        socket_connected: root.socket_connected;
+        socket_warning: root.socket_warning;
+        confirm_message: root.confirm_message;
+        status_message: root.status_message;
+        busy: root.busy;
+        simple_mode: root.simple_mode;
+        instances: root.instances;
+        total_instance_count: root.total_instance_count;
+        running_count_summary: root.running_count_summary;
+        has_selection: root.has_selection;
+        selected_instance: root.selected_instance;
+        sandbox_search_query <=> root.sandbox_search_query;
+        edit_limit_cpu <=> root.edit_limit_cpu;
+        edit_limit_mem <=> root.edit_limit_mem;
+        local_images: root.local_images;
+        image_search_query <=> root.image_search_query;
+        remote_aliases: root.remote_aliases;
+        remote_search_query <=> root.remote_search_query;
+        storage_pools: root.storage_pools;
+        storage_volumes: root.storage_volumes;
+        networks: root.networks;
+        profiles: root.profiles;
+        profile_names: root.profile_names;
+        pool_names: root.pool_names;
+        instance_logs: root.instance_logs;
+        selected_log <=> root.selected_log;
+        exec_output: root.exec_output;
+        log_content: root.log_content;
+        create_use_community <=> root.create_use_community;
+        create_name <=> root.create_name;
+        create_type <=> root.create_type;
+        create_image_alias <=> root.create_image_alias;
+        create_cpu <=> root.create_cpu;
+        create_memory <=> root.create_memory;
+        create_profiles <=> root.create_profiles;
+        create_workspace <=> root.create_workspace;
+        create_nesting <=> root.create_nesting;
+        create_cloud_init <=> root.create_cloud_init;
+        community_apps: root.community_apps;
+        community_search_query <=> root.community_search_query;
+        community_repo_filter <=> root.community_repo_filter;
+        running_instance_names: root.running_instance_names;
+        community_target_instance <=> root.community_target_instance;
+        community_selected_slug: root.community_selected_slug;
+        community_app_name: root.community_app_name;
+        community_description: root.community_description;
+        community_tags: root.community_tags;
+        community_is_dev: root.community_is_dev;
+        community_source_repo: root.community_source_repo;
+        community_install_script: root.community_install_script;
+        community_output: root.community_output;
+        available_terminals: root.available_terminals;
+        available_ides: root.available_ides;
+        preferred_terminal <=> root.preferred_terminal;
+        preferred_ide <=> root.preferred_ide;
+        resolved_ide_name: root.resolved_ide_name;
+        settings_file_path: root.settings_file_path;
+        about_header: root.about_header;
+        about_description: root.about_description;
+        about_notices: root.about_notices;
+        about_license_text: root.about_license_text;
+
+        refresh => { root.refresh(); }
+        toggle_simple_mode(s) => { root.toggle_simple_mode(s); }
+        toggle_theme(l) => { root.toggle_theme(l); }
+        confirm_action => { root.confirm_action(); }
+        cancel_confirm => { root.cancel_confirm(); }
+        filter_sandboxes(q) => { root.filter_sandboxes(q); }
+        select_instance_by_name(n) => { root.select_instance_by_name(n); }
+        open_shell(n) => { root.open_shell(n); }
+        open_ide(w) => { root.open_ide(w); }
+        set_instance_state(n, a) => { root.set_instance_state(n, a); }
+        request_delete_instance(n) => { root.request_delete_instance(n); }
+        clone_instance(s, n) => { root.clone_instance(s, n); }
+        update_instance_limits(n, c, m) => { root.update_instance_limits(n, c, m); }
+        upgrade_packages(n, o) => { root.upgrade_packages(n, o); }
+        install_packages(n, o, p) => { root.install_packages(n, o, p); }
+        add_disk_mount(i, d, h, c) => { root.add_disk_mount(i, d, h, c); }
+        attach_custom_volume(i, d, p, v, c) => { root.attach_custom_volume(i, d, p, v, c); }
+        add_proxy_device(i, d, h, c) => { root.add_proxy_device(i, d, h, c); }
+        remove_device(i, d) => { root.remove_device(i, d); }
+        create_snapshot(i, s) => { root.create_snapshot(i, s); }
+        request_restore_snapshot(i, s) => { root.request_restore_snapshot(i, s); }
+        request_delete_snapshot(i, s) => { root.request_delete_snapshot(i, s); }
+        refresh_instance_logs(i) => { root.refresh_instance_logs(i); }
+        read_instance_log(i, l) => { root.read_instance_log(i, l); }
+        push_instance_file(i, h, c) => { root.push_instance_file(i, h, c); }
+        pull_instance_file(i, c, h) => { root.pull_instance_file(i, c, h); }
+        filter_remote_aliases(q) => { root.filter_remote_aliases(q); }
+        fetch_remote_images => { root.fetch_remote_images(); }
+        filter_community_apps(q) => { root.filter_community_apps(q); }
+        fetch_community_catalog => { root.fetch_community_catalog(); }
+        select_community_app(s) => { root.select_community_app(s); }
+        browse_workspace_folder => { root.browse_workspace_folder(); }
+        create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
+        deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
+        request_run_community_in_instance(s, inst) => { root.request_run_community_in_instance(s, inst); }
+        refresh_infra => { root.refresh_infra(); }
+        create_storage_volume(p, n) => { root.create_storage_volume(p, n); }
+        request_delete_storage_volume(p, n) => { root.request_delete_storage_volume(p, n); }
+        create_network(n, nat) => { root.create_network(n, nat); }
+        request_delete_network(n) => { root.request_delete_network(n); }
+        save_profile(n, d, c, m, cr) => { root.save_profile(n, d, c, m, cr); }
+        request_delete_profile(n) => { root.request_delete_profile(n); }
+        filter_local_images(q) => { root.filter_local_images(q); }
+        refresh_local_images => { root.refresh_local_images(); }
+        request_delete_image(f, l) => { root.request_delete_image(f, l); }
+        save_settings(t, i) => { root.save_settings(t, i); }
+        request_reset_settings => { root.request_reset_settings(); }
+        open_url(u) => { root.open_url(u); }
+    }
+
+    if root.simple_mode: SimpleShell {
+        width: 100%;
+        height: 100%;
+        simple_view <=> root.simple_view;
+        socket_connected: root.socket_connected;
+        socket_warning: root.socket_warning;
+        confirm_message: root.confirm_message;
+        status_message: root.status_message;
+        status_is_idle: root.status_is_idle;
+        busy: root.busy;
+        simple_mode: root.simple_mode;
+        instances: root.instances;
+        has_selection: root.has_selection;
+        selected_instance: root.selected_instance;
+        exec_output: root.exec_output;
+        create_name <=> root.create_name;
+        create_image_alias <=> root.create_image_alias;
+        create_cpu <=> root.create_cpu;
+        create_memory <=> root.create_memory;
+        create_workspace <=> root.create_workspace;
+        community_apps: root.community_apps;
+        community_search_query <=> root.community_search_query;
+        community_repo_filter <=> root.community_repo_filter;
+        community_selected_slug: root.community_selected_slug;
+        community_app_name: root.community_app_name;
+        community_description: root.community_description;
+        community_source_repo: root.community_source_repo;
+        community_install_script: root.community_install_script;
+        community_output: root.community_output;
+        available_terminals: root.available_terminals;
+        available_ides: root.available_ides;
+        preferred_terminal <=> root.preferred_terminal;
+        preferred_ide <=> root.preferred_ide;
+        resolved_terminal_name: root.resolved_terminal_name;
+        resolved_ide_name: root.resolved_ide_name;
+        settings_file_path: root.settings_file_path;
+        about_header: root.about_header;
+        about_description: root.about_description;
+        about_license_text: root.about_license_text;
+
+        refresh => { root.refresh(); }
+        toggle_simple_mode(s) => { root.toggle_simple_mode(s); }
+        toggle_theme(l) => { root.toggle_theme(l); }
+        confirm_action => { root.confirm_action(); }
+        cancel_confirm => { root.cancel_confirm(); }
+        select_instance_by_name(n) => { root.select_instance_by_name(n); }
+        open_shell(n) => { root.open_shell(n); }
+        open_ide(w) => { root.open_ide(w); }
+        set_instance_state(n, a) => { root.set_instance_state(n, a); }
+        request_delete_instance(n) => { root.request_delete_instance(n); }
+        clone_instance(s, n) => { root.clone_instance(s, n); }
+        upgrade_packages(n, o) => { root.upgrade_packages(n, o); }
+        install_packages(n, o, p) => { root.install_packages(n, o, p); }
+        create_snapshot(i, s) => { root.create_snapshot(i, s); }
+        request_restore_snapshot(i, s) => { root.request_restore_snapshot(i, s); }
+        browse_workspace_folder => { root.browse_workspace_folder(); }
+        create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
+        filter_community_apps(q) => { root.filter_community_apps(q); }
+        fetch_community_catalog => { root.fetch_community_catalog(); }
+        select_community_app(s) => { root.select_community_app(s); }
+        deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
+        save_settings(t, i) => { root.save_settings(t, i); }
+        request_reset_settings => { root.request_reset_settings(); }
+        open_url(u) => { root.open_url(u); }
     }
 }

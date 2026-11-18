@@ -1,0 +1,227 @@
+import "fonts/Geist-Regular.ttf";
+import "fonts/Geist-Medium.ttf";
+import "fonts/Geist-SemiBold.ttf";
+import "fonts/GeistMono-Regular.ttf";
+import "fonts/GeistMono-Medium.ttf";
+import "fonts/GeistMono-SemiBold.ttf";
+
+export struct UiSnapshot {
+    name: string,
+    created_at: string,
+}
+
+export struct UiMount {
+    name: string,
+    host_path: string,
+    container_path: string,
+}
+
+export struct UiProxy {
+    name: string,
+    listen: string,
+    connect: string,
+}
+
+export struct UiInstance {
+    name: string,
+    status: string,
+    instance_type: string,
+    arch: string,
+    image: string,
+    image_os: string,
+    app_slug: string,
+    distro_id: string,
+    ip: string,
+    net_iface: string,
+    memory: string,
+    memory_usage_display: string,
+    memory_limit_display: string,
+    memory_limit_raw: string,
+    cpu: string,
+    cpu_limit_raw: string,
+    root_pool: string,
+    profiles: string,
+    workspace_path: string,
+    cpu_usage_display: string,
+    disk_usage_display: string,
+    net_rx_display: string,
+    net_tx_display: string,
+    processes_display: string,
+    pkg_manager: string,
+    is_running: bool,
+    is_frozen: bool,
+    snapshots: [UiSnapshot],
+    mounts: [UiMount],
+    proxies: [UiProxy],
+}
+
+export struct UiImage {
+    fingerprint: string,
+    short_fingerprint: string,
+    alias: string,
+    description: string,
+    architecture: string,
+    size_display: string,
+    distro_id: string,
+}
+
+export struct UiRemoteAlias {
+    alias: string,
+    distro_id: string,
+    subtitle: string,
+    release_hint: string,
+    is_cached: bool,
+}
+
+export struct UiStoragePool {
+    name: string,
+    driver: string,
+    status: string,
+    used_display: string,
+    total_display: string,
+    used_ratio: float,
+}
+
+export struct UiStorageVolume {
+    name: string,
+    pool: string,
+    content_type: string,
+}
+
+export struct UiNetworkLease {
+    hostname: string,
+    address: string,
+}
+
+export struct UiNetwork {
+    name: string,
+    net_type: string,
+    managed: bool,
+    ipv4: string,
+    nat: bool,
+    leases_display: string,
+    leases: [UiNetworkLease],
+}
+
+export struct UiProfile {
+    name: string,
+    description: string,
+    cpu: string,
+    memory: string,
+}
+
+export struct UiCommunityApp {
+    slug: string,
+    name: string,
+    description: string,
+    distro_id: string,
+    is_dev: bool,
+}
+
+export global CubbyTheme {
+    in-out property <bool> is_light: false;
+
+    out property <color> bg: root.is_light ? #F7F7F5 : #111214;
+    out property <color> surface: root.is_light ? #FFFFFF : #17181B;
+    out property <color> well: root.is_light ? #EEEEEB : #1D1F23;
+    out property <color> border: root.is_light ? #E2E2DE : #27292E;
+    out property <color> seg_active: root.is_light ? #FFFFFF : #25282E;
+
+    out property <color> ink: root.is_light ? #141517 : #F2F3F5;
+    out property <color> ink_secondary: root.is_light ? #5C5E63 : #9BA0A8;
+    out property <color> ink_muted: root.is_light ? #8A8D93 : #686D75;
+
+    out property <color> cta_bg: root.is_light ? #141517 : #F2F3F5;
+    out property <color> cta_ink: root.is_light ? #FFFFFF : #111214;
+
+    out property <color> accent: root.is_light ? #C2410C : #F97316;
+    out property <color> accent_soft: root.is_light ? rgba(194, 65, 12, 0.10) : rgba(249, 115, 22, 0.14);
+
+    out property <color> live: root.is_light ? #16A34A : #22C55E;
+    out property <color> warn: root.is_light ? #B45309 : #F59E0B;
+    out property <color> warn_bg: root.is_light ? #FEF9EC : #1C1810;
+    out property <color> warn_border: root.is_light ? #F0D9A0 : #3E3219;
+
+    out property <color> err: root.is_light ? #B91C1C : #F87171;
+    out property <color> err_bg: root.is_light ? #FEF2F2 : #1F1416;
+    out property <color> err_border: root.is_light ? #F5C2C2 : #452226;
+
+    out property <color> hover_fill: root.is_light ? rgba(20, 21, 23, 0.04) : rgba(242, 243, 245, 0.05);
+
+    out property <length> radius_sm: 4px;
+    out property <length> radius_md: 6px;
+    out property <length> radius_lg: 8px;
+
+    out property <string> font_sans: "Geist";
+    out property <string> font_mono: "Geist Mono";
+
+    out property <length> text_xs: 11px;
+    out property <length> text_sm: 12px;
+    out property <length> text_base: 13px;
+    out property <length> text_md: 15px;
+    out property <length> text_lg: 19px;
+    out property <length> text_kpi: 20px;
+
+    public pure function distro_icon(d: string) -> image {
+        if d == "debian" { return @image-url("icons/debian.svg"); }
+        if d == "ubuntu" { return @image-url("icons/ubuntu.svg"); }
+        if d == "fedora" { return @image-url("icons/fedora.svg"); }
+        if d == "arch" { return @image-url("icons/arch.svg"); }
+        if d == "alpine" { return @image-url("icons/alpine.svg"); }
+        if d == "opensuse" { return @image-url("icons/opensuse.svg"); }
+        if d == "alma" { return @image-url("icons/alma.svg"); }
+        if d == "rocky" { return @image-url("icons/rocky.svg"); }
+        if d == "centos" { return @image-url("icons/centos.svg"); }
+        if d == "docker" { return @image-url("icons/docker.svg"); }
+        if d == "ollama" { return @image-url("icons/ollama.svg"); }
+        if d == "forgejo" { return @image-url("icons/forgejo.svg"); }
+        if d == "postgresql" { return @image-url("icons/postgresql.svg"); }
+        if d == "nginx" { return @image-url("icons/nginx.svg"); }
+        if d == "redis" { return @image-url("icons/redis.svg"); }
+        if d == "caddy" { return @image-url("icons/caddy.svg"); }
+        if d == "gitea" { return @image-url("icons/gitea.svg"); }
+        return @image-url("icons/generic.svg");
+    }
+
+    public pure function distro_bg(d: string) -> color {
+        if d == "debian" { return rgba(225, 29, 100, 0.12); }
+        if d == "ubuntu" { return rgba(233, 84, 32, 0.12); }
+        if d == "fedora" { return rgba(81, 162, 218, 0.12); }
+        if d == "arch" { return rgba(23, 147, 209, 0.12); }
+        if d == "alpine" { return rgba(56, 189, 248, 0.11); }
+        if d == "opensuse" { return rgba(115, 186, 37, 0.12); }
+        if d == "alma" { return rgba(244, 63, 94, 0.10); }
+        if d == "rocky" { return rgba(16, 185, 129, 0.12); }
+        if d == "centos" { return rgba(192, 132, 252, 0.12); }
+        if d == "docker" { return rgba(36, 150, 237, 0.12); }
+        if d == "ollama" { return rgba(155, 160, 168, 0.12); }
+        if d == "forgejo" { return rgba(249, 115, 22, 0.12); }
+        if d == "postgresql" { return rgba(96, 165, 250, 0.12); }
+        if d == "nginx" { return rgba(34, 197, 94, 0.12); }
+        if d == "redis" { return rgba(239, 68, 68, 0.12); }
+        if d == "caddy" { return rgba(56, 189, 248, 0.12); }
+        if d == "gitea" { return rgba(96, 153, 38, 0.12); }
+        return rgba(155, 160, 168, 0.10);
+    }
+
+    public pure function distro_border(d: string) -> color {
+        if d == "debian" { return rgba(225, 29, 100, 0.34); }
+        if d == "ubuntu" { return rgba(233, 84, 32, 0.34); }
+        if d == "fedora" { return rgba(81, 162, 218, 0.34); }
+        if d == "arch" { return rgba(23, 147, 209, 0.34); }
+        if d == "alpine" { return rgba(56, 189, 248, 0.30); }
+        if d == "opensuse" { return rgba(115, 186, 37, 0.34); }
+        if d == "alma" { return rgba(244, 63, 94, 0.28); }
+        if d == "rocky" { return rgba(16, 185, 129, 0.32); }
+        if d == "centos" { return rgba(192, 132, 252, 0.32); }
+        if d == "docker" { return rgba(36, 150, 237, 0.34); }
+        if d == "ollama" { return rgba(155, 160, 168, 0.30); }
+        if d == "forgejo" { return rgba(249, 115, 22, 0.34); }
+        if d == "postgresql" { return rgba(96, 165, 250, 0.34); }
+        if d == "nginx" { return rgba(34, 197, 94, 0.32); }
+        if d == "redis" { return rgba(239, 68, 68, 0.32); }
+        if d == "caddy" { return rgba(56, 189, 248, 0.32); }
+        if d == "gitea" { return rgba(96, 153, 38, 0.32); }
+        return rgba(155, 160, 168, 0.24);
+    }
+}

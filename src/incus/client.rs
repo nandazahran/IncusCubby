@@ -283,6 +283,14 @@ impl IncusClient {
         .await
     }
 
+    pub async fn tag_cubby_app(&self, name: &str, slug: &str) -> Result<(), IncusError> {
+        let trimmed = slug.trim().to_string();
+        self.update_instance_put(name, move |put| {
+            set_or_remove(&mut put.config, "user.cubby.app", &trimmed);
+        })
+        .await
+    }
+
     pub(super) async fn update_instance_devices<F>(
         &self,
         name: &str,

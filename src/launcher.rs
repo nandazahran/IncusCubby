@@ -5,7 +5,7 @@ use std::process::Command;
 
 use anyhow::{Context, bail};
 
-use crate::settings::IDE_CANDIDATES;
+use crate::settings::{IDE_CANDIDATES, TERMINAL_CANDIDATES};
 
 pub fn open_shell(instance_name: &str, preferred_terminal: &str) -> anyhow::Result<()> {
     if instance_name.is_empty()
@@ -74,18 +74,6 @@ fn resolve_ide_binary(preferred_ide: &str) -> anyhow::Result<PathBuf> {
 }
 
 fn detect_terminal(preferred_terminal: &str) -> Option<PathBuf> {
-    const CANDIDATES: &[&str] = &[
-        "x-terminal-emulator",
-        "gnome-terminal",
-        "konsole",
-        "alacritty",
-        "kitty",
-        "foot",
-        "wezterm",
-        "xfce4-terminal",
-        "xterm",
-    ];
-
     let pref = preferred_terminal.trim();
     if !pref.is_empty()
         && pref != "auto"
@@ -103,7 +91,9 @@ fn detect_terminal(preferred_terminal: &str) -> Option<PathBuf> {
         }
     }
 
-    CANDIDATES.iter().find_map(|name| find_in_path(name))
+    TERMINAL_CANDIDATES
+        .iter()
+        .find_map(|name| find_in_path(name))
 }
 
 fn find_in_path(bin: &str) -> Option<PathBuf> {

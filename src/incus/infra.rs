@@ -14,6 +14,7 @@ pub struct StoragePoolSummary {
     pub status: String,
     pub used_display: String,
     pub total_display: String,
+    pub used_per_mille: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,10 +153,14 @@ impl IncusClient {
                 Err(err @ IncusError::SocketUnavailable { .. }) => return Err(err),
                 Err(_) => None,
             };
-            let (used_display, total_display) = match space {
-                Some(s) if s.total > 0 => (format_bytes(s.used), format_bytes(s.total)),
-                Some(s) if s.used > 0 => (format_bytes(s.used), "-".to_string()),
-                _ => ("-".to_string(), "-".to_string()),
+            let (used_display, total_display, used_per_mille) = match space {
+                Some(s) if s.total > 0 => {
+                    let ratio =
+                        ((u128::from(s.used) * 1000) / u128::from(s.total)).min(1000) as u16;
+                    (format_bytes(s.used), format_bytes(s.total), ratio)
+                }
+                Some(s) if s.used > 0 => (format_bytes(s.used), "-".to_string(), 0),
+                _ => ("-".to_string(), "-".to_string(), 0),
             };
             pools.push(StoragePoolSummary {
                 name: pool.name,
@@ -163,6 +168,7 @@ impl IncusClient {
                 status: pool.status,
                 used_display,
                 total_display,
+                used_per_mille,
             });
         }
         pools.sort_by(|a, b| a.name.cmp(&b.name));

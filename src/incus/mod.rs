@@ -7,4 +7,4 @@ pub mod remote_images;
 
 pub use client::{CreateInstanceParams, IncusClient, IncusError, NestingMode};
 pub use infra::{BridgeNat, NetworkSummary, StoragePoolSummary, StorageVolumeSummary};
-pub use models::{ExecOutput, ImageSummary, InstanceSummary, ProfileSummary};
+pub use models::{ExecOutput, ImageSummary, InstanceSummary, ProfileSummary, detect_distro_id};

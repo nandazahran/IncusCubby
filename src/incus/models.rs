@@ -295,19 +295,27 @@ pub struct ApiProfile {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub config: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileSummary {
     pub name: String,
     pub description: String,
+    pub cpu: String,
+    pub memory: String,
 }
 
 impl From<ApiProfile> for ProfileSummary {
     fn from(api: ApiProfile) -> Self {
+        let cpu = api.config.get("limits.cpu").cloned().unwrap_or_default();
+        let memory = api.config.get("limits.memory").cloned().unwrap_or_default();
         Self {
             name: api.name,
             description: api.description,
+            cpu,
+            memory,
         }
     }
 }
@@ -342,9 +350,17 @@ pub struct InstanceSummary {
     pub architecture: String,
     pub image: String,
     pub image_os: String,
+    pub app_slug: String,
+    pub distro_id: String,
     pub ip: String,
+    pub net_iface: String,
     pub memory: String,
+    pub memory_usage_display: String,
+    pub memory_limit_display: String,
+    pub memory_limit_raw: String,
     pub cpu: String,
+    pub cpu_limit_raw: String,
+    pub root_pool: String,
     pub cpu_usage_display: String,
     pub disk_usage_display: String,
     pub net_rx_display: String,
@@ -367,32 +383,64 @@ impl From<ApiInstance> for InstanceSummary {
             api.instance_type
         };
         let image_os = api.config.get("image.os").cloned().unwrap_or_default();
+        let app_slug = api
+            .config
+            .get("user.cubby.app")
+            .cloned()
+            .unwrap_or_default();
         let image = format_os_release(
             api.config.get("image.os").map(String::as_str),
             api.config.get("image.release").map(String::as_str),
             "-",
         );
+        let distro_id = detect_distro_id(&app_slug, &image_os, &image).to_string();
 
-        let ip = api
+        let (net_iface, ip) = api
             .state
             .as_ref()
             .and_then(|s| s.network.as_ref())
-            .and_then(extract_primary_ipv4)
-            .unwrap_or_else(|| "-".to_string());
+            .and_then(extract_primary_ipv4_with_iface)
+            .unwrap_or_else(|| (String::new(), "-".to_string()));
 
         let usage_bytes = api
             .state
             .as_ref()
             .and_then(|s| s.memory.as_ref())
             .map_or(0, |m| m.usage.max(0) as u64);
-        let limit = api.config.get("limits.memory").map(String::as_str);
-        let memory = format_memory(is_running, usage_bytes, limit);
-        let cpu = api
+        let limit_opt = api
+            .config
+            .get("limits.memory")
+            .map(String::as_str)
+            .filter(|s| !s.is_empty());
+        let memory = format_memory(is_running, usage_bytes, limit_opt);
+        let memory_usage_display = if is_running && usage_bytes > 0 {
+            format_bytes(usage_bytes)
+        } else {
+            "-".to_string()
+        };
+        let memory_limit_raw = limit_opt.unwrap_or_default().to_string();
+        let memory_limit_display = limit_opt.map_or_else(
+            || "no memory limit".to_string(),
+            |lim| format!("limit {lim}"),
+        );
+
+        let cpu_limit_raw = api
             .config
             .get("limits.cpu")
             .filter(|s| !s.is_empty())
             .cloned()
-            .unwrap_or_else(|| "-".to_string());
+            .unwrap_or_default();
+        let cpu = if cpu_limit_raw.is_empty() {
+            "-".to_string()
+        } else {
+            cpu_limit_raw.clone()
+        };
+        let root_pool = api
+            .devices
+            .get("root")
+            .and_then(|d| d.get("pool"))
+            .cloned()
+            .unwrap_or_default();
 
         let cpu_usage_display = api
             .state
@@ -497,9 +545,17 @@ impl From<ApiInstance> for InstanceSummary {
             },
             image,
             image_os,
+            app_slug,
+            distro_id,
             ip,
+            net_iface,
             memory,
+            memory_usage_display,
+            memory_limit_display,
+            memory_limit_raw,
             cpu,
+            cpu_limit_raw,
+            root_pool,
             cpu_usage_display,
             disk_usage_display,
             net_rx_display: rx_text,
@@ -514,6 +570,60 @@ impl From<ApiInstance> for InstanceSummary {
     }
 }
 
+#[must_use]
+pub fn detect_distro_id(app_slug: &str, image_os: &str, alias_or_image: &str) -> &'static str {
+    let app = app_slug.trim().to_ascii_lowercase();
+    if !app.is_empty() {
+        match app.as_str() {
+            "docker" => return "docker",
+            "ollama" => return "ollama",
+            "forgejo" => return "forgejo",
+            "postgresql" | "postgres" => return "postgresql",
+            "nginx" => return "nginx",
+            "redis" => return "redis",
+            "caddy" => return "caddy",
+            "gitea" => return "gitea",
+            _ => {}
+        }
+    }
+
+    for candidate in [image_os, alias_or_image] {
+        let lower = candidate.trim().to_ascii_lowercase();
+        if lower.is_empty() {
+            continue;
+        }
+        if lower == "debian" || lower.starts_with("debian") {
+            return "debian";
+        }
+        if lower == "ubuntu" || lower.starts_with("ubuntu") {
+            return "ubuntu";
+        }
+        if lower == "fedora" || lower.starts_with("fedora") {
+            return "fedora";
+        }
+        if lower == "arch" || lower == "archlinux" || lower.starts_with("arch") {
+            return "arch";
+        }
+        if lower == "alpine" || lower.starts_with("alpine") {
+            return "alpine";
+        }
+        if lower.starts_with("opensuse") {
+            return "opensuse";
+        }
+        if lower == "alma" || lower == "almalinux" || lower.starts_with("alma") {
+            return "alma";
+        }
+        if lower == "rocky" || lower == "rockylinux" || lower.starts_with("rocky") {
+            return "rocky";
+        }
+        if lower == "centos" || lower.starts_with("centos") {
+            return "centos";
+        }
+    }
+
+    "generic"
+}
+
 fn format_os_release(os: Option<&str>, rel: Option<&str>, fallback: &str) -> String {
     match (os, rel) {
         (Some(os), Some(rel)) if !os.is_empty() && !rel.is_empty() => format!("{os} {rel}"),
@@ -522,14 +632,16 @@ fn format_os_release(os: Option<&str>, rel: Option<&str>, fallback: &str) -> Str
     }
 }
 
-fn extract_primary_ipv4(network: &HashMap<String, NetworkState>) -> Option<String> {
+fn extract_primary_ipv4_with_iface(
+    network: &HashMap<String, NetworkState>,
+) -> Option<(String, String)> {
     let mut keys: Vec<&String> = network.keys().filter(|k| k.as_str() != "lo").collect();
     keys.sort();
     for iface in keys {
         if let Some(state) = network.get(iface) {
             for addr in &state.addresses {
                 if addr.family == "inet" && addr.scope == "global" && !addr.address.is_empty() {
-                    return Some(addr.address.clone());
+                    return Some((iface.clone(), addr.address.clone()));
                 }
             }
         }
@@ -570,5 +682,20 @@ pub(super) fn format_bytes(bytes: u64) -> String {
         format!("{:.2} GiB", b / GIB)
     } else {
         format!("{:.0} MiB", b / MIB)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_distro_id_prioritizes_app_slug_then_os_then_alias() {
+        assert_eq!(detect_distro_id("docker", "debian", "debian/12"), "docker");
+        assert_eq!(detect_distro_id("postgres", "debian", ""), "postgresql");
+        assert_eq!(detect_distro_id("", "Ubuntu", "ubuntu/24.04"), "ubuntu");
+        assert_eq!(detect_distro_id("", "openSUSE Tumbleweed", ""), "opensuse");
+        assert_eq!(detect_distro_id("", "", "rockylinux/9"), "rocky");
+        assert_eq!(detect_distro_id("", "unknown", "custom"), "generic");
     }
 }

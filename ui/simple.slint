@@ -1,0 +1,1645 @@
+import { ListView, ScrollView } from "std-widgets.slint";
+import {
+    CubbyTheme,
+    UiCommunityApp,
+    UiInstance,
+} from "theme.slint";
+import {
+    CubbyBanner,
+    CubbyButton,
+    CubbyCodeBox,
+    CubbyDistroBadge,
+    CubbyInput,
+    CubbyMark,
+    CubbyModeSwitch,
+    CubbyRow,
+    CubbySegmentOption,
+    CubbySegmentTrack,
+    CubbySelect,
+    CubbyStatusDot,
+    CubbyTag,
+    CubbyTextArea,
+} from "components.slint";
+
+component CubbySimpleTopBar inherits Rectangle {
+    in property <string> simple_view: "hub";
+    in property <bool> socket_connected: false;
+    in property <bool> simple_mode: true;
+    callback toggle_simple_mode(bool);
+
+    height: 48px;
+    background: CubbyTheme.surface;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        alignment: space-between;
+
+        HorizontalLayout {
+            spacing: 10px;
+
+            CubbyMark {
+                y: (parent.height - self.height) / 2;
+                size: "sm";
+            }
+
+            Text {
+                text: "IncusCubby";
+                font-family: CubbyTheme.font_sans;
+                font-size: 14.5px;
+                font-weight: 600;
+                color: CubbyTheme.ink;
+                vertical-alignment: center;
+            }
+
+            CubbyStatusDot {
+                y: (parent.height - self.height) / 2;
+                tone: root.socket_connected ? "live" : "err";
+                label: !root.socket_connected
+                    ? "Socket Denied"
+                    : (root.simple_view == "new"
+                        ? "New Sandbox"
+                        : ((root.simple_view == "apps" || root.simple_view == "app_detail") ? "App Store" : "Ready"));
+            }
+        }
+
+        CubbyModeSwitch {
+            y: (parent.height - self.height) / 2;
+            is_simple: root.simple_mode;
+            select_mode(s) => { root.toggle_simple_mode(s); }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: CubbyTheme.border;
+    }
+}
+
+component DistroTile inherits Rectangle {
+    in property <string> distro: "debian";
+    in property <string> label: "Debian";
+    in property <string> sub: "12 Stable";
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 54px;
+    horizontal-stretch: 1;
+    border-radius: CubbyTheme.radius_md;
+    background: active ? CubbyTheme.surface : (ta.has-hover && enabled ? CubbyTheme.hover_fill : CubbyTheme.surface);
+    border-width: 1px;
+    border-color: active ? CubbyTheme.accent : CubbyTheme.border;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+
+        CubbyDistroBadge {
+            y: (parent.height - self.height) / 2;
+            distro: root.distro;
+            size: "md";
+        }
+
+        VerticalLayout {
+            y: (parent.height - self.preferred-height) / 2;
+            horizontal-stretch: 1;
+            spacing: 1px;
+
+            Text {
+                text: root.label;
+                font-family: CubbyTheme.font_sans;
+                font-size: 12.5px;
+                font-weight: 600;
+                color: CubbyTheme.ink;
+                overflow: elide;
+            }
+            Text {
+                text: root.sub;
+                font-family: CubbyTheme.font_sans;
+                font-size: 11px;
+                color: CubbyTheme.ink_muted;
+                overflow: elide;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SimpleShell inherits VerticalLayout {
+    in-out property <string> simple_view: "hub";
+    in property <bool> socket_connected: false;
+    in property <string> socket_warning: "";
+    in property <string> confirm_message: "";
+    in property <string> status_message: "";
+    in property <bool> status_is_idle: true;
+    in property <bool> busy: false;
+    in property <bool> simple_mode: true;
+
+    in property <[UiInstance]> instances: [];
+    in property <bool> has_selection: false;
+    in property <UiInstance> selected_instance;
+    in property <string> exec_output: "";
+
+    in-out property <string> create_name: "";
+    in-out property <string> create_image_alias: "debian/12";
+    in-out property <string> create_cpu: "2";
+    in-out property <string> create_memory: "4GiB";
+    in-out property <string> create_workspace: "";
+
+    in property <[UiCommunityApp]> community_apps: [];
+    in-out property <string> community_search_query: "";
+    in-out property <string> community_repo_filter: "all";
+    in property <string> community_selected_slug: "";
+    in property <string> community_app_name: "";
+    in property <string> community_description: "";
+    in property <string> community_source_repo: "";
+    in property <string> community_install_script: "";
+    in property <string> community_output: "";
+
+    in property <[string]> available_terminals: ["auto"];
+    in property <[string]> available_ides: ["auto"];
+    in-out property <string> preferred_terminal: "auto";
+    in-out property <string> preferred_ide: "auto";
+    in property <string> resolved_terminal_name: "Terminal";
+    in property <string> resolved_ide_name: "IDE";
+    in property <string> settings_file_path: "";
+
+    in property <string> about_header: "";
+    in property <string> about_description: "";
+    in property <string> about_license_text: "";
+
+    property <bool> show_backup_row: false;
+    property <bool> show_clone_row: false;
+    property <bool> show_full_script: false;
+    property <bool> show_license_text: false;
+    property <string> simple_app_name_input: "";
+
+    callback refresh();
+    callback toggle_simple_mode(bool);
+    callback toggle_theme(bool);
+    callback confirm_action();
+    callback cancel_confirm();
+    callback select_instance_by_name(string);
+    callback open_shell(string);
+    callback open_ide(string);
+    callback set_instance_state(string, string);
+    callback request_delete_instance(string);
+    callback clone_instance(string, string);
+    callback upgrade_packages(string, string);
+    callback install_packages(string, string, string);
+    callback create_snapshot(string, string);
+    callback request_restore_snapshot(string, string);
+    callback browse_workspace_folder();
+    callback create_instance(string, string, string, string, string, string, string, string, bool);
+    callback filter_community_apps(string);
+    callback fetch_community_catalog();
+    callback select_community_app(string);
+    callback deploy_community_app(string, string, string, string, string, string, string, bool);
+    callback save_settings(string, string);
+    callback request_reset_settings();
+    callback open_url(string);
+
+    CubbySimpleTopBar {
+        simple_view: root.simple_view;
+        socket_connected: root.socket_connected;
+        simple_mode: root.simple_mode;
+        toggle_simple_mode(s) => { root.toggle_simple_mode(s); }
+    }
+
+    if root.confirm_message != "": CubbyBanner {
+        tone: "warn";
+        title: "Confirm Action";
+        body: root.confirm_message;
+
+        CubbyButton {
+            y: (parent.height - self.height) / 2;
+            tone: "danger";
+            size: "sm";
+            label: "Confirm";
+            enabled: !root.busy;
+            clicked => { root.confirm_action(); }
+        }
+        CubbyButton {
+            y: (parent.height - self.height) / 2;
+            tone: "outline";
+            size: "sm";
+            label: "Cancel";
+            clicked => { root.cancel_confirm(); }
+        }
+    }
+
+    if root.socket_warning != "" && root.simple_view != "prefs": CubbyBanner {
+        tone: "err";
+        title: "Incus Socket Warning";
+        body: root.socket_warning;
+
+        CubbyButton {
+            y: (parent.height - self.height) / 2;
+            tone: "outline";
+            size: "sm";
+            label: "Retry";
+            enabled: !root.busy;
+            clicked => { root.refresh(); }
+        }
+    }
+
+    // 1. HUB VIEW
+    if root.simple_view == "hub": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            min-height: hub-hdr.preferred-height;
+            vertical-stretch: 0;
+
+            hub-hdr := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 8px;
+                alignment: space-between;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 3px;
+                    Text {
+                        text: "Your Sandboxes";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: CubbyTheme.ink;
+                    }
+                    Text {
+                        text: "Safe isolated Linux workspaces for everyday dev work";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 11.5px;
+                        color: CubbyTheme.ink_secondary;
+                        overflow: elide;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: "Apps";
+                        clicked => { root.simple_view = "apps"; }
+                    }
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "primary";
+                        size: "sm";
+                        label: "+ New";
+                        clicked => { root.simple_view = "new"; }
+                    }
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: CubbyTheme.border;
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+
+            if root.instances.length == 0: VerticalLayout {
+                padding: 32px;
+                alignment: center;
+                spacing: 10px;
+                Text {
+                    text: "No sandboxes yet";
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: CubbyTheme.ink;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Create a Linux workspace in seconds or browse one-click Community Apps.";
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 12px;
+                    color: CubbyTheme.ink_secondary;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+
+            if root.instances.length > 0: ListView {
+                width: 100%;
+                height: 100%;
+
+                for inst in root.instances: Rectangle {
+                    property <bool> is-sel: root.has_selection && inst.name == root.selected_instance.name;
+                    height: 64px;
+                    background: is-sel
+                        ? CubbyTheme.surface
+                        : (hub-ta.has-hover ? CubbyTheme.hover_fill : transparent);
+
+                    if is-sel: Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        width: 2px;
+                        height: parent.height;
+                        background: CubbyTheme.accent;
+                    }
+
+                    hub-ta := TouchArea {
+                        clicked => { root.select_instance_by_name(inst.name); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+
+                        CubbyDistroBadge {
+                            y: (parent.height - self.height) / 2;
+                            distro: inst.distro_id;
+                            size: "md";
+                        }
+
+                        VerticalLayout {
+                            y: (parent.height - self.preferred-height) / 2;
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            HorizontalLayout {
+                                spacing: 7px;
+                                Text {
+                                    text: inst.name;
+                                    font-family: CubbyTheme.font_sans;
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                    color: CubbyTheme.ink;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                CubbyStatusDot {
+                                    y: (parent.height - self.height) / 2;
+                                    tone: inst.is_running ? "live" : (inst.is_frozen ? "warn" : "muted");
+                                    label: inst.is_frozen ? "Paused" : inst.status;
+                                }
+                            }
+
+                            Text {
+                                text: (inst.app_slug != "" ? "App: " + inst.app_slug : inst.image)
+                                    + (inst.instance_type == "virtual-machine" ? " VM · " : " · ")
+                                    + (inst.workspace_path != "" ? inst.workspace_path : "No folder attached");
+                                font-family: CubbyTheme.font_sans;
+                                font-size: 11.5px;
+                                color: CubbyTheme.ink_secondary;
+                                overflow: elide;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+
+                            if inst.is_running: CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: is-sel ? "primary" : "outline";
+                                size: "sm";
+                                label: "Terminal";
+                                clicked => { root.open_shell(inst.name); }
+                            }
+
+                            if inst.is_running && inst.workspace_path != "": CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: root.resolved_ide_name;
+                                clicked => { root.open_ide(inst.workspace_path); }
+                            }
+
+                            if inst.is_running: CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: "Stop";
+                                enabled: !root.busy;
+                                clicked => { root.set_instance_state(inst.name, "stop"); }
+                            }
+
+                            if inst.is_frozen: CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: "Resume";
+                                enabled: !root.busy;
+                                clicked => { root.set_instance_state(inst.name, "unfreeze"); }
+                            }
+
+                            if !inst.is_running && !inst.is_frozen: CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: "Start";
+                                enabled: !root.busy;
+                                clicked => { root.set_instance_state(inst.name, "start"); }
+                            }
+
+                            if !inst.is_running: CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: "Manage";
+                                clicked => {
+                                    root.select_instance_by_name(inst.name);
+                                    root.simple_view = "manage";
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: CubbyTheme.border;
+                    }
+                }
+            }
+        }
+
+        // Hub Footer
+        Rectangle {
+            height: 48px;
+            background: CubbyTheme.surface;
+
+            Rectangle {
+                y: 0px;
+                width: parent.width;
+                height: 1px;
+                background: CubbyTheme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 8px;
+                alignment: space-between;
+
+                Text {
+                    text: (!root.status_is_idle && root.status_message != "")
+                        ? root.status_message
+                        : ("Opens in " + root.resolved_terminal_name + " & " + root.resolved_ide_name);
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 11.5px;
+                    color: CubbyTheme.ink_muted;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    if root.has_selection: CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: "Manage " + root.selected_instance.name;
+                        clicked => { root.simple_view = "manage"; }
+                    }
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: "Preferences";
+                        clicked => { root.simple_view = "prefs"; }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. QUICK CREATE VIEW
+    if root.simple_view == "new": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+                Text {
+                    text: "Create a New Sandbox";
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: CubbyTheme.ink;
+                    vertical-alignment: center;
+                }
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "outline";
+                    size: "sm";
+                    label: "Back";
+                    clicked => { root.simple_view = "hub"; }
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: CubbyTheme.border;
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: start;
+                padding: 16px;
+                spacing: 14px;
+
+                VerticalLayout {
+                    spacing: 6px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "1. Name your sandbox"; font-family: CubbyTheme.font_sans; font-size: 12px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "lowercase, no spaces"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                    }
+                    CubbyInput {
+                        mono: true;
+                        text <=> root.create_name;
+                        placeholder: "my-python-box";
+                        enabled: !root.busy;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "2. Pick a Linux system"; font-family: CubbyTheme.font_sans; font-size: 12px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "auto-configured"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        DistroTile { distro: "debian"; label: "Debian"; sub: "12 Stable"; active: root.create_image_alias == "debian/12"; enabled: !root.busy; clicked => { root.create_image_alias = "debian/12"; } }
+                        DistroTile { distro: "ubuntu"; label: "Ubuntu"; sub: "24.04 LTS"; active: root.create_image_alias == "ubuntu/24.04"; enabled: !root.busy; clicked => { root.create_image_alias = "ubuntu/24.04"; } }
+                        DistroTile { distro: "fedora"; label: "Fedora"; sub: "44"; active: root.create_image_alias == "fedora/44"; enabled: !root.busy; clicked => { root.create_image_alias = "fedora/44"; } }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        DistroTile { distro: "arch"; label: "Arch"; sub: "Rolling"; active: root.create_image_alias == "archlinux"; enabled: !root.busy; clicked => { root.create_image_alias = "archlinux"; } }
+                        DistroTile { distro: "alpine"; label: "Alpine"; sub: "3.24 Tiny"; active: root.create_image_alias == "alpine/3.24"; enabled: !root.busy; clicked => { root.create_image_alias = "alpine/3.24"; } }
+                        DistroTile { distro: "opensuse"; label: "openSUSE"; sub: "Tumbleweed"; active: root.create_image_alias == "opensuse/tumbleweed"; enabled: !root.busy; clicked => { root.create_image_alias = "opensuse/tumbleweed"; } }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "3. Resource size"; font-family: CubbyTheme.font_sans; font-size: 12px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "can change anytime"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                    }
+                    CubbySegmentTrack {
+                        height: 32px;
+                        CubbySegmentOption {
+                            horizontal-stretch: 1;
+                            label: "Light (2 GB · 1 CPU)";
+                            active: root.create_memory == "2GiB" && root.create_cpu == "1";
+                            enabled: !root.busy;
+                            clicked => { root.create_memory = "2GiB"; root.create_cpu = "1"; }
+                        }
+                        CubbySegmentOption {
+                            horizontal-stretch: 1;
+                            label: "Standard (4 GB · 2 CPU)";
+                            active: root.create_memory == "4GiB" && root.create_cpu == "2";
+                            enabled: !root.busy;
+                            clicked => { root.create_memory = "4GiB"; root.create_cpu = "2"; }
+                        }
+                        CubbySegmentOption {
+                            horizontal-stretch: 1;
+                            label: "Heavy (8 GB · 4 CPU)";
+                            active: root.create_memory == "8GiB" && root.create_cpu == "4";
+                            enabled: !root.busy;
+                            clicked => { root.create_memory = "8GiB"; root.create_cpu = "4"; }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "4. Project folder (optional)"; font-family: CubbyTheme.font_sans; font-size: 12px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "available at /workspace"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CubbyInput {
+                            horizontal-stretch: 1;
+                            mono: true;
+                            text <=> root.create_workspace;
+                            placeholder: "~/projects/my-app";
+                            enabled: !root.busy;
+                        }
+                        CubbyButton {
+                            tone: "outline";
+                            label: "Browse...";
+                            enabled: !root.busy;
+                            clicked => { root.browse_workspace_folder(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 52px;
+            background: CubbyTheme.surface;
+            Rectangle { y: 0px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 8px;
+                alignment: space-between;
+
+                Text {
+                    text: "Ready in seconds · safe to delete anytime";
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 11.5px;
+                    color: CubbyTheme.ink_muted;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "outline";
+                    label: "Cancel";
+                    clicked => { root.simple_view = "hub"; }
+                }
+
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "primary";
+                    label: "Create Sandbox";
+                    enabled: !root.busy && root.create_name != "";
+                    clicked => {
+                        root.create_instance(
+                            root.create_name,
+                            "container",
+                            root.create_image_alias,
+                            root.create_memory,
+                            root.create_cpu,
+                            root.create_workspace,
+                            "default",
+                            "",
+                            false
+                        );
+                        root.create_name = "";
+                        root.simple_view = "hub";
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. MANAGE SANDBOX VIEW
+    if root.simple_view == "manage": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            height: 60px;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    horizontal-stretch: 1;
+
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: "<- All";
+                        clicked => { root.simple_view = "hub"; }
+                    }
+
+                    CubbyDistroBadge {
+                        y: (parent.height - self.height) / 2;
+                        distro: root.selected_instance.distro_id;
+                        size: "md";
+                    }
+
+                    VerticalLayout {
+                        y: (parent.height - self.preferred-height) / 2;
+                        horizontal-stretch: 1;
+                        spacing: 1px;
+                        HorizontalLayout {
+                            spacing: 7px;
+                            Text {
+                                text: root.selected_instance.name;
+                                font-family: CubbyTheme.font_sans;
+                                font-size: 13.5px;
+                                font-weight: 600;
+                                color: CubbyTheme.ink;
+                                overflow: elide;
+                            }
+                            CubbyStatusDot {
+                                y: (parent.height - self.height) / 2;
+                                tone: root.selected_instance.is_running ? "live" : (root.selected_instance.is_frozen ? "warn" : "muted");
+                                label: root.selected_instance.status;
+                            }
+                        }
+                        Text {
+                            text: root.selected_instance.image + " · " + root.selected_instance.memory + " · " + root.selected_instance.cpu + " CPU";
+                            font-family: CubbyTheme.font_sans;
+                            font-size: 11px;
+                            color: CubbyTheme.ink_secondary;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "primary";
+                        size: "sm";
+                        label: "Terminal";
+                        enabled: root.selected_instance.is_running;
+                        clicked => { root.open_shell(root.selected_instance.name); }
+                    }
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: root.selected_instance.is_running ? "Stop" : (root.selected_instance.is_frozen ? "Resume" : "Start");
+                        enabled: !root.busy;
+                        clicked => {
+                            root.set_instance_state(
+                                root.selected_instance.name,
+                                root.selected_instance.is_running ? "stop" : (root.selected_instance.is_frozen ? "unfreeze" : "start")
+                            );
+                        }
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: start;
+                padding: 16px;
+                spacing: 14px;
+
+                // Install Apps
+                VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Install Apps"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text {
+                            text: root.selected_instance.pkg_manager != ""
+                                ? "Uses " + root.selected_instance.image_os + " " + root.selected_instance.pkg_manager + " automatically"
+                                : "OS package helper";
+                            font-family: CubbyTheme.font_sans;
+                            font-size: 11px;
+                            color: CubbyTheme.ink_muted;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        s-pkg := CubbyInput {
+                            horizontal-stretch: 1;
+                            mono: true;
+                            placeholder: "App names (e.g. git curl python3)";
+                            enabled: !root.busy && root.selected_instance.is_running;
+                        }
+                        CubbyButton {
+                            tone: "primary";
+                            size: "sm";
+                            label: "Install";
+                            enabled: !root.busy && root.selected_instance.is_running && s-pkg.text != "";
+                            clicked => {
+                                root.install_packages(root.selected_instance.name, root.selected_instance.image_os, s-pkg.text);
+                                s-pkg.text = "";
+                            }
+                        }
+                        CubbyButton {
+                            tone: "outline";
+                            size: "sm";
+                            label: "Update All";
+                            enabled: !root.busy && root.selected_instance.is_running;
+                            clicked => { root.upgrade_packages(root.selected_instance.name, root.selected_instance.image_os); }
+                        }
+                    }
+                    if root.exec_output != "": CubbyTextArea {
+                        height: 92px;
+                        read_only: true;
+                        mono: true;
+                        text: root.exec_output;
+                    }
+                }
+
+                Rectangle { height: 1px; background: CubbyTheme.border; }
+
+                // Shared Project Folder
+                VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Shared Project Folder"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                        CubbyButton {
+                            tone: "outline";
+                            size: "sm";
+                            label: "Open in " + root.resolved_ide_name;
+                            clicked => { root.open_ide(root.selected_instance.workspace_path); }
+                        }
+                    }
+                    CubbyCodeBox {
+                        uri: root.selected_instance.workspace_path != ""
+                            ? root.selected_instance.workspace_path + " -> /workspace"
+                            : "No project folder attached";
+                    }
+                }
+
+                Rectangle { height: 1px; background: CubbyTheme.border; }
+
+                // Quick Backups
+                VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Quick Backups (Snapshots)"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                        CubbyButton {
+                            tone: "outline";
+                            size: "sm";
+                            label: "+ Save Backup";
+                            enabled: !root.busy;
+                            clicked => { root.show_backup_row = !root.show_backup_row; }
+                        }
+                    }
+
+                    if root.show_backup_row: HorizontalLayout {
+                        spacing: 6px;
+                        s-snap := CubbyInput {
+                            horizontal-stretch: 1;
+                            mono: true;
+                            placeholder: "Backup name (e.g. before-upgrade)";
+                            enabled: !root.busy;
+                        }
+                        CubbyButton {
+                            tone: "primary";
+                            size: "sm";
+                            label: "Save";
+                            enabled: !root.busy && s-snap.text != "";
+                            clicked => {
+                                root.create_snapshot(root.selected_instance.name, s-snap.text);
+                                s-snap.text = "";
+                                root.show_backup_row = false;
+                            }
+                        }
+                    }
+
+                    if root.selected_instance.snapshots.length == 0: Text {
+                        text: "No backups saved yet.";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 11.5px;
+                        color: CubbyTheme.ink_muted;
+                    }
+
+                    for snap in root.selected_instance.snapshots: Rectangle {
+                        height: 40px;
+                        border-radius: CubbyTheme.radius_md;
+                        background: CubbyTheme.surface;
+                        border-width: 1px;
+                        border-color: CubbyTheme.border;
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            Text {
+                                text: snap.name;
+                                font-family: CubbyTheme.font_mono;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: CubbyTheme.ink;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: snap.created_at;
+                                font-family: CubbyTheme.font_mono;
+                                font-size: 10.5px;
+                                color: CubbyTheme.ink_muted;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: "Restore";
+                                enabled: !root.busy;
+                                clicked => { root.request_restore_snapshot(root.selected_instance.name, snap.name); }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: CubbyTheme.border; }
+
+                // Duplicate or Remove
+                VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 1px;
+                            Text { text: "Make a Copy or Remove"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                            Text { text: "Instant duplicate or permanent delete"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_muted; }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "outline";
+                                size: "sm";
+                                label: "Duplicate";
+                                enabled: !root.busy;
+                                clicked => { root.show_clone_row = !root.show_clone_row; }
+                            }
+                            CubbyButton {
+                                y: (parent.height - self.height) / 2;
+                                tone: "danger";
+                                size: "sm";
+                                label: "Remove";
+                                enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
+                                clicked => { root.request_delete_instance(root.selected_instance.name); }
+                            }
+                        }
+                    }
+
+                    if root.show_clone_row: HorizontalLayout {
+                        spacing: 6px;
+                        s-clone := CubbyInput {
+                            horizontal-stretch: 1;
+                            mono: true;
+                            placeholder: "Copy name (e.g. " + root.selected_instance.name + "-copy)";
+                            enabled: !root.busy;
+                        }
+                        CubbyButton {
+                            tone: "primary";
+                            size: "sm";
+                            label: "Clone";
+                            enabled: !root.busy && s-clone.text != "";
+                            clicked => {
+                                root.clone_instance(root.selected_instance.name, s-clone.text);
+                                s-clone.text = "";
+                                root.show_clone_row = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 46px;
+            background: CubbyTheme.surface;
+            Rectangle { y: 0px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+                Text {
+                    text: "Need ports, logs, profiles or networks?";
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 11.5px;
+                    color: CubbyTheme.ink_muted;
+                    vertical-alignment: center;
+                }
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "outline";
+                    size: "sm";
+                    label: "Switch to Advanced";
+                    clicked => { root.toggle_simple_mode(false); }
+                }
+            }
+        }
+    }
+
+    // 4. COMMUNITY APP STORE
+    if root.simple_view == "apps": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            min-height: apps-hdr.preferred-height;
+            vertical-stretch: 0;
+            apps-hdr := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                alignment: space-between;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text { text: "Community App Store"; font-family: CubbyTheme.font_sans; font-size: 14px; font-weight: 600; color: CubbyTheme.ink; }
+                    Text { text: "One-click self-hosted apps powered by community-scripts.org"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; overflow: elide; }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Reload"; enabled: !root.busy; clicked => { root.fetch_community_catalog(); } }
+                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Back"; clicked => { root.simple_view = "hub"; } }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        Rectangle {
+            min-height: apps-filter.preferred-height;
+            vertical-stretch: 0;
+            apps-filter := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 8px;
+
+                CubbyInput {
+                    text <=> root.community_search_query;
+                    placeholder: "Search apps (Docker, Ollama, Forgejo, Postgres...)";
+                    edited(q) => { root.filter_community_apps(q); }
+                }
+
+                CubbySegmentTrack {
+                    CubbySegmentOption {
+                        horizontal-stretch: 1;
+                        label: "All Apps";
+                        active: root.community_repo_filter == "all";
+                        clicked => { root.community_repo_filter = "all"; root.filter_community_apps(root.community_search_query); }
+                    }
+                    CubbySegmentOption {
+                        horizontal-stretch: 1;
+                        label: "Incus Stable";
+                        active: root.community_repo_filter == "incus";
+                        clicked => { root.community_repo_filter = "incus"; root.filter_community_apps(root.community_search_query); }
+                    }
+                    CubbySegmentOption {
+                        horizontal-stretch: 1;
+                        label: "Testing (DevScripts)";
+                        active: root.community_repo_filter == "devscripts";
+                        clicked => { root.community_repo_filter = "devscripts"; root.filter_community_apps(root.community_search_query); }
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+
+            ListView {
+                width: 100%;
+                height: 100%;
+
+                for app in root.community_apps: Rectangle {
+                    height: 60px;
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+
+                        CubbyDistroBadge {
+                            y: (parent.height - self.height) / 2;
+                            distro: app.distro_id;
+                            size: "md";
+                        }
+
+                        VerticalLayout {
+                            y: (parent.height - self.preferred-height) / 2;
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Text {
+                                    text: app.name;
+                                    font-family: CubbyTheme.font_sans;
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                    color: CubbyTheme.ink;
+                                    overflow: elide;
+                                }
+                                if app.is_dev: CubbyTag {
+                                    y: (parent.height - self.height) / 2;
+                                    tone: "warn";
+                                    text: "testing";
+                                }
+                            }
+                            Text {
+                                text: app.description != "" ? app.description : app.slug;
+                                font-family: CubbyTheme.font_sans;
+                                font-size: 11.5px;
+                                color: CubbyTheme.ink_secondary;
+                                overflow: elide;
+                            }
+                        }
+
+                        CubbyButton {
+                            y: (parent.height - self.height) / 2;
+                            tone: "outline";
+                            size: "sm";
+                            label: "Script";
+                            enabled: !root.busy;
+                            clicked => {
+                                root.show_full_script = true;
+                                root.simple_app_name_input = app.slug;
+                                root.select_community_app(app.slug);
+                                root.simple_view = "app_detail";
+                            }
+                        }
+
+                        CubbyButton {
+                            y: (parent.height - self.height) / 2;
+                            tone: "primary";
+                            size: "sm";
+                            label: "Install";
+                            enabled: !root.busy;
+                            clicked => {
+                                root.show_full_script = false;
+                                root.simple_app_name_input = app.slug;
+                                root.select_community_app(app.slug);
+                                root.simple_view = "app_detail";
+                            }
+                        }
+                    }
+
+                    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 36px;
+            background: CubbyTheme.surface;
+            Rectangle { y: 0px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+                Text { text: "Verify script source before running"; font-family: CubbyTheme.font_sans; font-size: 11px; color: CubbyTheme.ink_muted; vertical-alignment: center; }
+                Text { text: root.community_apps.length + " scripts"; font-family: CubbyTheme.font_mono; font-size: 11px; color: CubbyTheme.ink_muted; vertical-alignment: center; }
+            }
+        }
+    }
+
+    // 5. APP INSTALL & SCRIPT
+    if root.simple_view == "app_detail": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            height: 60px;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    horizontal-stretch: 1;
+
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: "<- Store";
+                        clicked => { root.simple_view = "apps"; }
+                    }
+
+                    CubbyDistroBadge {
+                        y: (parent.height - self.height) / 2;
+                        distro: root.community_selected_slug;
+                        size: "md";
+                    }
+
+                    VerticalLayout {
+                        y: (parent.height - self.preferred-height) / 2;
+                        horizontal-stretch: 1;
+                        spacing: 1px;
+                        Text {
+                            text: root.community_app_name != "" ? root.community_app_name : root.community_selected_slug;
+                            font-family: CubbyTheme.font_sans;
+                            font-size: 13.5px;
+                            font-weight: 600;
+                            color: CubbyTheme.ink;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.community_source_repo + " · ct/" + root.community_selected_slug + ".sh";
+                            font-family: CubbyTheme.font_mono;
+                            font-size: 10.5px;
+                            color: CubbyTheme.ink_muted;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "primary";
+                    size: "sm";
+                    label: root.busy ? "Deploying..." : "Create & Install";
+                    enabled: !root.busy && root.community_selected_slug != "" && root.simple_app_name_input != "";
+                    clicked => {
+                        root.show_full_script = false;
+                        root.deploy_community_app(
+                            root.community_selected_slug,
+                            root.simple_app_name_input,
+                            root.create_image_alias,
+                            root.create_cpu,
+                            root.create_memory,
+                            "",
+                            "default",
+                            true
+                        );
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        VerticalLayout {
+            vertical-stretch: 1;
+            padding: 16px;
+            spacing: 12px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Sandbox Name:"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                CubbyInput {
+                    horizontal-stretch: 1;
+                    mono: true;
+                    text <=> root.simple_app_name_input;
+                    placeholder: root.community_selected_slug;
+                    enabled: !root.busy;
+                }
+                CubbyButton {
+                    tone: "outline";
+                    size: "sm";
+                    label: root.show_full_script ? "Show Output" : "View Full Script";
+                    clicked => { root.show_full_script = !root.show_full_script; }
+                }
+            }
+
+            if root.community_description != "": Text {
+                text: root.community_description;
+                font-family: CubbyTheme.font_sans;
+                font-size: 12px;
+                color: CubbyTheme.ink_secondary;
+                wrap: word-wrap;
+            }
+
+            CubbyCodeBox {
+                uri: "github.com/" + (root.community_source_repo != "" ? root.community_source_repo : "community-scripts/Incus") + " · " + root.create_image_alias + " (" + root.create_cpu + " CPU · " + root.create_memory + ")";
+            }
+
+            CubbyTextArea {
+                vertical-stretch: 1;
+                read_only: true;
+                mono: true;
+                text: root.show_full_script
+                    ? root.community_install_script
+                    : (root.community_output != ""
+                        ? root.community_output
+                        : "Review script trust summary or click 'Create & Install' to deploy into a new sandbox.");
+            }
+        }
+
+        Rectangle {
+            height: 46px;
+            background: CubbyTheme.surface;
+            Rectangle { y: 0px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+                Text {
+                    text: root.status_message != "" ? root.status_message : "Saved in Sandboxes after install";
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 11px;
+                    color: CubbyTheme.ink_muted;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "outline";
+                    size: "sm";
+                    label: "Open Hub";
+                    clicked => { root.simple_view = "hub"; }
+                }
+            }
+        }
+    }
+
+    // 6. PREFERENCES & SOCKET HELP
+    if root.simple_view == "prefs": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            min-height: prefs-hdr.preferred-height;
+            vertical-stretch: 0;
+            prefs-hdr := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                alignment: space-between;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text { text: "Preferences"; font-family: CubbyTheme.font_sans; font-size: 14px; font-weight: 600; color: CubbyTheme.ink; }
+                    Text { text: "Terminal, code editor, theme, and Incus connection check"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                }
+                CubbyButton {
+                    y: (parent.height - self.height) / 2;
+                    tone: "outline";
+                    size: "sm";
+                    label: "<- Hub";
+                    clicked => { root.simple_view = "hub"; }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: start;
+                padding: 16px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text { text: "Apps & Workspace"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                    Text { text: "settings.json"; font-family: CubbyTheme.font_mono; font-size: 11px; color: CubbyTheme.ink_muted; }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        Text { text: "Terminal App"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                        CubbySelect { model: root.available_terminals; current_value <=> root.preferred_terminal; }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        Text { text: "Code Editor"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                        CubbySelect { model: root.available_ides; current_value <=> root.preferred_ide; }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text { text: "Theme"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                    CubbySegmentTrack {
+                        CubbySegmentOption { label: "Dark"; active: !CubbyTheme.is_light; clicked => { root.toggle_theme(false); } }
+                        CubbySegmentOption { label: "Light"; active: CubbyTheme.is_light; clicked => { root.toggle_theme(true); } }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    CubbyCodeBox { horizontal-stretch: 1; uri: root.settings_file_path; }
+                    CubbyButton {
+                        tone: "primary";
+                        size: "sm";
+                        label: "Save";
+                        clicked => { root.save_settings(root.preferred_terminal, root.preferred_ide); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: CubbyTheme.border; }
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text { text: "Incus Connection"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                    CubbyStatusDot { tone: root.socket_connected ? "live" : "err"; label: root.socket_connected ? "Reachable" : "Unavailable"; }
+                }
+
+                CubbyCodeBox { uri: "/var/lib/incus/unix.socket"; }
+
+                CubbyBanner {
+                    tone: root.socket_connected ? "warn" : "err";
+                    title: "Sandboxes won't load on first run?";
+                    body: "Add your user to incus-admin, then click Retry.";
+
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "outline";
+                        size: "sm";
+                        label: "Retry";
+                        clicked => { root.refresh(); }
+                    }
+                }
+
+                CubbyCodeBox { uri: "sudo usermod -aG incus-admin $USER && newgrp incus-admin"; }
+
+                Rectangle { height: 1px; background: CubbyTheme.border; }
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: space-between;
+                    HorizontalLayout {
+                        spacing: 10px;
+                        horizontal-stretch: 1;
+                        CubbyMark { y: (parent.height - self.height) / 2; size: "md"; }
+                        VerticalLayout {
+                            spacing: 1px;
+                            Text { text: "IncusCubby Desktop"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                            Text { text: "GPL-3.0+ · Local-first, zero telemetry"; font-family: CubbyTheme.font_sans; font-size: 11px; color: CubbyTheme.ink_muted; }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "About"; clicked => { root.simple_view = "about"; } }
+                        CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Licenses"; clicked => { root.simple_view = "legal"; } }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 46px;
+            background: CubbyTheme.surface;
+            Rectangle { y: 0px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+                Text { text: "Need pools, networks or YAML profiles?"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_muted; vertical-alignment: center; }
+                CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Switch to Advanced"; clicked => { root.toggle_simple_mode(false); } }
+            }
+        }
+    }
+
+    // 7. SIMPLE ABOUT & PRIVACY
+    if root.simple_view == "about": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                alignment: space-between;
+                HorizontalLayout {
+                    spacing: 8px;
+                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "<- Prefs"; clicked => { root.simple_view = "prefs"; } }
+                    Text { text: "About & Privacy"; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                }
+                CubbySegmentTrack {
+                    y: (parent.height - self.height) / 2;
+                    CubbySegmentOption { label: "About"; active: true; }
+                    CubbySegmentOption { label: "Licenses"; active: false; clicked => { root.simple_view = "legal"; } }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                padding: 16px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    CubbyMark { size: "lg"; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: root.about_header; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: root.about_description; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; wrap: word-wrap; }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        CubbyButton { y: (parent.height - self.height) / 2; tone: "primary"; size: "sm"; label: "GitHub"; clicked => { root.open_url("https://github.com/nandazahran/IncusCubby"); } }
+                    }
+                }
+
+                CubbyRow { title: "Zero data collection"; meta: "0 telemetry"; subtitle: "No analytics, telemetry, crash reports, or user accounts."; }
+                CubbyRow { title: "Local socket only"; meta: "unix.socket"; subtitle: "Every sandbox call stays on /var/lib/incus/unix.socket."; }
+                CubbyRow { title: "Opt-in web fetches only"; meta: "HTTPS GET"; subtitle: "Internet runs only for Remote Images or Community Apps."; }
+                CubbyRow { last: true; title: "Minimal local config"; meta: "JSON only"; subtitle: "Stores only local UI choices; Incus holds all state."; }
+
+                CubbyCodeBox { uri: root.settings_file_path; }
+
+                HorizontalLayout {
+                    alignment: end;
+                    CubbyButton { tone: "danger"; size: "sm"; label: "Reset Settings"; clicked => { root.request_reset_settings(); } }
+                }
+            }
+        }
+    }
+
+    // 8. SIMPLE LICENSES & CREDITS
+    if root.simple_view == "legal": VerticalLayout {
+        vertical-stretch: 1;
+
+        Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                alignment: space-between;
+                HorizontalLayout {
+                    spacing: 8px;
+                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "<- Prefs"; clicked => { root.simple_view = "prefs"; } }
+                    Text { text: "Licenses & Credits"; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                }
+                CubbySegmentTrack {
+                    y: (parent.height - self.height) / 2;
+                    CubbySegmentOption { label: "About"; active: false; clicked => { root.simple_view = "about"; } }
+                    CubbySegmentOption { label: "Licenses"; active: true; }
+                }
+            }
+            Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                padding: 16px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: "GNU GPL v3.0 or later"; font-family: CubbyTheme.font_sans; font-size: 13px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "Inspect, modify, and share source under GPL-3.0+."; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                    }
+                    CubbyButton {
+                        y: (parent.height - self.height) / 2;
+                        tone: "primary";
+                        size: "sm";
+                        label: root.show_license_text ? "Hide" : "LICENSE";
+                        clicked => { root.show_license_text = !root.show_license_text; }
+                    }
+                }
+
+                if root.show_license_text: CubbyTextArea {
+                    height: 180px;
+                    read_only: true;
+                    mono: true;
+                    text: root.about_license_text;
+                }
+
+                CubbyRow { title: "Incus 1.0 & Simplestreams"; meta: "Apache-2.0"; subtitle: "Local Linux container/VM engine and official image mirrors."; }
+                CubbyRow { title: "community-scripts.org"; meta: "MIT"; subtitle: "Public Incus & DevScripts app installers."; }
+                CubbyRow { title: "DistroShelf, BoxBuddyRS & Incus Web UI"; meta: "FOSS inspiration"; subtitle: "Quick terminal/IDE flows, distro badges, and telemetry cues."; }
+                CubbyRow { mono_title: true; title: "slint 1.18 · tokio · hyper"; meta: "GPL-3.0 / MIT"; subtitle: "Native desktop UI toolkit and async Unix socket worker."; }
+                CubbyRow { last: true; mono_title: true; title: "Geist & Geist Mono"; meta: "SIL OFL-1.1"; subtitle: "Precision sans-serif and monospace typography."; }
+            }
+        }
+    }
+}

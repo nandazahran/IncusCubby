@@ -1,0 +1,839 @@
+import { ScrollView } from "std-widgets.slint";
+import { CubbyTheme } from "theme.slint";
+
+export component CubbyMark inherits Rectangle {
+    in property <string> size: "sm"; // "sm" (22), "md" (28), "lg" (44)
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    width: size == "lg" ? 44px : (size == "md" ? 28px : 22px);
+    height: self.width;
+    border-radius: size == "lg" ? CubbyTheme.radius_lg : (size == "md" ? 5px : CubbyTheme.radius_sm);
+    background: CubbyTheme.surface;
+    border-width: 1px;
+    border-color: CubbyTheme.border;
+
+    property <length> svg-size: size == "lg" ? 28px : (size == "md" ? 19px : 15px);
+
+    Rectangle {
+        width: root.svg-size;
+        height: root.svg-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        Path {
+            width: 100%;
+            height: 100%;
+            viewbox-width: 32;
+            viewbox-height: 32;
+            commands: "M11 7.5H8.5A2.5 2.5 0 0 0 6 10V23.5A2.5 2.5 0 0 0 8.5 26H23.5A2.5 2.5 0 0 0 26 23.5V10A2.5 2.5 0 0 0 23.5 7.5H21";
+            stroke: CubbyTheme.ink;
+            stroke-width: root.size == "lg" ? 2.2px : (root.size == "md" ? 1.6px : 1.35px);
+            stroke-line-cap: round;
+            fill: transparent;
+        }
+
+        Rectangle {
+            x: parent.width * (11.5 / 32.0);
+            y: parent.height * (12.0 / 32.0);
+            width: parent.width * (9.0 / 32.0);
+            height: parent.height * (9.0 / 32.0);
+            border-radius: root.size == "lg" ? 2px : 1.5px;
+            background: CubbyTheme.accent;
+        }
+    }
+}
+
+export component CubbyStatusDot inherits HorizontalLayout {
+    in property <string> tone: "live"; // "live" | "warn" | "err" | "muted"
+    in property <string> label: "";
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    spacing: 6px;
+    alignment: start;
+
+    property <color> dot-color: tone == "err"
+        ? CubbyTheme.err
+        : (tone == "warn"
+            ? CubbyTheme.warn
+            : (tone == "muted" ? CubbyTheme.ink_muted : CubbyTheme.live));
+
+    property <color> text-color: tone == "err"
+        ? CubbyTheme.err
+        : (tone == "warn"
+            ? CubbyTheme.warn
+            : (tone == "muted" ? CubbyTheme.ink_muted : CubbyTheme.ink_secondary));
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: root.dot-color;
+    }
+
+    if root.label != "": Text {
+        text: root.label;
+        font-family: CubbyTheme.font_sans;
+        font-size: 12px;
+        font-weight: 400;
+        color: root.text-color;
+        vertical-alignment: center;
+    }
+}
+
+export component CubbyButton inherits Rectangle {
+    in property <string> tone: "outline"; // "primary" | "outline" | "danger" | "ghost"
+    in property <string> size: "md";      // "sm" | "md" | "lg"
+    in property <string> label: "";
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: size == "sm" ? 28px : (size == "lg" ? 38px : 32px);
+    min-width: label-text.preferred-width + (size == "sm" ? 20px : (size == "lg" ? 32px : 24px));
+    border-radius: CubbyTheme.radius_md;
+    border-width: 1px;
+    opacity: enabled ? 1.0 : 0.45;
+
+    property <bool> is-primary: tone == "primary" || active;
+
+    background: is-primary
+        ? CubbyTheme.cta_bg
+        : (tone == "danger"
+            ? CubbyTheme.err_bg
+            : (tone == "ghost"
+                ? (ta.has-hover && enabled ? CubbyTheme.hover_fill : transparent)
+                : (ta.has-hover && enabled ? CubbyTheme.well : CubbyTheme.surface)));
+
+    border-color: is-primary
+        ? CubbyTheme.cta_bg
+        : (tone == "danger"
+            ? CubbyTheme.err_border
+            : (tone == "ghost" ? transparent : CubbyTheme.border));
+
+    label-text := Text {
+        x: root.size == "sm" ? 10px : (root.size == "lg" ? 16px : 12px);
+        width: parent.width - 2 * self.x;
+        height: 100%;
+        text: root.label;
+        font-family: CubbyTheme.font_sans;
+        font-size: root.size == "sm" ? 12px : (root.size == "lg" ? 13px : 12.5px);
+        font-weight: 500;
+        color: root.is-primary
+            ? CubbyTheme.cta_ink
+            : (root.tone == "danger"
+                ? CubbyTheme.err
+                : (root.tone == "ghost" ? CubbyTheme.ink_secondary : CubbyTheme.ink));
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component CubbySegmentTrack inherits Rectangle {
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    background: CubbyTheme.well;
+    border-width: 1px;
+    border-color: CubbyTheme.border;
+    border-radius: CubbyTheme.radius_md;
+    height: 30px;
+
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        @children
+    }
+}
+
+export component CubbySegmentOption inherits Rectangle {
+    in property <bool> active: false;
+    in property <string> label: "";
+    in property <bool> enabled: true;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: 24px;
+    min-width: opt-text.preferred-width + 20px;
+    border-radius: CubbyTheme.radius_sm;
+    background: active ? CubbyTheme.seg_active : (ta.has-hover && enabled ? CubbyTheme.hover_fill : transparent);
+    opacity: enabled ? 1.0 : 0.45;
+
+    opt-text := Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: 100%;
+        text: root.label;
+        font-family: CubbyTheme.font_sans;
+        font-size: 12px;
+        font-weight: root.active ? 500 : 400;
+        color: root.active ? CubbyTheme.ink : CubbyTheme.ink_secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component CubbyModeSwitch inherits CubbySegmentTrack {
+    in property <bool> is_simple: false;
+    callback select_mode(bool);
+
+    CubbySegmentOption {
+        label: "Simple";
+        active: root.is_simple;
+        horizontal-stretch: 0;
+        clicked => { root.select_mode(true); }
+    }
+
+    CubbySegmentOption {
+        label: "Advanced";
+        active: !root.is_simple;
+        horizontal-stretch: 0;
+        clicked => { root.select_mode(false); }
+    }
+}
+
+export component CubbyCodeBox inherits Rectangle {
+    in property <string> uri: "";
+    in property <color> text_color: CubbyTheme.ink;
+
+    height: 30px;
+    border-radius: CubbyTheme.radius_md;
+    background: CubbyTheme.well;
+    border-width: 1px;
+    border-color: CubbyTheme.border;
+    clip: true;
+
+    Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: 100%;
+        text: root.uri;
+        font-family: CubbyTheme.font_mono;
+        font-size: 11.5px;
+        color: root.text_color;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component CubbyTag inherits Rectangle {
+    in property <string> text: "";
+    in property <string> tone: "default"; // "default" | "warn" | "live" | "accent"
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: 20px;
+    min-width: tag-lbl.preferred-width + 14px;
+    border-radius: CubbyTheme.radius_sm;
+    border-width: 1px;
+    background: tone == "warn"
+        ? CubbyTheme.warn_bg
+        : (tone == "accent"
+            ? CubbyTheme.accent_soft
+            : CubbyTheme.well);
+    border-color: tone == "warn"
+        ? CubbyTheme.warn_border
+        : (tone == "accent"
+            ? CubbyTheme.accent
+            : CubbyTheme.border);
+
+    tag-lbl := Text {
+        x: 7px;
+        width: parent.width - 14px;
+        height: 100%;
+        text: root.text;
+        font-family: CubbyTheme.font_mono;
+        font-size: 10.5px;
+        color: root.tone == "warn"
+            ? CubbyTheme.warn
+            : (root.tone == "live"
+                ? CubbyTheme.live
+                : (root.tone == "accent" ? CubbyTheme.accent : CubbyTheme.ink_secondary));
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component CubbyDistroBadge inherits Rectangle {
+    in property <string> distro: "generic";
+    in property <string> size: "sm"; // "xs" (16), "sm" (24), "md" (30)
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    width: size == "md" ? 30px : (size == "xs" ? 16px : 24px);
+    height: self.width;
+    border-radius: size == "md" ? CubbyTheme.radius_md : (size == "xs" ? 3px : CubbyTheme.radius_sm);
+    background: size == "xs" ? transparent : CubbyTheme.distro_bg(distro);
+    border-width: size == "xs" ? 0px : 1px;
+    border-color: size == "xs" ? transparent : CubbyTheme.distro_border(distro);
+
+    Image {
+        width: root.size == "md" ? 17px : (root.size == "xs" ? 12px : 14px);
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: CubbyTheme.distro_icon(root.distro);
+        image-fit: contain;
+    }
+}
+
+export component CubbyBanner inherits Rectangle {
+    in property <string> tone: "warn"; // "warn" | "err"
+    in property <string> title: "";
+    in property <string> body: "";
+
+    vertical-stretch: 0;
+    background: tone == "err" ? CubbyTheme.err_bg : CubbyTheme.warn_bg;
+    border-width: 1px;
+    border-color: tone == "err" ? CubbyTheme.err_border : CubbyTheme.warn_border;
+    min-height: content.preferred-height;
+
+    content := HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 14px;
+        alignment: space-between;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+
+            Text {
+                text: root.title;
+                font-family: CubbyTheme.font_sans;
+                font-size: 12.5px;
+                font-weight: 600;
+                color: root.tone == "err" ? CubbyTheme.err : CubbyTheme.warn;
+            }
+
+            Text {
+                text: root.body;
+                font-family: CubbyTheme.font_sans;
+                font-size: 12px;
+                color: CubbyTheme.ink_secondary;
+                wrap: word-wrap;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            @children
+        }
+    }
+}
+
+export component CubbyMetricCell inherits Rectangle {
+    in property <bool> accent: false;
+    in property <bool> last: false;
+    in property <string> label: "";
+    in property <string> value: "";
+    in property <string> sub: "";
+
+    background: CubbyTheme.surface;
+    horizontal-stretch: 1;
+    min-height: 76px;
+
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: space-between;
+
+            Text {
+                text: root.label;
+                font-family: CubbyTheme.font_mono;
+                font-size: 10.5px;
+                color: CubbyTheme.ink_muted;
+                horizontal-stretch: 1;
+            }
+
+            if root.accent: Rectangle {
+                y: 4px;
+                width: 5px;
+                height: 5px;
+                border-radius: 3px;
+                background: CubbyTheme.accent;
+            }
+        }
+
+        Text {
+            text: root.value;
+            font-family: CubbyTheme.font_sans;
+            font-size: 18px;
+            font-weight: 600;
+            color: CubbyTheme.ink;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.sub;
+            font-family: CubbyTheme.font_mono;
+            font-size: 11px;
+            color: CubbyTheme.ink_secondary;
+            overflow: elide;
+        }
+    }
+
+    if !root.last: Rectangle {
+        x: parent.width - 1px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: CubbyTheme.border;
+    }
+}
+
+export component CubbyRow inherits Rectangle {
+    in property <bool> mono_title: false;
+    in property <bool> last: false;
+    in property <string> title: "";
+    in property <string> meta: "";
+    in property <string> subtitle: "";
+
+    min-height: row-layout.preferred-height;
+
+    row-layout := VerticalLayout {
+        HorizontalLayout {
+            padding-top: 10px;
+            padding-bottom: 10px;
+            spacing: 12px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    Text {
+                        text: root.title;
+                        font-family: root.mono_title ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+                        font-size: root.mono_title ? 12px : 13px;
+                        font-weight: 500;
+                        color: CubbyTheme.ink;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+
+                    if root.meta != "": Text {
+                        text: root.meta;
+                        font-family: CubbyTheme.font_mono;
+                        font-size: 11px;
+                        color: CubbyTheme.ink_muted;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.subtitle != "": Text {
+                    text: root.subtitle;
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 12px;
+                    color: CubbyTheme.ink_secondary;
+                    wrap: word-wrap;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                @children
+            }
+        }
+
+        if !root.last: Rectangle {
+            height: 1px;
+            background: CubbyTheme.border;
+        }
+    }
+}
+
+export component CubbyPanel inherits Rectangle {
+    in property <string> title: "";
+    in property <string> meta: "";
+    in property <bool> pad_body: true;
+
+    vertical-stretch: 0;
+    background: CubbyTheme.surface;
+    border-width: 1px;
+    border-color: CubbyTheme.border;
+    border-radius: CubbyTheme.radius_md;
+
+    VerticalLayout {
+        if root.title != "": Rectangle {
+            height: 38px;
+            vertical-stretch: 0;
+
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 8px;
+
+                Text {
+                    text: root.title;
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: CubbyTheme.ink;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if root.meta != "": Text {
+                    text: root.meta;
+                    font-family: CubbyTheme.font_mono;
+                    font-size: 11px;
+                    color: CubbyTheme.ink_muted;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: CubbyTheme.border;
+            }
+        }
+
+        VerticalLayout {
+            padding: root.pad_body ? 14px : 0px;
+            spacing: 10px;
+            vertical-stretch: 1;
+            @children
+        }
+    }
+}
+
+export component CubbyInput inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder: "";
+    in property <bool> enabled: true;
+    in property <bool> mono: false;
+    out property <bool> has_focus: input.has-focus;
+    callback edited(string);
+    callback accepted(string);
+
+    vertical-stretch: 0;
+    height: 32px;
+    min-width: 60px;
+    border-radius: CubbyTheme.radius_md;
+    background: CubbyTheme.well;
+    border-width: 1px;
+    border-color: input.has-focus && enabled ? CubbyTheme.accent : CubbyTheme.border;
+    opacity: enabled ? 1.0 : 0.5;
+    clip: true;
+    forward-focus: input;
+
+    if input.text == "" && input.preedit-text == "" && root.placeholder != "": Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: 100%;
+        text: root.placeholder;
+        font-family: root.mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+        font-size: root.mono ? 12px : 12.5px;
+        color: CubbyTheme.ink_muted;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Rectangle {
+        x: 10px;
+        width: max(1px, parent.width - 20px);
+        height: 100%;
+        clip: true;
+
+        input := TextInput {
+            property <length> computed_x: 0px;
+
+            x: min(0px, max(parent.width - self.width - self.text-cursor-width, self.computed_x));
+            width: max(parent.width - self.text-cursor-width, self.preferred-width);
+            height: 100%;
+            vertical-alignment: center;
+            single-line: true;
+            enabled: root.enabled;
+            font-family: root.mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+            font-size: root.mono ? 12px : 12.5px;
+            color: CubbyTheme.ink;
+            selection-background-color: CubbyTheme.accent_soft;
+            selection-foreground-color: CubbyTheme.ink;
+
+            cursor-position-changed(cpos) => {
+                if cpos.x + self.computed_x < 0px {
+                    self.computed_x = -cpos.x;
+                } else if cpos.x + self.computed_x > parent.width - self.text-cursor-width {
+                    self.computed_x = parent.width - cpos.x - self.text-cursor-width;
+                }
+            }
+
+            edited => { root.edited(self.text); }
+            accepted => { root.accepted(self.text); }
+        }
+    }
+}
+
+export component CubbyTextArea inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder: "";
+    in property <bool> read_only: false;
+    in property <bool> enabled: true;
+    in property <bool> mono: true;
+    in property <color> text_color: CubbyTheme.ink;
+    callback edited(string);
+
+    border-radius: CubbyTheme.radius_lg;
+    background: CubbyTheme.well;
+    border-width: 1px;
+    border-color: !read_only && input.has-focus ? CubbyTheme.accent : CubbyTheme.border;
+    forward-focus: input;
+    min-height: 96px;
+
+    scroll := ScrollView {
+        x: 10px;
+        y: 8px;
+        width: max(1px, parent.width - 20px);
+        height: max(1px, parent.height - 16px);
+        content-width: scroll.visible-width;
+        content-height: max(scroll.visible-height, input.preferred-height);
+
+        if root.text == "" && input.preedit-text == "" && root.placeholder != "": Text {
+            x: 0px;
+            y: 0px;
+            width: scroll.visible-width;
+            text: root.placeholder;
+            font-family: root.mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+            font-size: 11.5px;
+            color: CubbyTheme.ink_muted;
+            wrap: word-wrap;
+        }
+
+        input := TextInput {
+            x: 0px;
+            y: 0px;
+            width: scroll.visible-width;
+            height: max(scroll.visible-height, self.preferred-height);
+            single-line: false;
+            wrap: word-wrap;
+            read-only: root.read_only;
+            enabled: root.enabled;
+            font-family: root.mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+            font-size: 11.5px;
+            color: root.text_color;
+            selection-background-color: CubbyTheme.accent_soft;
+            selection-foreground-color: CubbyTheme.ink;
+            page-height: scroll.visible-height;
+
+            edited => { root.edited(self.text); }
+
+            cursor-position-changed(cpos) => {
+                if cpos.y + scroll.content-y < 0px {
+                    scroll.content-y = min(0px, max(scroll.visible-height - self.height, -cpos.y));
+                } else if cpos.y + scroll.content-y > scroll.visible-height - 18px {
+                    scroll.content-y = min(0px, max(scroll.visible-height - self.height, scroll.visible-height - cpos.y - 18px));
+                }
+            }
+        }
+    }
+}
+
+export component CubbySelect inherits Rectangle {
+    in property <[string]> model: [];
+    in-out property <string> current_value: "";
+    in property <string> placeholder: "Select...";
+    in property <bool> enabled: true;
+    callback selected(string);
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: 32px;
+    min-width: 120px;
+    border-radius: CubbyTheme.radius_md;
+    background: ta.has-hover && enabled ? CubbyTheme.seg_active : CubbyTheme.well;
+    border-width: 1px;
+    border-color: CubbyTheme.border;
+    opacity: enabled ? 1.0 : 0.45;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+
+        Text {
+            text: root.current_value != "" ? root.current_value : root.placeholder;
+            font-family: CubbyTheme.font_mono;
+            font-size: 12px;
+            color: root.current_value != "" ? CubbyTheme.ink : CubbyTheme.ink_muted;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        Text {
+            text: "v";
+            font-family: CubbyTheme.font_mono;
+            font-size: 10px;
+            color: CubbyTheme.ink_muted;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled && root.model.length > 0;
+        mouse-cursor: self.enabled ? pointer : default;
+        clicked => {
+            popup.show();
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 4px;
+        width: root.width;
+        height: min(max(root.model.length, 1), 6) * 30px + 8px;
+        close-policy: close-on-click-outside;
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: CubbyTheme.surface;
+            border-width: 1px;
+            border-color: CubbyTheme.border;
+            border-radius: CubbyTheme.radius_md;
+
+            ScrollView {
+                x: 4px;
+                y: 4px;
+                width: parent.width - 8px;
+                height: parent.height - 8px;
+
+                VerticalLayout {
+                    spacing: 2px;
+
+                    for item in root.model: Rectangle {
+                        height: 28px;
+                        border-radius: CubbyTheme.radius_sm;
+                        background: item == root.current_value
+                            ? CubbyTheme.seg_active
+                            : (item-ta.has-hover ? CubbyTheme.hover_fill : transparent);
+
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: 100%;
+                            text: item;
+                            font-family: CubbyTheme.font_mono;
+                            font-size: 12px;
+                            font-weight: item == root.current_value ? 500 : 400;
+                            color: CubbyTheme.ink;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        item-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.current_value = item;
+                                root.selected(item);
+                                popup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component CubbyCheckBox inherits HorizontalLayout {
+    in-out property <bool> checked: false;
+    in property <string> label: "";
+    in property <bool> enabled: true;
+    callback toggled(bool);
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    spacing: 8px;
+    alignment: start;
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 16px;
+        height: 16px;
+        border-radius: CubbyTheme.radius_sm;
+        background: root.checked ? CubbyTheme.accent : CubbyTheme.well;
+        border-width: 1px;
+        border-color: root.checked ? CubbyTheme.accent : CubbyTheme.border;
+        opacity: root.enabled ? 1.0 : 0.45;
+
+        if root.checked: Path {
+            width: 10px;
+            height: 10px;
+            x: 3px;
+            y: 3px;
+            viewbox-width: 12;
+            viewbox-height: 12;
+            commands: "M2 6.5 L4.8 9.2 L10 3";
+            stroke: #FFFFFF;
+            stroke-width: 1.8px;
+            stroke-line-cap: round;
+            stroke-line-join: round;
+            fill: transparent;
+        }
+
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            clicked => {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+            }
+        }
+    }
+
+    if root.label != "": Text {
+        text: root.label;
+        font-family: CubbyTheme.font_sans;
+        font-size: 12.5px;
+        color: CubbyTheme.ink;
+        vertical-alignment: center;
+
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            clicked => {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+            }
+        }
+    }
+}
