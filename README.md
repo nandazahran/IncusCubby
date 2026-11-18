@@ -42,7 +42,7 @@ Build instructions, repository layout, and test commands are covered in [CONTRIB
 2. Launch `cargo run --release` (or the compiled `target/release/incus-cubby` binary).
 3. Use the top-level tabs:
    - **Sandboxes**: Select an instance to inspect telemetry, start/stop/restart/freeze, open a shell or IDE, clone, edit CPU/RAM limits, upgrade/install packages, manage disk mounts and proxy ports, take/restore snapshots, view logs, or push/pull files.
-   - **Create Sandbox**: Pick `container` or `virtual-machine`, choose a preset or fetched `images.linuxcontainers.org` alias, set CPU/memory/profiles, optionally bind-mount a host directory at `/workspace`, and optionally supply `cloud-init.user-data`.
+   - **Create**: Switch between **Official Images (LinuxContainers)** (`container` or `virtual-machine`, presets or fetched `images.linuxcontainers.org` aliases, CPU/memory/profiles, `/workspace` bind-mount, `cloud-init.user-data`) and **Community Scripts (community-scripts/Incus)** (search/filter catalog, preview `ct`/`install` scripts, deploy new containers or run in existing ones).
    - **Storage & Networks**: View pool capacity, create/delete custom volumes, create/delete managed bridge networks (with IPv4/IPv6 NAT toggle), and inspect DHCP leases.
    - **Profiles**: Create, update, or delete non-`default` Incus profiles with CPU and memory limits.
    - **Images**: Inspect and delete locally cached Incus base images.

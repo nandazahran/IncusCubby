@@ -13,7 +13,7 @@ IncusCubby collects no data. Ever.
 IncusCubby is a local desktop manager for your local Incus daemon:
 
 - **Local Unix socket**: All instance, snapshot, device, log, file, storage, network, and profile operations communicate solely with `/var/lib/incus/unix.socket` on your machine.
-- **Optional upstream image alias fetch**: Only when you explicitly click *Fetch Remote Aliases* in the *Create Sandbox* tab does IncusCubby make an HTTPS `GET` request to `https://images.linuxcontainers.org/streams/v1/images.json` to list available public image aliases.
+- **Optional upstream image alias fetch**: Only when you explicitly click *Fetch Remote Aliases* in the *Create* tab does IncusCubby make an HTTPS `GET` request to `https://images.linuxcontainers.org/streams/v1/images.json` to list available public image aliases.
 - **Image pulls by Incus**: When you create an instance from a remote alias, the local `incusd` daemon pulls the requested image from `https://images.linuxcontainers.org`.
 
 ## System access

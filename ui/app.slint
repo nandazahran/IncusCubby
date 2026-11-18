@@ -109,6 +109,17 @@ export component AppWindow inherits Window {
     in property <[UiStorageVolume]> storage_volumes: [];
     in property <[UiNetwork]> networks: [];
     in property <[UiProfile]> profiles: [];
+    in-out property <bool> create_use_community: false;
+    in-out property <string> create_name: "";
+    in-out property <string> create_type: "container";
+    in-out property <string> create_image_alias: "debian/12";
+    in-out property <string> create_cpu: "2";
+    in-out property <string> create_memory: "4GiB";
+    in-out property <string> create_profiles: "default";
+    in-out property <string> create_workspace: "";
+    in-out property <bool> create_nesting: false;
+    in-out property <string> create_cloud_init: "";
+    in-out property <string> remote_search_query: "";
     in property <[UiCommunityApp]> community_apps: [];
     in-out property <string> community_search_query: "";
     in property <[string]> running_instance_names: [];
@@ -117,10 +128,6 @@ export component AppWindow inherits Window {
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_tags: "";
-    in-out property <string> community_image_alias: "";
-    in-out property <string> community_cpu: "";
-    in-out property <string> community_memory: "";
-    in-out property <bool> community_nesting: true;
     in property <string> community_install_script: "";
     in property <string> community_output: "";
     in property <[string]> remote_aliases: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
@@ -174,13 +181,14 @@ export component AppWindow inherits Window {
     callback save_profile(string, string, string, string, bool);
     callback request_delete_profile(string);
     callback fetch_remote_images();
+    callback filter_remote_aliases(string);
     callback refresh_local_images();
     callback request_delete_image(string, string);
     callback save_settings(string, string);
     callback fetch_community_catalog();
     callback filter_community_apps(string);
     callback select_community_app(string);
-    callback deploy_community_app(string, string, string, string, string, bool);
+    callback deploy_community_app(string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
     callback confirm_action();
     callback cancel_confirm();
@@ -758,139 +766,361 @@ export component AppWindow inherits Window {
             }
 
             Tab {
-                title: "Create Sandbox";
+                title: "Create";
 
-                VerticalBox {
+                HorizontalBox {
                     GroupBox {
-                        title: "New Sandbox Configuration";
+                        title: "Source & Catalog";
+                        horizontal-stretch: 1;
+                        min-width: 270px;
+
                         VerticalBox {
                             HorizontalBox {
-                                create_name_input := LineEdit {
-                                    placeholder-text: "Sandbox name (e.g. dev-rust)";
-                                    enabled: !root.busy;
-                                }
-
-                                create_type_combo := ComboBox {
-                                    model: ["container", "virtual-machine"];
-                                    current-value: "container";
-                                    enabled: !root.busy;
-                                }
-
-                                remote_combo := ComboBox {
-                                    model: root.remote_aliases;
-                                    current-value: "debian/12";
-                                    enabled: !root.busy;
-                                    selected(val) => {
-                                        create_image_input.text = val;
+                                Button {
+                                    text: "Official Images";
+                                    primary: !root.create_use_community;
+                                    horizontal-stretch: 1;
+                                    clicked => {
+                                        root.create_use_community = false;
                                     }
-                                }
-
-                                create_image_input := LineEdit {
-                                    text: "debian/12";
-                                    placeholder-text: "Image alias";
-                                    enabled: !root.busy;
                                 }
 
                                 Button {
-                                    text: "Fetch Remote Aliases";
-                                    enabled: !root.busy;
-                                    clicked => {
-                                        root.fetch_remote_images();
-                                    }
-                                }
-                            }
-
-                            HorizontalBox {
-                                Text {
-                                    text: "Memory:";
-                                    vertical-alignment: center;
-                                }
-
-                                create_mem_combo := ComboBox {
-                                    model: ["2GiB", "4GiB", "8GiB", "16GiB"];
-                                    current-value: "4GiB";
-                                    enabled: !root.busy;
-                                }
-
-                                Text {
-                                    text: "CPU:";
-                                    vertical-alignment: center;
-                                }
-
-                                create_cpu_combo := ComboBox {
-                                    model: ["1", "2", "4", "8"];
-                                    current-value: "2";
-                                    enabled: !root.busy;
-                                }
-
-                                Text {
-                                    text: "Profiles:";
-                                    vertical-alignment: center;
-                                }
-
-                                create_profile_combo := ComboBox {
-                                    model: root.profile_names;
-                                    current-value: "default";
-                                    enabled: !root.busy;
-                                    selected(val) => {
-                                        create_profiles_input.text = val;
-                                    }
-                                }
-
-                                create_profiles_input := LineEdit {
-                                    text: "default";
-                                    placeholder-text: "Comma-separated profiles";
-                                    enabled: !root.busy;
-                                }
-                            }
-
-                            HorizontalBox {
-                                create_ws_input := LineEdit {
-                                    placeholder-text: "Optional host workspace path (mounted at /workspace, e.g. ~/projects/app)";
-                                    enabled: !root.busy;
+                                    text: "Community Scripts";
+                                    primary: root.create_use_community;
                                     horizontal-stretch: 1;
+                                    clicked => {
+                                        root.create_use_community = true;
+                                        root.create_type = "container";
+                                    }
+                                }
+                            }
+
+                            if !root.create_use_community: VerticalBox {
+                                vertical-stretch: 1;
+
+                                HorizontalBox {
+                                    LineEdit {
+                                        text <=> root.remote_search_query;
+                                        placeholder-text: "Filter aliases (e.g. ubuntu, alpine)";
+                                        horizontal-stretch: 1;
+                                        edited(q) => {
+                                            root.filter_remote_aliases(q);
+                                        }
+                                    }
+
+                                    Button {
+                                        text: "Fetch";
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.fetch_remote_images();
+                                        }
+                                    }
                                 }
 
-                                create_nesting_check := CheckBox {
-                                    text: "Nesting";
-                                    checked: false;
-                                    enabled: !root.busy;
+                                if root.remote_aliases.length == 0: Text {
+                                    text: "No matching official aliases.";
+                                }
+
+                                if root.remote_aliases.length > 0: ListView {
+                                    vertical-stretch: 1;
+                                    for alias in root.remote_aliases: HorizontalBox {
+                                        Button {
+                                            text: (alias == root.create_image_alias ? "> " : "") + alias;
+                                            horizontal-stretch: 1;
+                                            enabled: !root.busy;
+                                            clicked => {
+                                                root.create_image_alias = alias;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.create_use_community: VerticalBox {
+                                vertical-stretch: 1;
+
+                                HorizontalBox {
+                                    LineEdit {
+                                        text <=> root.community_search_query;
+                                        placeholder-text: "Search apps (e.g. surfsense, t3code, docker)";
+                                        horizontal-stretch: 1;
+                                        edited(q) => {
+                                            root.filter_community_apps(q);
+                                        }
+                                    }
+
+                                    Button {
+                                        text: "Reload";
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.fetch_community_catalog();
+                                        }
+                                    }
+                                }
+
+                                if root.community_apps.length == 0: Text {
+                                    text: "No matching community apps.";
+                                }
+
+                                if root.community_apps.length > 0: ListView {
+                                    vertical-stretch: 1;
+                                    for app in root.community_apps: HorizontalBox {
+                                        Button {
+                                            text: (app.slug == root.community_selected_slug ? "> " : "")
+                                                + (app.is_dev ? "[dev] " : "")
+                                                + app.name
+                                                + " (" + app.slug + ")";
+                                            horizontal-stretch: 1;
+                                            enabled: !root.busy;
+                                            clicked => {
+                                                root.select_community_app(app.slug);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    GroupBox {
-                        title: "Optional Cloud-Init User Data (for /cloud images)";
-                        vertical-stretch: 1;
+                    VerticalBox {
+                        horizontal-stretch: 2;
 
-                        cloud_init_edit := TextEdit {
-                            placeholder-text: "#cloud-config\npackages:\n  - git\n  - curl";
-                            enabled: !root.busy;
+                        GroupBox {
+                            title: "Sandbox Configuration";
+                            VerticalBox {
+                                HorizontalBox {
+                                    LineEdit {
+                                        text <=> root.create_name;
+                                        placeholder-text: root.create_use_community && root.community_selected_slug != ""
+                                            ? "Sandbox name (e.g. " + root.community_selected_slug + ")"
+                                            : "Sandbox name (e.g. dev-rust)";
+                                        enabled: !root.busy;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    ComboBox {
+                                        model: ["container", "virtual-machine"];
+                                        current-value <=> root.create_type;
+                                        enabled: !root.busy && !root.create_use_community;
+                                    }
+
+                                    LineEdit {
+                                        text <=> root.create_image_alias;
+                                        placeholder-text: "Image alias";
+                                        enabled: !root.busy;
+                                    }
+                                }
+
+                                HorizontalBox {
+                                    Text {
+                                        text: "Memory:";
+                                        vertical-alignment: center;
+                                    }
+
+                                    ComboBox {
+                                        model: ["2GiB", "4GiB", "8GiB", "16GiB"];
+                                        current-value: "4GiB";
+                                        enabled: !root.busy;
+                                        selected(val) => {
+                                            root.create_memory = val;
+                                        }
+                                    }
+
+                                    LineEdit {
+                                        text <=> root.create_memory;
+                                        placeholder-text: "e.g. 4GiB";
+                                        enabled: !root.busy;
+                                    }
+
+                                    Text {
+                                        text: "CPU:";
+                                        vertical-alignment: center;
+                                    }
+
+                                    ComboBox {
+                                        model: ["1", "2", "4", "8"];
+                                        current-value: "2";
+                                        enabled: !root.busy;
+                                        selected(val) => {
+                                            root.create_cpu = val;
+                                        }
+                                    }
+
+                                    LineEdit {
+                                        text <=> root.create_cpu;
+                                        placeholder-text: "e.g. 2";
+                                        enabled: !root.busy;
+                                    }
+                                }
+
+                                HorizontalBox {
+                                    Text {
+                                        text: "Profiles:";
+                                        vertical-alignment: center;
+                                    }
+
+                                    ComboBox {
+                                        model: root.profile_names;
+                                        current-value: "default";
+                                        enabled: !root.busy;
+                                        selected(val) => {
+                                            root.create_profiles = val;
+                                        }
+                                    }
+
+                                    LineEdit {
+                                        text <=> root.create_profiles;
+                                        placeholder-text: "Comma-separated profiles";
+                                        enabled: !root.busy;
+                                    }
+
+                                    LineEdit {
+                                        text <=> root.create_workspace;
+                                        placeholder-text: "Optional host workspace path -> /workspace";
+                                        enabled: !root.busy;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    CheckBox {
+                                        text: "Nesting";
+                                        checked <=> root.create_nesting;
+                                        enabled: !root.busy;
+                                    }
+                                }
+                            }
                         }
-                    }
 
-                    HorizontalBox {
-                        Rectangle {
-                            horizontal-stretch: 1;
+                        if !root.create_use_community: GroupBox {
+                            title: "Optional Cloud-Init User Data (for /cloud images)";
+                            vertical-stretch: 1;
+
+                            TextEdit {
+                                text <=> root.create_cloud_init;
+                                placeholder-text: "#cloud-config\npackages:\n  - git\n  - curl";
+                                enabled: !root.busy;
+                            }
                         }
 
-                        Button {
-                            text: "Create Sandbox";
-                            enabled: !root.busy && create_name_input.text != "" && create_image_input.text != "";
-                            clicked => {
-                                root.create_instance(
-                                    create_name_input.text,
-                                    create_type_combo.current-value,
-                                    create_image_input.text,
-                                    create_mem_combo.current-value,
-                                    create_cpu_combo.current-value,
-                                    create_ws_input.text,
-                                    create_profiles_input.text,
-                                    cloud_init_edit.text,
-                                    create_nesting_check.checked
-                                );
-                                create_name_input.text = "";
+                        if root.create_use_community && root.community_selected_slug == "": GroupBox {
+                            title: "Community Script";
+                            vertical-stretch: 1;
+
+                            Text {
+                                text: "Select an app from Community Scripts on the left to fill defaults, inspect its install script, or deploy.";
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        if root.create_use_community && root.community_selected_slug != "": GroupBox {
+                            title: "Community Script Details";
+                            vertical-stretch: 1;
+
+                            VerticalBox {
+                                HorizontalBox {
+                                    Text {
+                                        text: root.community_app_name + " (" + root.community_selected_slug + ")";
+                                        font-size: 15px;
+                                        font-weight: 700;
+                                    }
+
+                                    if root.community_tags != "": Text {
+                                        text: "[" + root.community_tags + "]";
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                if root.community_description != "": Text {
+                                    text: root.community_description;
+                                    wrap: word-wrap;
+                                }
+
+                                HorizontalBox {
+                                    Text {
+                                        text: "Or run in running sandbox:";
+                                        vertical-alignment: center;
+                                    }
+
+                                    ComboBox {
+                                        model: root.running_instance_names;
+                                        current-value <=> root.community_target_instance;
+                                        enabled: !root.busy;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    Button {
+                                        text: "Run in Selected";
+                                        enabled: !root.busy && root.community_target_instance != "";
+                                        clicked => {
+                                            root.request_run_community_in_instance(
+                                                root.community_selected_slug,
+                                                root.community_target_instance
+                                            );
+                                        }
+                                    }
+                                }
+
+                                TabWidget {
+                                    vertical-stretch: 1;
+
+                                    Tab {
+                                        title: "Install Script Preview";
+                                        TextEdit {
+                                            text: root.community_install_script;
+                                            read-only: true;
+                                        }
+                                    }
+
+                                    Tab {
+                                        title: "Deploy Output";
+                                        TextEdit {
+                                            text: root.community_output;
+                                            read-only: true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            Rectangle {
+                                horizontal-stretch: 1;
+                            }
+
+                            Button {
+                                primary: true;
+                                text: root.create_use_community ? "Create & Run Script" : "Create Sandbox";
+                                enabled: !root.busy
+                                    && root.create_name != ""
+                                    && root.create_image_alias != ""
+                                    && (!root.create_use_community || root.community_selected_slug != "");
+                                clicked => {
+                                    if root.create_use_community {
+                                        root.deploy_community_app(
+                                            root.community_selected_slug,
+                                            root.create_name,
+                                            root.create_image_alias,
+                                            root.create_cpu,
+                                            root.create_memory,
+                                            root.create_workspace,
+                                            root.create_profiles,
+                                            root.create_nesting
+                                        );
+                                    } else {
+                                        root.create_instance(
+                                            root.create_name,
+                                            root.create_type,
+                                            root.create_image_alias,
+                                            root.create_memory,
+                                            root.create_cpu,
+                                            root.create_workspace,
+                                            root.create_profiles,
+                                            root.create_cloud_init,
+                                            root.create_nesting
+                                        );
+                                    }
+                                    root.create_name = "";
+                                }
                             }
                         }
                     }
@@ -1169,182 +1399,6 @@ export component AppWindow inherits Window {
                                         img.fingerprint,
                                         img.alias != "" ? img.alias : img.short_fingerprint
                                     );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Tab {
-                title: "Community Apps";
-
-                HorizontalBox {
-                    GroupBox {
-                        title: "community-scripts/Incus";
-                        horizontal-stretch: 1;
-                        min-width: 260px;
-
-                        VerticalBox {
-                            HorizontalBox {
-                                cs_search_input := LineEdit {
-                                    text <=> root.community_search_query;
-                                    placeholder-text: "Search apps (e.g. surfsense, t3code, docker)";
-                                    horizontal-stretch: 1;
-                                    edited(q) => {
-                                        root.filter_community_apps(q);
-                                    }
-                                }
-
-                                Button {
-                                    text: "Reload";
-                                    enabled: !root.busy;
-                                    clicked => {
-                                        root.fetch_community_catalog();
-                                    }
-                                }
-                            }
-
-                            if root.community_apps.length == 0: Text {
-                                text: "No matching community apps.";
-                            }
-
-                            if root.community_apps.length > 0: ListView {
-                                vertical-stretch: 1;
-                                for app in root.community_apps: HorizontalBox {
-                                    Button {
-                                        text: (app.slug == root.community_selected_slug ? "> " : "")
-                                            + (app.is_dev ? "[dev] " : "")
-                                            + app.name
-                                            + " (" + app.slug + ")";
-                                        horizontal-stretch: 1;
-                                        enabled: !root.busy;
-                                        clicked => {
-                                            root.select_community_app(app.slug);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    GroupBox {
-                        title: "App Script & Deploy";
-                        horizontal-stretch: 2;
-
-                        if root.community_selected_slug == "": Text {
-                            text: "Select a community app to inspect its ct/install scripts before deploying.";
-                        }
-
-                        if root.community_selected_slug != "": VerticalBox {
-                            HorizontalBox {
-                                Text {
-                                    text: root.community_app_name + " (" + root.community_selected_slug + ")";
-                                    font-size: 16px;
-                                    font-weight: 700;
-                                }
-
-                                if root.community_tags != "": Text {
-                                    text: "[" + root.community_tags + "]";
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            if root.community_description != "": Text {
-                                text: root.community_description;
-                                wrap: word-wrap;
-                            }
-
-                            HorizontalBox {
-                                cs_name_input := LineEdit {
-                                    placeholder-text: "New sandbox name (e.g. " + root.community_selected_slug + ")";
-                                    enabled: !root.busy;
-                                    horizontal-stretch: 1;
-                                }
-
-                                LineEdit {
-                                    text <=> root.community_image_alias;
-                                    placeholder-text: "Image alias";
-                                    enabled: !root.busy;
-                                }
-
-                                LineEdit {
-                                    text <=> root.community_cpu;
-                                    placeholder-text: "CPU";
-                                    enabled: !root.busy;
-                                }
-
-                                LineEdit {
-                                    text <=> root.community_memory;
-                                    placeholder-text: "Memory";
-                                    enabled: !root.busy;
-                                }
-
-                                CheckBox {
-                                    text: "Nesting";
-                                    checked <=> root.community_nesting;
-                                    enabled: !root.busy;
-                                }
-
-                                Button {
-                                    text: "Deploy New";
-                                    enabled: !root.busy && cs_name_input.text != "" && root.community_image_alias != "";
-                                    clicked => {
-                                        root.deploy_community_app(
-                                            root.community_selected_slug,
-                                            cs_name_input.text,
-                                            root.community_image_alias,
-                                            root.community_cpu,
-                                            root.community_memory,
-                                            root.community_nesting
-                                        );
-                                        cs_name_input.text = "";
-                                    }
-                                }
-                            }
-
-                            HorizontalBox {
-                                Text {
-                                    text: "Or run in running sandbox:";
-                                    vertical-alignment: center;
-                                }
-
-                                cs_target_combo := ComboBox {
-                                    model: root.running_instance_names;
-                                    current-value <=> root.community_target_instance;
-                                    enabled: !root.busy;
-                                    horizontal-stretch: 1;
-                                }
-
-                                Button {
-                                    text: "Run in Selected";
-                                    enabled: !root.busy && root.community_target_instance != "";
-                                    clicked => {
-                                        root.request_run_community_in_instance(
-                                            root.community_selected_slug,
-                                            root.community_target_instance
-                                        );
-                                    }
-                                }
-                            }
-
-                            TabWidget {
-                                vertical-stretch: 1;
-
-                                Tab {
-                                    title: "Install Script Preview";
-                                    TextEdit {
-                                        text: root.community_install_script;
-                                        read-only: true;
-                                    }
-                                }
-
-                                Tab {
-                                    title: "Deploy Output";
-                                    TextEdit {
-                                        text: root.community_output;
-                                        read-only: true;
-                                    }
                                 }
                             }
                         }

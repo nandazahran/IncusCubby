@@ -159,6 +159,8 @@ enum BackendCommand {
         image_alias: String,
         cpu: String,
         memory: String,
+        workspace: String,
+        profiles: Vec<String>,
         nesting: NestingMode,
     },
     RunCommunityInInstance {
@@ -239,6 +241,11 @@ impl BackendCommand {
     }
 }
 
+struct CatalogCaches {
+    community_apps: Mutex<Vec<CommunityApp>>,
+    remote_aliases: Mutex<Vec<String>>,
+}
+
 struct InfraSnapshot {
     pools: Vec<StoragePoolSummary>,
     volumes: Vec<StorageVolumeSummary>,
@@ -248,23 +255,22 @@ struct InfraSnapshot {
 fn main() -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
     let app_settings = AppSettings::load();
-    let community_catalog = Arc::new(Mutex::new(curated_community_apps()));
-    init_settings_ui(&ui, &app_settings, &community_catalog);
+    let catalogs = Arc::new(CatalogCaches {
+        community_apps: Mutex::new(curated_community_apps()),
+        remote_aliases: Mutex::new(default_preset_aliases()),
+    });
+    init_settings_ui(&ui, &app_settings, &catalogs);
 
     let (tx, rx) = mpsc::unbounded_channel::<BackendCommand>();
-    spawn_backend_worker(ui.as_weak(), rx, Arc::clone(&community_catalog));
-    wire_ui_callbacks(&ui, &tx, app_settings, &community_catalog);
+    spawn_backend_worker(ui.as_weak(), rx, Arc::clone(&catalogs));
+    wire_ui_callbacks(&ui, &tx, app_settings, &catalogs);
 
     let _ = tx.send(BackendCommand::Refresh);
     ui.run()?;
     Ok(())
 }
 
-fn init_settings_ui(
-    ui: &AppWindow,
-    app_settings: &AppSettings,
-    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
-) {
+fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings, catalogs: &Arc<CatalogCaches>) {
     let terms = available_terminals();
     let ides = available_ides();
 
@@ -285,9 +291,16 @@ fn init_settings_ui(
     ui.set_available_ides(to_shared_string_model(ides));
     ui.set_preferred_terminal(term_pref.into());
     ui.set_preferred_ide(ide_pref.into());
-    ui.set_remote_aliases(to_shared_string_model(default_preset_aliases()));
 
-    let apps = community_catalog
+    let aliases = catalogs
+        .remote_aliases
+        .lock()
+        .expect("remote aliases mutex poisoned")
+        .clone();
+    apply_remote_aliases(ui, &aliases, "");
+
+    let apps = catalogs
+        .community_apps
         .lock()
         .expect("community catalog mutex poisoned")
         .clone();
@@ -317,7 +330,7 @@ fn init_about_ui(ui: &AppWindow) {
 fn spawn_backend_worker(
     ui_weak: Weak<AppWindow>,
     mut rx: mpsc::UnboundedReceiver<BackendCommand>,
-    community_catalog: Arc<Mutex<Vec<CommunityApp>>>,
+    catalogs: Arc<CatalogCaches>,
 ) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -337,10 +350,11 @@ fn spawn_backend_worker(
 
             {
                 let weak_startup = ui_weak.clone();
-                let catalog_startup = Arc::clone(&community_catalog);
+                let catalog_startup = Arc::clone(&catalogs);
                 tokio::spawn(async move {
                     if let Ok(apps) = fetch_community_catalog().await {
                         catalog_startup
+                            .community_apps
                             .lock()
                             .expect("community catalog mutex poisoned")
                             .clone_from(&apps);
@@ -369,7 +383,7 @@ fn spawn_backend_worker(
                             &ui_weak,
                             &mut last_instances,
                             &mut last_socket_err,
-                            &community_catalog,
+                            &catalogs,
                             &mut cached_spec,
                         )
                         .await;
@@ -415,14 +429,15 @@ async fn handle_command(
     ui_weak: &Weak<AppWindow>,
     last_instances: &mut Option<Vec<InstanceSummary>>,
     last_socket_err: &mut bool,
-    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    catalogs: &Arc<CatalogCaches>,
     cached_spec: &mut Option<CommunityAppSpec>,
 ) {
     match cmd {
         BackendCommand::FetchCommunityCatalog => {
             let res = fetch_community_catalog().await;
             if let Ok(ref apps) = res {
-                community_catalog
+                catalogs
+                    .community_apps
                     .lock()
                     .expect("community catalog mutex poisoned")
                     .clone_from(apps);
@@ -445,7 +460,7 @@ async fn handle_command(
             return;
         }
         BackendCommand::LoadCommunityAppSpec { slug } => {
-            let res = load_or_cached_spec(&slug, community_catalog, cached_spec).await;
+            let res = load_or_cached_spec(&slug, &catalogs.community_apps, cached_spec).await;
             let weak = ui_weak.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_busy(false);
@@ -455,10 +470,10 @@ async fn handle_command(
                         ui.set_community_app_name(spec.app_name.into());
                         ui.set_community_description(spec.description.into());
                         ui.set_community_tags(spec.tags.into());
-                        ui.set_community_image_alias(spec.image_alias.into());
-                        ui.set_community_cpu(spec.cpu_limit.into());
-                        ui.set_community_memory(spec.memory_limit.into());
-                        ui.set_community_nesting(spec.nesting);
+                        ui.set_create_image_alias(spec.image_alias.into());
+                        ui.set_create_cpu(spec.cpu_limit.into());
+                        ui.set_create_memory(spec.memory_limit.into());
+                        ui.set_create_nesting(spec.nesting);
                         ui.set_community_install_script(spec.install_script.into());
                         ui.set_community_output("".into());
                         ui.set_status_message(format!("Loaded script '{slug}'").into());
@@ -476,6 +491,8 @@ async fn handle_command(
             image_alias,
             cpu,
             memory,
+            workspace,
+            profiles,
             nesting,
         } => {
             let deploy_res = deploy_community_sandbox(
@@ -486,9 +503,11 @@ async fn handle_command(
                     image_alias: &image_alias,
                     cpu: &cpu,
                     memory: &memory,
+                    workspace: &workspace,
+                    profiles,
                     nesting,
                 },
-                community_catalog,
+                &catalogs.community_apps,
                 cached_spec,
             )
             .await;
@@ -528,7 +547,8 @@ async fn handle_command(
             image_alias,
         } => {
             let run_res = async {
-                let spec = load_or_cached_spec(&slug, community_catalog, cached_spec).await?;
+                let spec =
+                    load_or_cached_spec(&slug, &catalogs.community_apps, cached_spec).await?;
                 execute_community_install(client, &spec, &instance_name, &image_alias).await
             }
             .await;
@@ -553,6 +573,16 @@ async fn handle_command(
         }
         BackendCommand::FetchRemoteImages => {
             let res = fetch_remote_images().await;
+            if let Ok(ref imgs) = res
+                && !imgs.is_empty()
+            {
+                let aliases: Vec<String> = imgs.iter().map(|i| i.alias.clone()).collect();
+                catalogs
+                    .remote_aliases
+                    .lock()
+                    .expect("remote aliases mutex poisoned")
+                    .clone_from(&aliases);
+            }
             let weak = ui_weak.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_busy(false);
@@ -560,7 +590,8 @@ async fn handle_command(
                     Ok(imgs) if !imgs.is_empty() => {
                         let aliases: Vec<String> = imgs.into_iter().map(|i| i.alias).collect();
                         let count = aliases.len();
-                        ui.set_remote_aliases(to_shared_string_model(aliases));
+                        let query = ui.get_remote_search_query().to_string();
+                        apply_remote_aliases(&ui, &aliases, &query);
                         ui.set_status_message(
                             format!("Loaded {count} remote image aliases").into(),
                         );
@@ -907,7 +938,7 @@ fn expand_host_path(raw: &str) -> Result<PathBuf, String> {
 
 async fn load_or_cached_spec(
     slug: &str,
-    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    community_catalog: &Mutex<Vec<CommunityApp>>,
     cached_spec: &mut Option<CommunityAppSpec>,
 ) -> anyhow::Result<CommunityAppSpec> {
     if let Some(existing) = cached_spec
@@ -937,13 +968,15 @@ struct DeployCommunityRequest<'a> {
     image_alias: &'a str,
     cpu: &'a str,
     memory: &'a str,
+    workspace: &'a str,
+    profiles: Vec<String>,
     nesting: NestingMode,
 }
 
 async fn deploy_community_sandbox(
     client: &IncusClient,
     req: DeployCommunityRequest<'_>,
-    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    community_catalog: &Mutex<Vec<CommunityApp>>,
     cached_spec: &mut Option<CommunityAppSpec>,
 ) -> anyhow::Result<ExecOutput> {
     let spec = load_or_cached_spec(req.slug, community_catalog, cached_spec).await?;
@@ -954,8 +987,8 @@ async fn deploy_community_sandbox(
             image_alias: req.image_alias,
             memory_limit: req.memory,
             cpu_limit: req.cpu,
-            workspace_path: "",
-            profiles: Vec::new(),
+            workspace_path: req.workspace,
+            profiles: req.profiles,
             cloud_init_user_data: "",
             nesting: req.nesting,
         })
@@ -1101,11 +1134,18 @@ async fn execute_instance_command(
     }
 }
 
+fn parse_profiles_csv(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
 fn wire_ui_callbacks(
     ui: &AppWindow,
     tx: &mpsc::UnboundedSender<BackendCommand>,
     initial_settings: AppSettings,
-    community_catalog: &Arc<Mutex<Vec<CommunityApp>>>,
+    catalogs: &Arc<CatalogCaches>,
 ) {
     let pending_confirm: Rc<RefCell<Option<BackendCommand>>> = Rc::new(RefCell::new(None));
     let settings_state: Rc<RefCell<AppSettings>> = Rc::new(RefCell::new(initial_settings));
@@ -1140,11 +1180,7 @@ fn wire_ui_callbacks(
                   profiles_raw,
                   cloud_init,
                   nesting| {
-                let profiles: Vec<String> = profiles_raw
-                    .split(',')
-                    .map(|p| p.trim().to_string())
-                    .filter(|p| !p.is_empty())
-                    .collect();
+                let profiles = parse_profiles_csv(&profiles_raw);
                 let nesting = if nesting {
                     NestingMode::Enabled
                 } else {
@@ -1519,6 +1555,21 @@ fn wire_ui_callbacks(
     }
 
     {
+        let weak = ui.as_weak();
+        let caches = Arc::clone(catalogs);
+        ui.on_filter_remote_aliases(move |query| {
+            if let Some(ui) = weak.upgrade() {
+                let aliases = caches
+                    .remote_aliases
+                    .lock()
+                    .expect("remote aliases mutex poisoned")
+                    .clone();
+                apply_remote_aliases(&ui, &aliases, query.as_str());
+            }
+        });
+    }
+
+    {
         let tx = tx.clone();
         ui.on_refresh_local_images(move || {
             let _ = tx.send(BackendCommand::RefreshLocalImages);
@@ -1623,10 +1674,11 @@ fn wire_ui_callbacks(
 
     {
         let weak = ui.as_weak();
-        let catalog = Arc::clone(community_catalog);
+        let caches = Arc::clone(catalogs);
         ui.on_filter_community_apps(move |query| {
             if let Some(ui) = weak.upgrade() {
-                let apps = catalog
+                let apps = caches
+                    .community_apps
                     .lock()
                     .expect("community catalog mutex poisoned")
                     .clone();
@@ -1646,21 +1698,26 @@ fn wire_ui_callbacks(
 
     {
         let tx = tx.clone();
-        ui.on_deploy_community_app(move |slug, name, image, cpu, memory, nesting| {
-            let nesting = if nesting {
-                NestingMode::Enabled
-            } else {
-                NestingMode::Disabled
-            };
-            let _ = tx.send(BackendCommand::DeployCommunityApp {
-                slug: slug.to_string(),
-                instance_name: name.trim().to_string(),
-                image_alias: image.trim().to_string(),
-                cpu: cpu.trim().to_string(),
-                memory: memory.trim().to_string(),
-                nesting,
-            });
-        });
+        ui.on_deploy_community_app(
+            move |slug, name, image, cpu, memory, workspace, profiles_raw, nesting| {
+                let profiles = parse_profiles_csv(&profiles_raw);
+                let nesting = if nesting {
+                    NestingMode::Enabled
+                } else {
+                    NestingMode::Disabled
+                };
+                let _ = tx.send(BackendCommand::DeployCommunityApp {
+                    slug: slug.to_string(),
+                    instance_name: name.trim().to_string(),
+                    image_alias: image.trim().to_string(),
+                    cpu: cpu.trim().to_string(),
+                    memory: memory.trim().to_string(),
+                    workspace: workspace.trim().to_string(),
+                    profiles,
+                    nesting,
+                });
+            },
+        );
     }
 
     {
@@ -1670,7 +1727,7 @@ fn wire_ui_callbacks(
             if let Some(ui) = weak.upgrade() {
                 let slug = slug.to_string();
                 let inst = instance_name.to_string();
-                let image_alias = ui.get_community_image_alias().to_string();
+                let image_alias = ui.get_create_image_alias().to_string();
                 let msg = format!(
                     "Execute community-scripts '{slug}' installer inside running sandbox '{inst}'?"
                 );
@@ -1736,6 +1793,16 @@ fn apply_instances(ui: &AppWindow, instances: Vec<InstanceSummary>) {
     ui.set_socket_warning("".into());
     ui.set_status_message(format!("{count} sandbox(es)").into());
     select_row(ui, next_idx);
+}
+
+fn apply_remote_aliases(ui: &AppWindow, aliases: &[String], query: &str) {
+    let needle = query.trim().to_ascii_lowercase();
+    let filtered: Vec<String> = aliases
+        .iter()
+        .filter(|alias| needle.is_empty() || alias.to_ascii_lowercase().contains(&needle))
+        .cloned()
+        .collect();
+    ui.set_remote_aliases(to_shared_string_model(filtered));
 }
 
 fn apply_community_apps(ui: &AppWindow, apps: &[CommunityApp], query: &str) {
