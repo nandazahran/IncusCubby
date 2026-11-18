@@ -4,8 +4,9 @@ IncusCubby is a single-crate Rust + Slint desktop application for Linux. This fi
 
 ## Prerequisites
 
-- **Rust 1.85 or newer** (`edition = "2024"`), with `clippy` and `rustfmt`.
-- **Linux desktop libraries** required by Slint's default backend (`winit` / `skia` or `femtovg` / fontconfig, X11/Wayland development headers depending on your distro).
+- **Rust 1.88 or newer** (`edition = "2024"` + `let_chains`), with `clippy` and `rustfmt`.
+- **Linux desktop build dependencies** (Debian/Ubuntu): `pkg-config`, `cmake`, `libfontconfig1-dev`, `libwayland-dev`, `libxkbcommon-dev`, `libx11-dev`, `libx11-xcb-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxi-dev`, `libgl1-mesa-dev`.
+- **AppImage packaging**: `appimagetool` (run with `APPIMAGE_EXTRACT_AND_RUN=1`), `desktop-file-utils`, `file`.
 - **Incus** (runtime and optional live integration test):
   - `incusd` running with `/var/lib/incus/unix.socket`.
   - User added to `incus-admin`: `sudo usermod -aG incus-admin "$USER"`.
@@ -35,20 +36,35 @@ cargo run --release
 - [`src/incus/models.rs`](src/incus/models.rs): Incus 1.0 REST API request/response structs, `null_to_default` deserialization helper, and UI summary mapping (`InstanceSummary`, `ImageSummary`, `ProfileSummary`).
 - [`src/incus/packages.rs`](src/incus/packages.rs): OS-aware upgrade/install argv builders (`apt-get`, `apk`, `pacman`, `dnf`, `zypper`) with strict package token validation.
 - [`src/incus/remote_images.rs`](src/incus/remote_images.rs): Preset aliases and `reqwest` simplestreams index parser for `https://images.linuxcontainers.org/streams/v1/images.json`.
-- [`src/settings.rs`](src/settings.rs): XDG JSON persistence (`$XDG_CONFIG_HOME/incus-cubby/settings.json` or `~/.config/incus-cubby/settings.json`) and `PATH` discovery for terminals and IDEs.
+- [`src/settings.rs`](src/settings.rs): XDG JSON preferences (`$XDG_CONFIG_HOME/incus-cubby/settings.json` or `~/.config/incus-cubby/settings.json`) and `PATH` discovery for terminals and IDEs.
 - [`src/launcher.rs`](src/launcher.rs): External terminal (`incus exec <name> -- su -l root`) and IDE (`codium`/`code`, `zed`/`zeditor`) process launchers.
+- [`packaging/linux/`](packaging/linux): `.desktop` entry, 512x512 PNG icon, AppImage builder (`build-appimage.sh`), and Arch/CachyOS `PKGBUILD`.
+- [`deny.toml`](deny.toml): `cargo-deny` GPLv3-compatible dependency license, ban, and source policy.
 
 ## Checks
 
-Run formatting, clippy, and the unit/mock-socket test suite before opening a pull request:
+CI runs formatting, clippy, unit/mock-socket tests, packaging validation, and `cargo-deny` license checks on Linux (non-code commits are skipped via `paths-ignore`):
 
 ```bash
 cargo fmt --all --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+cargo deny check licenses bans sources
+desktop-file-validate packaging/linux/io.github.nandazahran.incuscubby.desktop
+bash -n packaging/linux/build-appimage.sh
 ```
 
 `Cargo.toml` enables `clippy::all` and `clippy::pedantic` as warnings and sets `unsafe_code = "warn"`, so `-D warnings` treats any lint regression as a hard failure.
+
+## Packaging
+
+```bash
+# Linux AppImage (after cargo build --locked --release)
+./packaging/linux/build-appimage.sh x86_64 target/release/incus-cubby \
+  incus-cubby-<version>-x86_64.AppImage
+```
+
+Arch/CachyOS packaging is defined in [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD). Tagged `v*` releases run [`.github/workflows/release.yml`](.github/workflows/release.yml) across `x86_64` and `aarch64`, verifying that the tag matches `Cargo.toml` before publishing `.tar.gz`, `.AppImage`, and `SHA256SUMS.txt`.
 
 ### Live Incus smoke test
 

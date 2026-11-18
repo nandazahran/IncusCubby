@@ -1,0 +1,27 @@
+# Dependency license gate. GPL-3.0-or-later app: GPLv3-compatible licenses only.
+# GPL-2.0-only, LGPL-2.1-only and AGPL are intentionally absent.
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "BSL-1.0",             # clipboard-win, error-code (arboard/winit clipboard chain)
+    "CDLA-Permissive-2.0", # webpki-root-certs (rustls/reqwest chain)
+    "Unlicense",           # ksni (Slint system-tray dependency)
+    "GPL-3.0-only",        # slint / i-slint-* (GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0)
+    "GPL-3.0-or-later",    # incus-cubby
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

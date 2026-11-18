@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allows validating every builder before the real tag exists.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }} binaries
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version
+        shell: bash
+        run: echo "VERSION=$(sed -n 's/^version = \"\(.*\)\"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config cmake libfontconfig1-dev \
+            libwayland-dev libxkbcommon-dev libx11-dev libx11-xcb-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev \
+            desktop-file-utils file
+      - run: cargo build --locked --release
+      - name: Package tarball and AppImage
+        run: |
+          mkdir -p "dist/incus-cubby-${VERSION}-${{ matrix.arch }}"
+          cp target/release/incus-cubby LICENSE \
+            packaging/linux/io.github.nandazahran.incuscubby.desktop \
+            "dist/incus-cubby-${VERSION}-${{ matrix.arch }}/"
+          tar -C dist -czf "incus-cubby-${VERSION}-${{ matrix.arch }}-linux.tar.gz" \
+            "incus-cubby-${VERSION}-${{ matrix.arch }}"
+          ./packaging/linux/build-appimage.sh "${{ matrix.arch }}" \
+            target/release/incus-cubby \
+            "incus-cubby-${VERSION}-${{ matrix.arch }}.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            incus-cubby-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
+            incus-cubby-${{ env.VERSION }}-${{ matrix.arch }}.AppImage
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [linux]
+    # A manual dispatch validates the builders but must not publish "main" as a release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the tag matches Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Flatten and checksum
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.AppImage' \) \
+            -exec cp {} dist/ \;
+          chmod +x dist/*.AppImage
+          cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "IncusCubby ${GITHUB_REF_NAME}" \
+            --notes "Unsigned ${GITHUB_REF_NAME#v} Linux artifacts: portable .AppImage and .tar.gz for x86_64 and aarch64. Verify each file against SHA256SUMS.txt before installing."

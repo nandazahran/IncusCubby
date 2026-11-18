@@ -1,6 +1,7 @@
 <div align="center">
+  <img src="packaging/linux/io.github.nandazahran.incuscubby.png" width="128" height="128" alt="IncusCubby logo" />
   <h1>IncusCubby</h1>
-  <p>Native Linux desktop GUI (Rust + Slint) for managing local <strong>Incus / LXC</strong> developer sandboxes over <code>/var/lib/incus/unix.socket</code> (<code>GPL-3.0</code>).</p>
+  <p>Native Linux desktop GUI (Rust + Slint) for managing local <strong>Incus / LXC</strong> developer sandboxes over <code>/var/lib/incus/unix.socket</code> (<code>GPL-3.0-or-later</code>).</p>
 </div>
 
 IncusCubby talks directly to the local Incus 1.0 REST API over its Unix domain socket — managing containers, virtual machines, snapshots, workspace bind-mounts, port forwards, storage pools, bridge networks, profiles, and cached images without wrapping the CLI for state or lifecycle operations.
@@ -18,15 +19,30 @@ IncusCubby talks directly to the local Incus 1.0 REST API over its Unix domain s
 
 ## Prerequisites & Installation
 
-IncusCubby is currently built from source on Linux (no prebuilt release binaries are published yet).
+Download prebuilt Linux binaries from the [releases page](https://github.com/nandazahran/IncusCubby/releases) (no Rust toolchain required):
+
+| Platform | Artifact |
+|---|---|
+| Linux `x86_64` (AppImage) | `incus-cubby-<version>-x86_64.AppImage` |
+| Linux `aarch64` (AppImage) | `incus-cubby-<version>-aarch64.AppImage` |
+| Linux `x86_64` (tarball) | `incus-cubby-<version>-x86_64-linux.tar.gz` |
+| Linux `aarch64` (tarball) | `incus-cubby-<version>-aarch64-linux.tar.gz` |
+| Checksums | `SHA256SUMS.txt` |
+
+Verify downloaded artifacts against `SHA256SUMS.txt` before installing. Arch/CachyOS users can also build from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD).
+
+### Runtime prerequisites
 
 - **Incus daemon** running with `/var/lib/incus/unix.socket` accessible to your user:
   ```bash
   sudo usermod -aG incus-admin "$USER"
   # Log out and back in for the group membership to take effect
   ```
-- **Rust 1.85+** (`edition = "2024"`).
 - **`incus` CLI** in `PATH` (only required for the *Shell* button, which spawns `incus exec <name> -- su -l root`).
+
+### Building from source
+
+Requires **Rust 1.88+** (`edition = "2024"` + `let_chains`).
 
 ```bash
 git clone https://github.com/nandazahran/IncusCubby.git
@@ -34,7 +50,7 @@ cd IncusCubby
 cargo run --release
 ```
 
-Build instructions, repository layout, and test commands are covered in [CONTRIBUTING.md](CONTRIBUTING.md).
+Linux system dependencies, repository layout, test commands, and packaging steps are covered in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 

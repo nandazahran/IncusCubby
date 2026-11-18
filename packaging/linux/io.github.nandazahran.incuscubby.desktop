@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=IncusCubby
+GenericName=Incus Sandbox Manager
+Comment=Manage local Incus containers, virtual machines, storage, and networks
+Exec=incus-cubby
+Icon=io.github.nandazahran.incuscubby
+Terminal=false
+Type=Application
+Categories=System;
+StartupNotify=true

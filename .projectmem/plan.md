@@ -20,9 +20,11 @@ _Loose thoughts, not yet committed to._
 - [x] Incus Web UI local features: telemetry + live limits editor, instance logs viewer, storage pools + custom shared volumes, networks + DHCP leases + NAT toggle, profile CRUD, file push/pull, container/VM creation toggle
 - [x] Brand-agnostic external IDE setting + `community-scripts/Incus` catalog, script preview, and REST-API container deployment (unified under `Create` tab alongside official LinuxContainers images)
 - [x] Basic About & Legal tab (Cargo package metadata, third-party/affiliation notices, embedded GPL-3.0-or-later LICENSE text)
+- [x] Implement custom Precision Instrument Slint UI (Geist fonts, Simple/Advanced modes, Dark/Light themes)
+- [x] Add GitHub Actions CI/CD, cargo-deny gate, and Linux release packaging (.desktop, AppImage, tarball, PKGBUILD)
 
 ## Next
-- Custom visual styling / theming (explicitly deferred)
+- Tag `v0.1.0` and trigger release workflow after pushing CI/CD changes
 
 ## Someday / maybe
 

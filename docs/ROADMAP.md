@@ -64,10 +64,10 @@ flowchart LR
 - Storage pools + custom volume CRUD/attach, networks + DHCP leases + NAT bridge creation, profile CRUD, instance logs viewer, file push/pull, container/VM type toggle.
 - Strict `clippy::pedantic` + `unsafe_code = "warn"` lints enabled cleanly across the crate.
 
-### P5 — Next / Deferred
-- Custom visual styling and theming for Slint UI (explicitly deferred).
-- Configurable Incus socket path / remote contexts if needed beyond local `/var/lib/incus/unix.socket`.
-- Distro packaging (`.desktop`, PKGBUILD / AppImage) and CI workflow.
+### P5 — Packaging, CI/CD & Next
+- Custom visual styling and theming (`ui/theme.slint`, `ui/components.slint`, `ui/simple.slint`, `ui/advanced.slint`) implemented.
+- Distro packaging (`.desktop`, AppImage builder, `PKGBUILD`), `deny.toml` license gate, and GitHub Actions CI + tagged release workflows implemented.
+- Configurable Incus socket path / remote contexts remains deferred beyond local `/var/lib/incus/unix.socket`.
 
 ---
 
