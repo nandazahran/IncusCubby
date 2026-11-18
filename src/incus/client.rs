@@ -1102,9 +1102,9 @@ pub(super) mod tests {
             .list_instance_logs(name)
             .await
             .expect("list_instance_logs");
-        assert!(!logs.is_empty());
+        let first_log = logs.first().expect("expected at least one instance log");
         let _ = client
-            .read_instance_log(name, &logs[0])
+            .read_instance_log(name, first_log)
             .await
             .expect("read_instance_log");
     }
@@ -1213,7 +1213,7 @@ pub(super) mod tests {
 
         async {
             let images = client.list_images().await.expect("list_images");
-            assert!(!images.is_empty());
+            assert_ne!(images.first(), None);
 
             smoke_instance_exec_files_and_logs(&client, &name, &ws_str).await;
             smoke_infra_pools_nets_and_profiles(&client, &name, &vol_name, &net_name, &prof_name)

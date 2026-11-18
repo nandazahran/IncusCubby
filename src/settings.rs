@@ -36,9 +36,7 @@ impl AppSettings {
     }
 
     pub fn load() -> Self {
-        Self::config_path()
-            .map(|path| Self::load_from(&path))
-            .unwrap_or_default()
+        Self::config_path().map_or_default(|path| Self::load_from(&path))
     }
 
     pub fn save(&self) -> anyhow::Result<()> {

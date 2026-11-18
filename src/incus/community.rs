@@ -809,7 +809,7 @@ mod tests {
         let surf_spec = fetch_community_app_spec(&surf.slug, surf.repo, &surf.description)
             .await
             .expect("fetch surfsense spec");
-        assert!(!surf_spec.install_script.is_empty());
+        assert_ne!(surf_spec.install_script, "");
 
         let t3 = apps
             .iter()
@@ -820,7 +820,7 @@ mod tests {
             .await
             .expect("fetch t3code spec");
         assert_eq!(t3_spec.app_name, "T3Code");
-        assert!(!t3_spec.install_script.is_empty());
+        assert_ne!(t3_spec.install_script, "");
     }
 
     #[test]
