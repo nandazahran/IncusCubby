@@ -34,9 +34,9 @@ jobs:
           sudo apt-get install -y pkg-config cmake libfontconfig1-dev \
             libwayland-dev libxkbcommon-dev libx11-dev libx11-xcb-dev \
             libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev \
-            desktop-file-utils file
+            desktop-file-utils file rpm
       - run: cargo build --locked --release
-      - name: Package tarball and AppImage
+      - name: Package tarball, AppImage, deb, and rpm
         run: |
           mkdir -p "dist/incus-cubby-${VERSION}-${{ matrix.arch }}"
           cp target/release/incus-cubby LICENSE \
@@ -47,12 +47,28 @@ jobs:
           ./packaging/linux/build-appimage.sh "${{ matrix.arch }}" \
             target/release/incus-cubby \
             "incus-cubby-${VERSION}-${{ matrix.arch }}.AppImage"
+          deb_arch="${{ matrix.arch }}"
+          [ "$deb_arch" = "x86_64" ] && deb_arch="amd64"
+          [ "$deb_arch" = "aarch64" ] && deb_arch="arm64"
+          ./packaging/linux/build-deb.sh "${{ matrix.arch }}" \
+            target/release/incus-cubby \
+            "incus-cubby_${VERSION}_${deb_arch}.deb"
+          ./packaging/linux/build-rpm.sh "${{ matrix.arch }}" \
+            target/release/incus-cubby \
+            "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
+          dpkg-deb -I "incus-cubby_${VERSION}_${deb_arch}.deb"
+          dpkg-deb -c "incus-cubby_${VERSION}_${deb_arch}.deb"
+          rpm -qip "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
+          rpm -qlp "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
+          rpm -qpR "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}
           path: |
             incus-cubby-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             incus-cubby-${{ env.VERSION }}-${{ matrix.arch }}.AppImage
+            incus-cubby_${{ env.VERSION }}_*.deb
+            incus-cubby-${{ env.VERSION }}-1.${{ matrix.arch }}.rpm
           if-no-files-found: error
 
   publish:
@@ -79,7 +95,7 @@ jobs:
       - name: Flatten and checksum
         run: |
           mkdir -p dist
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.AppImage' \) \
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
             -exec cp {} dist/ \;
           chmod +x dist/*.AppImage
           cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
@@ -89,4 +105,4 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" dist/* \
             --title "IncusCubby ${GITHUB_REF_NAME}" \
-            --notes "Unsigned ${GITHUB_REF_NAME#v} Linux artifacts: portable .AppImage and .tar.gz for x86_64 and aarch64. Verify each file against SHA256SUMS.txt before installing."
+            --notes "Unsigned ${GITHUB_REF_NAME#v} Linux artifacts: portable .AppImage, .tar.gz, .deb, and .rpm packages for x86_64 and aarch64 (not published to external distro repositories). Verify each file against SHA256SUMS.txt before installing."

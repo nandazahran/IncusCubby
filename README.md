@@ -27,9 +27,13 @@ Download prebuilt Linux binaries from the [releases page](https://github.com/nan
 | Linux `aarch64` (AppImage) | `incus-cubby-<version>-aarch64.AppImage` |
 | Linux `x86_64` (tarball) | `incus-cubby-<version>-x86_64-linux.tar.gz` |
 | Linux `aarch64` (tarball) | `incus-cubby-<version>-aarch64-linux.tar.gz` |
+| Debian / Ubuntu `amd64` (`.deb`) | `incus-cubby_<version>_amd64.deb` |
+| Debian / Ubuntu `arm64` (`.deb`) | `incus-cubby_<version>_arm64.deb` |
+| Fedora / RHEL / openSUSE `x86_64` (`.rpm`) | `incus-cubby-<version>-1.x86_64.rpm` |
+| Fedora / RHEL / openSUSE `aarch64` (`.rpm`) | `incus-cubby-<version>-1.aarch64.rpm` |
 | Checksums | `SHA256SUMS.txt` |
 
-Verify downloaded artifacts against `SHA256SUMS.txt` before installing. Arch/CachyOS users can also build from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD).
+Verify downloaded artifacts against `SHA256SUMS.txt` before installing. Releases are private GitHub release artifacts only (nothing is published to external package repositories or stores). Arch/CachyOS users can also build locally from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD).
 
 ### Runtime prerequisites
 

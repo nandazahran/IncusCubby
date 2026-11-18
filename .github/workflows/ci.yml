@@ -46,6 +46,8 @@ jobs:
         run: |
           desktop-file-validate packaging/linux/io.github.nandazahran.incuscubby.desktop
           bash -n packaging/linux/build-appimage.sh
+          bash -n packaging/linux/build-deb.sh
+          bash -n packaging/linux/build-rpm.sh
 
   licenses:
     runs-on: ubuntu-latest

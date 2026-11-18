@@ -38,7 +38,7 @@ cargo run --release
 - [`src/incus/remote_images.rs`](src/incus/remote_images.rs): Preset aliases and `reqwest` simplestreams index parser for `https://images.linuxcontainers.org/streams/v1/images.json`.
 - [`src/settings.rs`](src/settings.rs): XDG JSON preferences (`$XDG_CONFIG_HOME/incus-cubby/settings.json` or `~/.config/incus-cubby/settings.json`) and `PATH` discovery for terminals and IDEs.
 - [`src/launcher.rs`](src/launcher.rs): External terminal (`incus exec <name> -- su -l root`) and IDE (`codium`/`code`, `zed`/`zeditor`) process launchers.
-- [`packaging/linux/`](packaging/linux): `.desktop` entry, 512x512 PNG icon, AppImage builder (`build-appimage.sh`), and Arch/CachyOS `PKGBUILD`.
+- [`packaging/linux/`](packaging/linux): `.desktop` entry, 512x512 PNG icon, AppImage/`.deb`/`.rpm` builders (`build-appimage.sh`, `build-deb.sh`, `build-rpm.sh`), and local Arch/CachyOS `PKGBUILD`.
 - [`deny.toml`](deny.toml): `cargo-deny` GPLv3-compatible dependency license, ban, and source policy.
 
 ## Checks
@@ -52,6 +52,8 @@ cargo test --locked
 cargo deny check licenses bans sources
 desktop-file-validate packaging/linux/io.github.nandazahran.incuscubby.desktop
 bash -n packaging/linux/build-appimage.sh
+bash -n packaging/linux/build-deb.sh
+bash -n packaging/linux/build-rpm.sh
 ```
 
 `Cargo.toml` enables `clippy::all` and `clippy::pedantic` as warnings and sets `unsafe_code = "warn"`, so `-D warnings` treats any lint regression as a hard failure.
@@ -59,12 +61,16 @@ bash -n packaging/linux/build-appimage.sh
 ## Packaging
 
 ```bash
-# Linux AppImage (after cargo build --locked --release)
+# After cargo build --locked --release
 ./packaging/linux/build-appimage.sh x86_64 target/release/incus-cubby \
   incus-cubby-<version>-x86_64.AppImage
+./packaging/linux/build-deb.sh x86_64 target/release/incus-cubby \
+  incus-cubby_<version>_amd64.deb
+./packaging/linux/build-rpm.sh x86_64 target/release/incus-cubby \
+  incus-cubby-<version>-1.x86_64.rpm
 ```
 
-Arch/CachyOS packaging is defined in [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD). Tagged `v*` releases run [`.github/workflows/release.yml`](.github/workflows/release.yml) across `x86_64` and `aarch64`, verifying that the tag matches `Cargo.toml` before publishing `.tar.gz`, `.AppImage`, and `SHA256SUMS.txt`.
+Local Arch/CachyOS packaging is defined in [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD). Tagged `v*` releases run [`.github/workflows/release.yml`](.github/workflows/release.yml) across `x86_64` and `aarch64`, verifying that the tag matches `Cargo.toml` before attaching `.tar.gz`, `.AppImage`, `.deb`, `.rpm`, and `SHA256SUMS.txt` to the GitHub release (without publishing to external repositories or stores).
 
 ### Live Incus smoke test
 

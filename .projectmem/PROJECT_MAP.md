@@ -19,8 +19,8 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - [src/launcher.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/launcher.rs) — host terminal (`incus exec <name> -- su -l root`) and external IDE launcher (user-configured or auto-detected)
 - [deny.toml](file:///home/nanda/Dokumen/GitHub/IncusCubby/deny.toml) — `cargo-deny` GPLv3-compatible license, ban, and source policy
 - [.github/workflows/ci.yml](file:///home/nanda/Dokumen/GitHub/IncusCubby/.github/workflows/ci.yml) — Linux CI (`fmt`, `clippy`, `test`, packaging check, `cargo-deny`) with non-code `paths-ignore`
-- [.github/workflows/release.yml](file:///home/nanda/Dokumen/GitHub/IncusCubby/.github/workflows/release.yml) — tagged `v*` + manual Linux `x86_64`/`aarch64` `.tar.gz` and `.AppImage` release pipeline
-- [packaging/linux/build-appimage.sh](file:///home/nanda/Dokumen/GitHub/IncusCubby/packaging/linux/build-appimage.sh) — portable AppImage packager alongside `.desktop`, 512x512 PNG icon, and Arch `PKGBUILD`
+- [.github/workflows/release.yml](file:///home/nanda/Dokumen/GitHub/IncusCubby/.github/workflows/release.yml) — tagged `v*` + manual Linux `x86_64`/`aarch64` `.tar.gz`, `.AppImage`, `.deb`, and `.rpm` GitHub release pipeline
+- [packaging/linux/build-appimage.sh](file:///home/nanda/Dokumen/GitHub/IncusCubby/packaging/linux/build-appimage.sh) — portable AppImage packager alongside `build-deb.sh`, `build-rpm.sh`, `.desktop`, 512x512 PNG icon, and local `PKGBUILD`
 
 ## Relationships
 - `src/main.rs` routes UI actions to the background Tokio thread (`mpsc::unbounded_channel`) and updates Slint strictly via `ui_weak.upgrade_in_event_loop`.
