@@ -13,9 +13,9 @@ optdepends=(
   'vscodium: IDE workspace integration'
   'zed: IDE workspace integration'
 )
-# Update sha256sums after pushing the release tag (e.g. via updpkgsums).
+# Released source tarball (requires public repo or authenticated fetch).
 source=("https://github.com/nandazahran/IncusCubby/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('d2c0bf3da8d6b4405f6168453fd31fc7141513649c547b67563ee688ad37fca6')
 
 prepare() {
   cd "${srcdir}/IncusCubby-${pkgver}"

@@ -23,8 +23,10 @@ _Loose thoughts, not yet committed to._
 - [x] Implement custom Precision Instrument Slint UI (Geist fonts, Simple/Advanced modes, Dark/Light themes)
 - [x] Add GitHub Actions CI/CD, cargo-deny gate, and Linux release packaging (.desktop, AppImage, tarball, PKGBUILD)
 
+- [x] Tag `v0.1.0` and publish GitHub release with x86_64/aarch64 AppImage, tarball, and SHA256SUMS.txt
+
 ## Next
-- Tag `v0.1.0` and trigger release workflow after pushing CI/CD changes
+- Configurable Incus socket path / remote contexts beyond `/var/lib/incus/unix.socket` (deferred)
 
 ## Someday / maybe
 

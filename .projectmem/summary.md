@@ -13,7 +13,6 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - Use Linux-only GitHub Actions CI (with non-code paths-ignore and cargo-deny) and x86_64/aarch64 AppImage+tarball release workflow modeled on KineAnchor [.github/workflows/]
 
 ## Notes
-- New feature: Add workspace mounts, live polling, codium launcher, and delete confirmations [src/incus/client.rs]
 - New feature: Add DistroShelf/BoxBuddyRS features: clone, freeze/restart, exec packages, mounts/proxies, image cache, and settings [src/incus/client.rs]
 - New feature: Add Incus Web UI features, harden Rust idioms, and enable clippy pedantic lints [src/incus/client.rs]
 - Added IncusCubby documentation suite modeled on KineAnchor: README.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/INCUS_API.md, docs/ROADMAP.md, and docs/PRIVACY.md
@@ -23,6 +22,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - Implemented Doop Precision Instrument UI in Slint across ui/theme.slint, ui/components.slint, ui/advanced.slint, ui/simple.slint, and ui/app.slint with bundled Geist/Geist Mono TTFs and 18 local distro/app SVG icons [ui/theme.slint]
 - gotcha: IncusCubby uses let_chains (Rust 1.88+), cmake (aws-lc-sys), libfontconfig1-dev (yeslogic-fontconfig-sys), and Slint GPL-3.0-only in deny.toml [.github/workflows/ci.yml]
 - New feature: Add GitHub Actions CI/CD, Linux packaging, and cargo-deny gate [packaging/linux/build-appimage.sh]
+- Published v0.1.0 release (run 44298031256) with x86_64/aarch64 AppImage, tar.gz, and SHA256SUMS.txt; updated PKGBUILD sha256sums [.github/workflows/release.yml]
 
 ## Key files
 - `.gitattributes`
