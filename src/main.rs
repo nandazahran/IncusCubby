@@ -3,6 +3,7 @@ mod launcher;
 mod settings;
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -13,23 +14,29 @@ use tokio::time::MissedTickBehavior;
 use crate::incus::packages::{install_command, upgrade_command};
 use crate::incus::remote_images::{default_preset_aliases, fetch_remote_images};
 use crate::incus::{
-    CreateInstanceParams, ExecOutput, ImageSummary, IncusClient, IncusError, InstanceSummary,
-    ProfileSummary,
+    BridgeNat, CreateInstanceParams, ExecOutput, ImageSummary, IncusClient, IncusError,
+    InstanceSummary, NetworkSummary, ProfileSummary, StoragePoolSummary, StorageVolumeSummary,
 };
 use crate::launcher::Ide;
 use crate::settings::{AppSettings, available_ides, available_terminals};
 
 slint::include_modules!();
 
+enum ProfileSaveMode {
+    Create,
+    Update,
+}
+
 enum BackendCommand {
     Refresh,
     Create {
         name: String,
+        instance_type: String,
         image: String,
         memory: String,
         cpu: String,
         workspace: String,
-        profile: String,
+        profiles: Vec<String>,
         cloud_init: String,
     },
     Clone {
@@ -40,6 +47,11 @@ enum BackendCommand {
         name: String,
         action: String,
     },
+    UpdateLimits {
+        name: String,
+        cpu: String,
+        memory: String,
+    },
     DeleteInstance {
         name: String,
     },
@@ -47,6 +59,13 @@ enum BackendCommand {
         instance: String,
         dev_name: String,
         host_path: String,
+        container_path: String,
+    },
+    AttachCustomVolume {
+        instance: String,
+        dev_name: String,
+        pool: String,
+        volume: String,
         container_path: String,
     },
     AddProxyDevice {
@@ -76,6 +95,49 @@ enum BackendCommand {
         label: String,
         command: Vec<String>,
     },
+    RefreshInstanceLogs {
+        instance: String,
+    },
+    ReadInstanceLog {
+        instance: String,
+        log_name: String,
+    },
+    PushInstanceFile {
+        instance: String,
+        host_path: String,
+        container_path: String,
+    },
+    PullInstanceFile {
+        instance: String,
+        container_path: String,
+        host_path: String,
+    },
+    RefreshInfra,
+    CreateStorageVolume {
+        pool: String,
+        name: String,
+    },
+    DeleteStorageVolume {
+        pool: String,
+        name: String,
+    },
+    CreateNetwork {
+        name: String,
+        nat: BridgeNat,
+    },
+    DeleteNetwork {
+        name: String,
+    },
+    SaveProfile {
+        name: String,
+        description: String,
+        cpu: String,
+        memory: String,
+        mode: ProfileSaveMode,
+    },
+    DeleteProfile {
+        name: String,
+    },
     FetchRemoteImages,
     RefreshLocalImages,
     DeleteImage {
@@ -90,10 +152,14 @@ impl BackendCommand {
             Self::Create { name, image, .. } => format!("Creating {name} ({image})..."),
             Self::Clone { source, new_name } => format!("Cloning {source} -> {new_name}..."),
             Self::SetState { name, action } => format!("Running '{action}' on {name}..."),
+            Self::UpdateLimits { name, .. } => format!("Updating limits on {name}..."),
             Self::DeleteInstance { name } => format!("Deleting {name}..."),
             Self::AddDiskMount {
                 instance, dev_name, ..
             } => format!("Adding mount '{dev_name}' on {instance}..."),
+            Self::AttachCustomVolume {
+                instance, volume, ..
+            } => format!("Attaching volume '{volume}' on {instance}..."),
             Self::AddProxyDevice {
                 instance,
                 host_port,
@@ -115,6 +181,19 @@ impl BackendCommand {
             Self::ExecCommand {
                 instance, label, ..
             } => format!("{label} in {instance}..."),
+            Self::RefreshInstanceLogs { instance } => format!("Listing logs for {instance}..."),
+            Self::ReadInstanceLog { instance, log_name } => {
+                format!("Reading {log_name} for {instance}...")
+            }
+            Self::PushInstanceFile { instance, .. } => format!("Pushing file to {instance}..."),
+            Self::PullInstanceFile { instance, .. } => format!("Pulling file from {instance}..."),
+            Self::RefreshInfra => "Refreshing storage & networks...".to_string(),
+            Self::CreateStorageVolume { pool, name } => format!("Creating volume {pool}/{name}..."),
+            Self::DeleteStorageVolume { pool, name } => format!("Deleting volume {pool}/{name}..."),
+            Self::CreateNetwork { name, .. } => format!("Creating network {name}..."),
+            Self::DeleteNetwork { name } => format!("Deleting network {name}..."),
+            Self::SaveProfile { name, .. } => format!("Saving profile {name}..."),
+            Self::DeleteProfile { name } => format!("Deleting profile {name}..."),
             Self::FetchRemoteImages => "Fetching remote image aliases...".to_string(),
             Self::RefreshLocalImages => "Refreshing cached images...".to_string(),
             Self::DeleteImage { fingerprint } => {
@@ -125,6 +204,12 @@ impl BackendCommand {
     }
 }
 
+struct InfraSnapshot {
+    pools: Vec<StoragePoolSummary>,
+    volumes: Vec<StorageVolumeSummary>,
+    networks: Vec<NetworkSummary>,
+}
+
 fn main() -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
     let app_settings = AppSettings::load();
@@ -132,7 +217,7 @@ fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::unbounded_channel::<BackendCommand>();
     spawn_backend_worker(ui.as_weak(), rx);
-    wire_ui_callbacks(&ui, tx.clone(), app_settings);
+    wire_ui_callbacks(&ui, &tx, app_settings);
 
     let _ = tx.send(BackendCommand::Refresh);
     ui.run()?;
@@ -246,14 +331,12 @@ async fn handle_command(
                         let aliases: Vec<String> = imgs.into_iter().map(|i| i.alias).collect();
                         let count = aliases.len();
                         ui.set_remote_aliases(to_shared_string_model(aliases));
-                        ui.set_status_message(format!("Loaded {count} remote image aliases").into());
+                        ui.set_status_message(
+                            format!("Loaded {count} remote image aliases").into(),
+                        );
                     }
-                    Ok(_) => {
-                        ui.set_status_message("No matching remote images found".into());
-                    }
-                    Err(err) => {
-                        ui.set_status_message(format!("Remote fetch failed: {err}").into());
-                    }
+                    Ok(_) => ui.set_status_message("No matching remote images found".into()),
+                    Err(err) => ui.set_status_message(format!("Remote fetch failed: {err}").into()),
                 }
             });
             return;
@@ -302,12 +385,155 @@ async fn handle_command(
             });
             return;
         }
+        BackendCommand::RefreshInstanceLogs { instance } => {
+            let res = client.list_instance_logs(&instance).await;
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match res {
+                    Ok(logs) => {
+                        let count = logs.len();
+                        let first = logs.first().cloned().unwrap_or_default();
+                        ui.set_instance_logs(to_shared_string_model(logs));
+                        ui.set_selected_log(first.into());
+                        ui.set_status_message(format!("{count} log file(s) for {instance}").into());
+                    }
+                    Err(err) => apply_error(&ui, &err),
+                }
+            });
+            return;
+        }
+        BackendCommand::ReadInstanceLog { instance, log_name } => {
+            let res = client.read_instance_log(&instance, &log_name).await;
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match res {
+                    Ok(text) => {
+                        ui.set_log_content(text.into());
+                        ui.set_status_message(format!("Loaded {log_name}").into());
+                    }
+                    Err(err) => apply_error(&ui, &err),
+                }
+            });
+            return;
+        }
+        BackendCommand::PushInstanceFile {
+            instance,
+            host_path,
+            container_path,
+        } => {
+            let res = push_file_from_host(client, &instance, &host_path, &container_path).await;
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match res {
+                    Ok(msg) | Err(msg) => ui.set_status_message(msg.into()),
+                }
+            });
+            return;
+        }
+        BackendCommand::PullInstanceFile {
+            instance,
+            container_path,
+            host_path,
+        } => {
+            let res = pull_file_to_host(client, &instance, &container_path, &host_path).await;
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match res {
+                    Ok(msg) | Err(msg) => ui.set_status_message(msg.into()),
+                }
+            });
+            return;
+        }
+        BackendCommand::RefreshInfra
+        | BackendCommand::CreateStorageVolume { .. }
+        | BackendCommand::DeleteStorageVolume { .. }
+        | BackendCommand::CreateNetwork { .. }
+        | BackendCommand::DeleteNetwork { .. } => {
+            let op_res = execute_infra_command(client, cmd).await;
+            let infra_res = match op_res {
+                Ok(()) => fetch_infra_snapshot(client).await,
+                Err(err) => Err(err),
+            };
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match infra_res {
+                    Ok(snap) => {
+                        apply_infra(&ui, snap);
+                        ui.set_status_message("Storage & networks updated".into());
+                    }
+                    Err(err) => apply_error(&ui, &err),
+                }
+            });
+            return;
+        }
+        BackendCommand::SaveProfile {
+            name,
+            description,
+            cpu,
+            memory,
+            mode,
+        } => {
+            let op_res = match mode {
+                ProfileSaveMode::Create => {
+                    client
+                        .create_profile(&name, &description, &cpu, &memory)
+                        .await
+                }
+                ProfileSaveMode::Update => {
+                    client
+                        .update_profile(&name, &description, &cpu, &memory)
+                        .await
+                }
+            };
+            let prof_res = match op_res {
+                Ok(()) => client.list_profiles().await,
+                Err(err) => Err(err),
+            };
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match prof_res {
+                    Ok(profiles) => {
+                        apply_profiles(&ui, profiles);
+                        ui.set_status_message(format!("Saved profile '{name}'").into());
+                    }
+                    Err(err) => apply_error(&ui, &err),
+                }
+            });
+            return;
+        }
+        BackendCommand::DeleteProfile { name } => {
+            let op_res = client.delete_profile(&name).await;
+            let prof_res = match op_res {
+                Ok(()) => client.list_profiles().await,
+                Err(err) => Err(err),
+            };
+            let weak = ui_weak.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_busy(false);
+                match prof_res {
+                    Ok(profiles) => {
+                        apply_profiles(&ui, profiles);
+                        ui.set_status_message(format!("Deleted profile '{name}'").into());
+                    }
+                    Err(err) => apply_error(&ui, &err),
+                }
+            });
+            return;
+        }
         _ => {}
     }
 
-    let refresh_metadata = matches!(
+    let is_full_refresh = matches!(
         cmd,
-        BackendCommand::Refresh | BackendCommand::Create { .. } | BackendCommand::DeleteInstance { .. }
+        BackendCommand::Refresh
+            | BackendCommand::Create { .. }
+            | BackendCommand::DeleteInstance { .. }
     );
     let op_result = execute_instance_command(client, cmd).await;
     let list_result = match op_result {
@@ -315,13 +541,14 @@ async fn handle_command(
         Err(err) => Err(err),
     };
 
-    let (images_opt, profiles_opt) = if refresh_metadata && list_result.is_ok() {
+    let (images_res, profiles_res, infra_res) = if is_full_refresh && list_result.is_ok() {
         (
-            client.list_images().await.ok(),
-            client.list_profiles().await.ok(),
+            Some(client.list_images().await),
+            Some(client.list_profiles().await),
+            Some(fetch_infra_snapshot(client).await),
         )
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     match &list_result {
@@ -340,11 +567,24 @@ async fn handle_command(
         match list_result {
             Ok(instances) => {
                 apply_instances(&ui, instances);
-                if let Some(images) = images_opt {
-                    apply_images(&ui, images);
+                let mut warnings = Vec::new();
+                match images_res {
+                    Some(Ok(images)) => apply_images(&ui, images),
+                    Some(Err(err)) => warnings.push(format!("images: {err}")),
+                    None => {}
                 }
-                if let Some(profiles) = profiles_opt {
-                    apply_profiles(&ui, profiles);
+                match profiles_res {
+                    Some(Ok(profiles)) => apply_profiles(&ui, profiles),
+                    Some(Err(err)) => warnings.push(format!("profiles: {err}")),
+                    None => {}
+                }
+                match infra_res {
+                    Some(Ok(infra)) => apply_infra(&ui, infra),
+                    Some(Err(err)) => warnings.push(format!("infra: {err}")),
+                    None => {}
+                }
+                if !warnings.is_empty() {
+                    ui.set_status_message(warnings.join("; ").into());
                 }
             }
             Err(err) => apply_error(&ui, &err),
@@ -352,29 +592,108 @@ async fn handle_command(
     });
 }
 
+async fn execute_infra_command(
+    client: &IncusClient,
+    cmd: BackendCommand,
+) -> Result<(), IncusError> {
+    match cmd {
+        BackendCommand::CreateStorageVolume { pool, name } => {
+            client.create_storage_volume(&pool, &name).await
+        }
+        BackendCommand::DeleteStorageVolume { pool, name } => {
+            client.delete_storage_volume(&pool, &name).await
+        }
+        BackendCommand::CreateNetwork { name, nat } => client.create_network(&name, nat).await,
+        BackendCommand::DeleteNetwork { name } => client.delete_network(&name).await,
+        _ => Ok(()),
+    }
+}
+
+async fn fetch_infra_snapshot(client: &IncusClient) -> Result<InfraSnapshot, IncusError> {
+    let pools = client.list_storage_pools().await?;
+    let mut volumes = Vec::new();
+    for pool in &pools {
+        let pool_vols = client.list_storage_volumes(&pool.name).await?;
+        volumes.extend(pool_vols);
+    }
+    let networks = client.list_networks().await?;
+    Ok(InfraSnapshot {
+        pools,
+        volumes,
+        networks,
+    })
+}
+
+async fn push_file_from_host(
+    client: &IncusClient,
+    instance: &str,
+    host_path: &str,
+    container_path: &str,
+) -> Result<String, String> {
+    let resolved = expand_host_path(host_path)?;
+    let bytes = tokio::fs::read(&resolved)
+        .await
+        .map_err(|e| format!("Failed reading '{}': {e}", resolved.display()))?;
+    let len = bytes.len();
+    client
+        .push_instance_file(instance, container_path, bytes)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!("Pushed {len} bytes to {instance}:{container_path}"))
+}
+
+async fn pull_file_to_host(
+    client: &IncusClient,
+    instance: &str,
+    container_path: &str,
+    host_path: &str,
+) -> Result<String, String> {
+    let resolved = expand_host_path(host_path)?;
+    let bytes = client
+        .pull_instance_file(instance, container_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let len = bytes.len();
+    tokio::fs::write(&resolved, &bytes)
+        .await
+        .map_err(|e| format!("Failed writing '{}': {e}", resolved.display()))?;
+    Ok(format!(
+        "Pulled {len} bytes from {instance}:{container_path}"
+    ))
+}
+
+fn expand_host_path(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Host path cannot be empty".to_string());
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        let home = std::env::var_os("HOME")
+            .ok_or_else(|| "Cannot expand '~': HOME is not set".to_string())?;
+        return Ok(PathBuf::from(home).join(rest));
+    }
+    Ok(PathBuf::from(trimmed))
+}
+
 async fn execute_instance_command(
     client: &IncusClient,
     cmd: BackendCommand,
 ) -> Result<(), IncusError> {
     match cmd {
-        BackendCommand::Refresh => Ok(()),
         BackendCommand::Create {
             name,
+            instance_type,
             image,
             memory,
             cpu,
             workspace,
-            profile,
+            profiles,
             cloud_init,
         } => {
-            let profiles = if profile.trim().is_empty() {
-                vec!["default".to_string()]
-            } else {
-                vec![profile]
-            };
             client
                 .create_instance(CreateInstanceParams {
                     name: &name,
+                    instance_type: &instance_type,
                     image_alias: &image,
                     memory_limit: &memory,
                     cpu_limit: &cpu,
@@ -384,8 +703,15 @@ async fn execute_instance_command(
                 })
                 .await
         }
-        BackendCommand::Clone { source, new_name } => client.clone_instance(&source, &new_name).await,
-        BackendCommand::SetState { name, action } => client.set_instance_state(&name, &action).await,
+        BackendCommand::Clone { source, new_name } => {
+            client.clone_instance(&source, &new_name).await
+        }
+        BackendCommand::SetState { name, action } => {
+            client.set_instance_state(&name, &action).await
+        }
+        BackendCommand::UpdateLimits { name, cpu, memory } => {
+            client.update_instance_limits(&name, &cpu, &memory).await
+        }
         BackendCommand::DeleteInstance { name } => client.delete_instance(&name).await,
         BackendCommand::AddDiskMount {
             instance,
@@ -395,6 +721,17 @@ async fn execute_instance_command(
         } => {
             client
                 .add_disk_mount(&instance, &dev_name, &host_path, &container_path)
+                .await
+        }
+        BackendCommand::AttachCustomVolume {
+            instance,
+            dev_name,
+            pool,
+            volume,
+            container_path,
+        } => {
+            client
+                .attach_custom_volume(&instance, &dev_name, &pool, &volume, &container_path)
                 .await
         }
         BackendCommand::AddProxyDevice {
@@ -419,16 +756,13 @@ async fn execute_instance_command(
         BackendCommand::DeleteSnapshot { instance, snapshot } => {
             client.delete_snapshot(&instance, &snapshot).await
         }
-        BackendCommand::ExecCommand { .. }
-        | BackendCommand::FetchRemoteImages
-        | BackendCommand::RefreshLocalImages
-        | BackendCommand::DeleteImage { .. } => Ok(()),
+        _ => Ok(()),
     }
 }
 
 fn wire_ui_callbacks(
     ui: &AppWindow,
-    tx: mpsc::UnboundedSender<BackendCommand>,
+    tx: &mpsc::UnboundedSender<BackendCommand>,
     initial_settings: AppSettings,
 ) {
     let pending_confirm: Rc<RefCell<Option<BackendCommand>>> = Rc::new(RefCell::new(None));
@@ -454,17 +788,25 @@ fn wire_ui_callbacks(
 
     {
         let tx = tx.clone();
-        ui.on_create_instance(move |name, image, memory, cpu, workspace, profile, cloud_init| {
-            let _ = tx.send(BackendCommand::Create {
-                name: name.trim().to_string(),
-                image: image.trim().to_string(),
-                memory: memory.to_string(),
-                cpu: cpu.to_string(),
-                workspace: workspace.trim().to_string(),
-                profile: profile.trim().to_string(),
-                cloud_init: cloud_init.to_string(),
-            });
-        });
+        ui.on_create_instance(
+            move |name, instance_type, image, memory, cpu, workspace, profiles_raw, cloud_init| {
+                let profiles: Vec<String> = profiles_raw
+                    .split(',')
+                    .map(|p| p.trim().to_string())
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                let _ = tx.send(BackendCommand::Create {
+                    name: name.trim().to_string(),
+                    instance_type: instance_type.trim().to_string(),
+                    image: image.trim().to_string(),
+                    memory: memory.to_string(),
+                    cpu: cpu.to_string(),
+                    workspace: workspace.trim().to_string(),
+                    profiles,
+                    cloud_init: cloud_init.to_string(),
+                });
+            },
+        );
     }
 
     {
@@ -489,11 +831,35 @@ fn wire_ui_callbacks(
 
     {
         let tx = tx.clone();
+        ui.on_update_instance_limits(move |name, cpu, memory| {
+            let _ = tx.send(BackendCommand::UpdateLimits {
+                name: name.to_string(),
+                cpu: cpu.trim().to_string(),
+                memory: memory.trim().to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
         ui.on_add_disk_mount(move |instance, dev_name, host_path, container_path| {
             let _ = tx.send(BackendCommand::AddDiskMount {
                 instance: instance.to_string(),
                 dev_name: dev_name.trim().to_string(),
                 host_path: host_path.trim().to_string(),
+                container_path: container_path.trim().to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_attach_custom_volume(move |instance, dev_name, pool, volume, container_path| {
+            let _ = tx.send(BackendCommand::AttachCustomVolume {
+                instance: instance.to_string(),
+                dev_name: dev_name.trim().to_string(),
+                pool: pool.trim().to_string(),
+                volume: volume.trim().to_string(),
                 container_path: container_path.trim().to_string(),
             });
         });
@@ -618,7 +984,7 @@ fn wire_ui_callbacks(
                 });
             } else if let Some(ui) = weak.upgrade() {
                 ui.set_status_message(
-                    format!("Unsupported OS for auto-upgrade: '{}'", image_os).into(),
+                    format!("Unsupported OS for auto-upgrade: '{image_os}'").into(),
                 );
             }
         });
@@ -641,6 +1007,150 @@ fn wire_ui_callbacks(
                         ui.set_status_message(msg.into());
                     }
                 }
+            }
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_refresh_instance_logs(move |instance| {
+            let _ = tx.send(BackendCommand::RefreshInstanceLogs {
+                instance: instance.to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_read_instance_log(move |instance, log_name| {
+            let _ = tx.send(BackendCommand::ReadInstanceLog {
+                instance: instance.to_string(),
+                log_name: log_name.to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_push_instance_file(move |instance, host_path, container_path| {
+            let _ = tx.send(BackendCommand::PushInstanceFile {
+                instance: instance.to_string(),
+                host_path: host_path.to_string(),
+                container_path: container_path.to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_pull_instance_file(move |instance, container_path, host_path| {
+            let _ = tx.send(BackendCommand::PullInstanceFile {
+                instance: instance.to_string(),
+                container_path: container_path.to_string(),
+                host_path: host_path.to_string(),
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_refresh_infra(move || {
+            let _ = tx.send(BackendCommand::RefreshInfra);
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_create_storage_volume(move |pool, name| {
+            let _ = tx.send(BackendCommand::CreateStorageVolume {
+                pool: pool.trim().to_string(),
+                name: name.trim().to_string(),
+            });
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let pending = Rc::clone(&pending_confirm);
+        ui.on_request_delete_storage_volume(move |pool, name| {
+            if let Some(ui) = weak.upgrade() {
+                let msg = format!("Delete custom volume '{pool}/{name}'? Data will be lost.");
+                request_confirm(
+                    &ui,
+                    &pending,
+                    &msg,
+                    BackendCommand::DeleteStorageVolume {
+                        pool: pool.to_string(),
+                        name: name.to_string(),
+                    },
+                );
+            }
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_create_network(move |name, nat| {
+            let nat = if nat {
+                BridgeNat::Enabled
+            } else {
+                BridgeNat::Disabled
+            };
+            let _ = tx.send(BackendCommand::CreateNetwork {
+                name: name.trim().to_string(),
+                nat,
+            });
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let pending = Rc::clone(&pending_confirm);
+        ui.on_request_delete_network(move |name| {
+            if let Some(ui) = weak.upgrade() {
+                let net = name.to_string();
+                let msg = format!("Delete managed network '{net}'?");
+                request_confirm(
+                    &ui,
+                    &pending,
+                    &msg,
+                    BackendCommand::DeleteNetwork { name: net },
+                );
+            }
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        ui.on_save_profile(move |name, description, cpu, memory, is_create| {
+            let mode = if is_create {
+                ProfileSaveMode::Create
+            } else {
+                ProfileSaveMode::Update
+            };
+            let _ = tx.send(BackendCommand::SaveProfile {
+                name: name.trim().to_string(),
+                description: description.trim().to_string(),
+                cpu: cpu.trim().to_string(),
+                memory: memory.trim().to_string(),
+                mode,
+            });
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let pending = Rc::clone(&pending_confirm);
+        ui.on_request_delete_profile(move |name| {
+            if let Some(ui) = weak.upgrade() {
+                let prof = name.to_string();
+                let msg = format!("Delete profile '{prof}'?");
+                request_confirm(
+                    &ui,
+                    &pending,
+                    &msg,
+                    BackendCommand::DeleteProfile { name: prof },
+                );
             }
         });
     }
@@ -690,7 +1200,9 @@ fn wire_ui_callbacks(
             if let Some(ui) = weak.upgrade() {
                 match res {
                     Ok(()) => ui.set_status_message("Settings saved".into()),
-                    Err(err) => ui.set_status_message(format!("Failed to save settings: {err}").into()),
+                    Err(err) => {
+                        ui.set_status_message(format!("Failed to save settings: {err}").into());
+                    }
                 }
             }
         });
@@ -738,8 +1250,7 @@ fn wire_ui_callbacks(
         let settings = Rc::clone(&settings_state);
         ui.on_open_codium(move |workspace_path| {
             let ide = settings.borrow().preferred_ide.clone();
-            if let Err(err) =
-                launcher::open_ide(Ide::Codium, &ide, Some(workspace_path.as_str()))
+            if let Err(err) = launcher::open_ide(Ide::Codium, &ide, Some(workspace_path.as_str()))
                 && let Some(ui) = weak.upgrade()
             {
                 ui.set_status_message(err.to_string().into());
@@ -787,8 +1298,7 @@ fn apply_instances(ui: &AppWindow, instances: Vec<InstanceSummary>) {
     let count = ui_rows.len();
     let next_idx = prev_name
         .and_then(|prev| ui_rows.iter().position(|row| row.name == prev))
-        .map(|i| i as i32)
-        .unwrap_or(if count > 0 { 0 } else { -1 });
+        .map_or(if count > 0 { 0 } else { -1 }, |i| i as i32);
 
     let model = ModelRc::from(Rc::new(VecModel::from(ui_rows)));
     ui.set_instances(model);
@@ -813,11 +1323,71 @@ fn apply_images(ui: &AppWindow, images: Vec<ImageSummary>) {
 }
 
 fn apply_profiles(ui: &AppWindow, profiles: Vec<ProfileSummary>) {
-    let mut names: Vec<String> = profiles.into_iter().map(|p| p.name).collect();
+    let mut names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
     if names.is_empty() {
         names.push("default".to_string());
     }
+    let ui_profiles: Vec<UiProfile> = profiles
+        .into_iter()
+        .map(|p| UiProfile {
+            name: p.name.into(),
+            description: p.description.into(),
+        })
+        .collect();
+    ui.set_profiles(ModelRc::from(Rc::new(VecModel::from(ui_profiles))));
     ui.set_profile_names(to_shared_string_model(names));
+}
+
+fn apply_infra(ui: &AppWindow, infra: InfraSnapshot) {
+    let mut pool_names: Vec<String> = infra.pools.iter().map(|p| p.name.clone()).collect();
+    if pool_names.is_empty() {
+        pool_names.push("default".to_string());
+    }
+    let ui_pools: Vec<UiStoragePool> = infra
+        .pools
+        .into_iter()
+        .map(|p| UiStoragePool {
+            name: p.name.into(),
+            driver: p.driver.into(),
+            status: p.status.into(),
+            used_display: p.used_display.into(),
+            total_display: p.total_display.into(),
+        })
+        .collect();
+    let ui_volumes: Vec<UiStorageVolume> = infra
+        .volumes
+        .into_iter()
+        .map(|v| UiStorageVolume {
+            name: v.name.into(),
+            pool: v.pool.into(),
+            content_type: v.content_type.into(),
+        })
+        .collect();
+    let ui_networks: Vec<UiNetwork> = infra
+        .networks
+        .into_iter()
+        .map(|n| {
+            let leases_display = n
+                .leases
+                .into_iter()
+                .map(|l| format!("{} ({})", l.hostname, l.address))
+                .collect::<Vec<_>>()
+                .join(", ");
+            UiNetwork {
+                name: n.name.into(),
+                net_type: n.net_type.into(),
+                managed: n.managed,
+                ipv4: n.ipv4.into(),
+                nat: n.nat,
+                leases_display: leases_display.into(),
+            }
+        })
+        .collect();
+
+    ui.set_pool_names(to_shared_string_model(pool_names));
+    ui.set_storage_pools(ModelRc::from(Rc::new(VecModel::from(ui_pools))));
+    ui.set_storage_volumes(ModelRc::from(Rc::new(VecModel::from(ui_volumes))));
+    ui.set_networks(ModelRc::from(Rc::new(VecModel::from(ui_networks))));
 }
 
 fn apply_exec_output(ui: &AppWindow, label: &str, out: &ExecOutput) {
@@ -846,17 +1416,33 @@ fn apply_error(ui: &AppWindow, err: &IncusError) {
 }
 
 fn select_row(ui: &AppWindow, idx: i32) {
+    let prev_name = ui
+        .get_has_selection()
+        .then(|| ui.get_selected_instance().name);
     let model = ui.get_instances();
     if idx >= 0
         && let Some(row) = model.row_data(idx as usize)
     {
+        if prev_name.as_ref() != Some(&row.name) {
+            clear_instance_views(ui);
+        }
         ui.set_selected_index(idx);
         ui.set_selected_instance(row);
         ui.set_has_selection(true);
     } else {
+        if prev_name.is_some() {
+            clear_instance_views(ui);
+        }
         ui.set_selected_index(-1);
         ui.set_has_selection(false);
     }
+}
+
+fn clear_instance_views(ui: &AppWindow) {
+    ui.set_exec_output("".into());
+    ui.set_log_content("".into());
+    ui.set_instance_logs(to_shared_string_model(Vec::new()));
+    ui.set_selected_log("".into());
 }
 
 fn to_shared_string_model(items: Vec<String>) -> ModelRc<SharedString> {
@@ -903,6 +1489,7 @@ fn to_ui_instance(inst: InstanceSummary) -> UiInstance {
     UiInstance {
         name: inst.name.into(),
         status: inst.status.into(),
+        instance_type: inst.instance_type.into(),
         arch: inst.architecture.into(),
         image: inst.image.into(),
         image_os: inst.image_os.into(),
@@ -911,6 +1498,11 @@ fn to_ui_instance(inst: InstanceSummary) -> UiInstance {
         cpu: inst.cpu.into(),
         profiles: profiles_str.into(),
         workspace_path: inst.workspace_path.into(),
+        cpu_usage_display: inst.cpu_usage_display.into(),
+        disk_usage_display: inst.disk_usage_display.into(),
+        net_rx_display: inst.net_rx_display.into(),
+        net_tx_display: inst.net_tx_display.into(),
+        processes_display: inst.processes_display.into(),
         is_running: inst.is_running,
         is_frozen: inst.is_frozen,
         snapshots: ModelRc::from(Rc::new(VecModel::from(snaps))),

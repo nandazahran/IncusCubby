@@ -63,6 +63,7 @@ impl IncusError {
 
 pub struct CreateInstanceParams<'a> {
     pub name: &'a str,
+    pub instance_type: &'a str,
     pub image_alias: &'a str,
     pub memory_limit: &'a str,
     pub cpu_limit: &'a str,
@@ -71,11 +72,16 @@ pub struct CreateInstanceParams<'a> {
     pub cloud_init_user_data: &'a str,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IncusClient {
     socket_path: PathBuf,
     http: Client<UnixConnector, Full<Bytes>>,
 }
+
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<IncusClient>();
+};
 
 impl IncusClient {
     pub fn new(socket_path: impl Into<PathBuf>) -> Self {
@@ -100,8 +106,20 @@ impl IncusClient {
         Ok(summaries)
     }
 
-    pub async fn create_instance(&self, params: CreateInstanceParams<'_>) -> Result<(), IncusError> {
+    pub async fn create_instance(
+        &self,
+        params: CreateInstanceParams<'_>,
+    ) -> Result<(), IncusError> {
         validate_name(params.name, "instance name")?;
+        let instance_type = match params.instance_type.trim() {
+            "" | "container" => "container",
+            "virtual-machine" => "virtual-machine",
+            other => {
+                return Err(IncusError::InvalidInput(format!(
+                    "Invalid instance type '{other}': expected container or virtual-machine"
+                )));
+            }
+        };
         let alias = params.image_alias.trim();
         if alias.is_empty() {
             return Err(IncusError::InvalidInput(
@@ -144,6 +162,7 @@ impl IncusClient {
 
         let payload = CreateInstanceRequest {
             name: params.name.to_string(),
+            instance_type: instance_type.to_string(),
             architecture: host_incus_arch().to_string(),
             profiles,
             config,
@@ -238,9 +257,36 @@ impl IncusClient {
         .await
     }
 
-    async fn update_instance_devices<F>(&self, name: &str, mutate: F) -> Result<(), IncusError>
+    pub async fn update_instance_limits(
+        &self,
+        name: &str,
+        cpu_limit: &str,
+        memory_limit: &str,
+    ) -> Result<(), IncusError> {
+        let cpu = cpu_limit.trim().to_string();
+        let mem = memory_limit.trim().to_string();
+        self.update_instance_put(name, move |put| {
+            set_or_remove(&mut put.config, "limits.cpu", &cpu);
+            set_or_remove(&mut put.config, "limits.memory", &mem);
+        })
+        .await
+    }
+
+    pub(super) async fn update_instance_devices<F>(
+        &self,
+        name: &str,
+        mutate: F,
+    ) -> Result<(), IncusError>
     where
         F: FnOnce(&mut HashMap<String, HashMap<String, String>>),
+    {
+        self.update_instance_put(name, |put| mutate(&mut put.devices))
+            .await
+    }
+
+    async fn update_instance_put<F>(&self, name: &str, mutate: F) -> Result<(), IncusError>
+    where
+        F: FnOnce(&mut InstancePut),
     {
         validate_name(name, "instance name")?;
         let path = format!("/1.0/instances/{name}");
@@ -250,7 +296,7 @@ impl IncusClient {
             code: 500,
             message: format!("Missing instance metadata for '{name}'"),
         })?;
-        mutate(&mut put.devices);
+        mutate(&mut put);
         self.execute_async(Method::PUT, &path, Some(&put)).await
     }
 
@@ -373,7 +419,7 @@ impl IncusClient {
         let inner = op_meta.as_ref().and_then(|m| m.metadata.as_ref());
         let exit_code = inner
             .and_then(|v| v.get("return"))
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(-1);
 
         let stdout_path = inner
@@ -403,7 +449,7 @@ impl IncusClient {
         })
     }
 
-    async fn execute_async<B: Serialize>(
+    pub(super) async fn execute_async<B: Serialize>(
         &self,
         method: Method,
         path: &str,
@@ -447,12 +493,17 @@ impl IncusClient {
         method: Method,
         path: &str,
         bytes: Bytes,
-        has_body: bool,
-    ) -> Result<(StatusCode, Bytes), IncusError> {
+        headers: &[(&str, &str)],
+    ) -> Result<(StatusCode, hyper::HeaderMap, Bytes), IncusError> {
+        if !path.starts_with('/') || path.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            return Err(IncusError::InvalidInput(format!(
+                "Invalid request path: '{path}'"
+            )));
+        }
         let uri: hyper::Uri = UnixUri::new(&self.socket_path, path).into();
         let mut builder = Request::builder().method(method).uri(uri);
-        if has_body {
-            builder = builder.header("content-type", "application/json");
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
         }
         let req = builder
             .body(Full::new(bytes))
@@ -465,6 +516,7 @@ impl IncusClient {
             .map_err(|err| classify_transport_error(&self.socket_path, &err))?;
 
         let http_status = response.status();
+        let resp_headers = response.headers().clone();
         let body_bytes = response
             .into_body()
             .collect()
@@ -472,20 +524,49 @@ impl IncusClient {
             .map_err(|e| IncusError::Transport(e.to_string()))?
             .to_bytes();
 
-        Ok((http_status, body_bytes))
+        Ok((http_status, resp_headers, body_bytes))
     }
 
-    async fn send_raw_get(&self, path: &str) -> Result<String, IncusError> {
-        let (http_status, body_bytes) = self
-            .send_request(Method::GET, path, Bytes::new(), false)
+    pub(super) async fn send_raw_get(&self, path: &str) -> Result<String, IncusError> {
+        let body_bytes = self
+            .send_raw_bytes(Method::GET, path, Bytes::new(), &[])
             .await?;
+        Ok(String::from_utf8_lossy(&body_bytes).into_owned())
+    }
+
+    pub(super) async fn send_raw_bytes(
+        &self,
+        method: Method,
+        path: &str,
+        body: Bytes,
+        headers: &[(&str, &str)],
+    ) -> Result<Bytes, IncusError> {
+        self.send_raw_bytes_with_headers(method, path, body, headers)
+            .await
+            .map(|(_, b)| b)
+    }
+
+    pub(super) async fn send_raw_bytes_with_headers(
+        &self,
+        method: Method,
+        path: &str,
+        body: Bytes,
+        headers: &[(&str, &str)],
+    ) -> Result<(hyper::HeaderMap, Bytes), IncusError> {
+        let (http_status, resp_headers, body_bytes) =
+            self.send_request(method, path, body, headers).await?;
         if http_status.is_client_error() || http_status.is_server_error() {
+            if let Ok(parsed) =
+                serde_json::from_slice::<ApiResponse<serde_json::Value>>(&body_bytes)
+                && (parsed.response_type == "error"
+                    || parsed.error_code != 0
+                    || !parsed.error.is_empty())
+            {
+                return Err(api_error_from_response(http_status, &parsed));
+            }
             let message = String::from_utf8_lossy(&body_bytes).trim().to_string();
             let message = if message.is_empty() {
-                http_status
-                    .canonical_reason()
-                    .unwrap_or("Unknown error")
-                    .to_string()
+                canonical_reason_or_unknown(http_status.as_u16())
             } else {
                 message
             };
@@ -494,46 +575,64 @@ impl IncusClient {
                 message,
             });
         }
-        Ok(String::from_utf8_lossy(&body_bytes).into_owned())
+        Ok((resp_headers, body_bytes))
     }
 
-    async fn send_json<B: Serialize, T: DeserializeOwned>(
+    pub(super) async fn send_json<B: Serialize, T: DeserializeOwned>(
         &self,
         method: Method,
         path: &str,
         body: Option<&B>,
     ) -> Result<ApiResponse<T>, IncusError> {
-        let bytes = match body {
-            Some(payload) => Bytes::from(serde_json::to_vec(payload)?),
-            None => Bytes::new(),
+        let (bytes, headers): (Bytes, &[(&str, &str)]) = match body {
+            Some(payload) => (
+                Bytes::from(serde_json::to_vec(payload)?),
+                &[("content-type", "application/json")],
+            ),
+            None => (Bytes::new(), &[]),
         };
-        let (http_status, body_bytes) = self
-            .send_request(method, path, bytes, body.is_some())
-            .await?;
+        let (http_status, _, body_bytes) = self.send_request(method, path, bytes, headers).await?;
 
         let parsed: ApiResponse<T> = serde_json::from_slice(&body_bytes)?;
         if parsed.response_type == "error"
             || http_status.is_client_error()
             || http_status.is_server_error()
         {
-            let code = if parsed.error_code != 0 {
-                parsed.error_code
-            } else {
-                http_status.as_u16()
-            };
-            let message = if !parsed.error.is_empty() {
-                parsed.error
-            } else if !parsed.status.is_empty() {
-                parsed.status
-            } else {
-                StatusCode::from_u16(code)
-                    .map(|s| s.canonical_reason().unwrap_or("Unknown error").to_string())
-                    .unwrap_or_else(|_| "Unknown error".to_string())
-            };
-            return Err(IncusError::Api { code, message });
+            return Err(api_error_from_response(http_status, &parsed));
         }
 
         Ok(parsed)
+    }
+}
+
+fn api_error_from_response<T>(http_status: StatusCode, parsed: &ApiResponse<T>) -> IncusError {
+    let code = if parsed.error_code != 0 {
+        parsed.error_code
+    } else {
+        http_status.as_u16()
+    };
+    let message = if !parsed.error.is_empty() {
+        parsed.error.clone()
+    } else if !parsed.status.is_empty() {
+        parsed.status.clone()
+    } else {
+        canonical_reason_or_unknown(code)
+    };
+    IncusError::Api { code, message }
+}
+
+fn canonical_reason_or_unknown(code: u16) -> String {
+    StatusCode::from_u16(code).map_or_else(
+        |_| "Unknown error".to_string(),
+        |s| s.canonical_reason().unwrap_or("Unknown error").to_string(),
+    )
+}
+
+fn set_or_remove(map: &mut HashMap<String, String>, key: &str, value: &str) {
+    if value.is_empty() {
+        map.remove(key);
+    } else {
+        map.insert(key.to_string(), value.to_string());
     }
 }
 
@@ -556,7 +655,7 @@ fn classify_transport_error(socket_path: &Path, err: &(dyn StdError + 'static)) 
     IncusError::Transport(err.to_string())
 }
 
-fn validate_name(value: &str, label: &str) -> Result<(), IncusError> {
+pub(super) fn validate_name(value: &str, label: &str) -> Result<(), IncusError> {
     if value.is_empty() {
         return Err(IncusError::InvalidInput(format!("{label} cannot be empty")));
     }
@@ -628,7 +727,7 @@ fn host_incus_arch() -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use hyper::Response;
     use hyper::body::Incoming;
@@ -639,9 +738,16 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tokio::net::UnixListener;
 
-    async fn spawn_mock_incus<F>(handler: F) -> (PathBuf, tokio::task::JoinHandle<()>)
+    pub(in crate::incus) type HeaderList = Vec<(String, String)>;
+
+    pub(in crate::incus) async fn spawn_mock_incus_raw<F>(
+        handler: F,
+    ) -> (PathBuf, tokio::task::JoinHandle<()>)
     where
-        F: Fn(String, String, String) -> (StatusCode, String) + Send + Sync + 'static,
+        F: Fn(String, String, HeaderList, Vec<u8>) -> (StatusCode, HeaderList, Vec<u8>)
+            + Send
+            + Sync
+            + 'static,
     {
         let dir = std::env::temp_dir().join(format!(
             "incus_cubby_test_{}_{}",
@@ -671,18 +777,25 @@ mod tests {
                             let uri = req
                                 .uri()
                                 .path_and_query()
-                                .map(|p| p.as_str())
-                                .unwrap_or("/")
+                                .map_or("/", hyper::http::uri::PathAndQuery::as_str)
                                 .to_string();
-                            let body_bytes = req.into_body().collect().await.unwrap().to_bytes();
-                            let body = String::from_utf8_lossy(&body_bytes).to_string();
-                            let (status, resp_json) = handler(method, uri, body);
+                            let req_headers: HeaderList = req
+                                .headers()
+                                .iter()
+                                .map(|(k, v)| {
+                                    (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())
+                                })
+                                .collect();
+                            let body_bytes =
+                                req.into_body().collect().await.unwrap().to_bytes().to_vec();
+                            let (status, resp_headers, resp_body) =
+                                handler(method, uri, req_headers, body_bytes);
+                            let mut builder = Response::builder().status(status);
+                            for (name, value) in resp_headers {
+                                builder = builder.header(name, value);
+                            }
                             Ok::<_, Infallible>(
-                                Response::builder()
-                                    .status(status)
-                                    .header("content-type", "application/json")
-                                    .body(Full::new(Bytes::from(resp_json)))
-                                    .unwrap(),
+                                builder.body(Full::new(Bytes::from(resp_body))).unwrap(),
                             )
                         }
                     });
@@ -692,6 +805,22 @@ mod tests {
         });
 
         (sock_path, handle)
+    }
+
+    async fn spawn_mock_incus<F>(handler: F) -> (PathBuf, tokio::task::JoinHandle<()>)
+    where
+        F: Fn(String, String, String) -> (StatusCode, String) + Send + Sync + 'static,
+    {
+        spawn_mock_incus_raw(move |method, uri, _headers, body_bytes| {
+            let body = String::from_utf8_lossy(&body_bytes).to_string();
+            let (status, resp_json) = handler(method, uri, body);
+            (
+                status,
+                vec![("content-type".to_string(), "application/json".to_string())],
+                resp_json.into_bytes(),
+            )
+        })
+        .await
     }
 
     #[tokio::test]
@@ -793,6 +922,7 @@ mod tests {
         client
             .create_instance(CreateInstanceParams {
                 name: "box1",
+                instance_type: "container",
                 image_alias: "debian/12",
                 memory_limit: "4GiB",
                 cpu_limit: "2",
@@ -809,6 +939,7 @@ mod tests {
         assert_eq!(calls[0].1, "/1.0/instances");
         let sent: serde_json::Value = serde_json::from_str(&calls[0].2).unwrap();
         assert_eq!(sent["name"], "box1");
+        assert_eq!(sent["type"], "container");
         assert_eq!(sent["profiles"], serde_json::json!(["default", "dev"]));
         assert_eq!(sent["config"]["limits.memory"], "4GiB");
         assert_eq!(sent["config"]["limits.cpu"], "2");
@@ -898,12 +1029,137 @@ mod tests {
         let _ = std::fs::remove_dir_all(sock.parent().unwrap());
     }
 
+    async fn smoke_instance_exec_files_and_logs(client: &IncusClient, name: &str, ws_str: &str) {
+        client
+            .set_instance_state(name, "start")
+            .await
+            .expect("start");
+
+        let exec_out = client
+            .exec_command(name, &["sh".into(), "-c".into(), "echo ok-exec".into()])
+            .await
+            .expect("exec_command");
+        assert_eq!(exec_out.exit_code, 0);
+        assert!(exec_out.stdout.contains("ok-exec"));
+
+        client
+            .add_proxy_device(name, "web", 18080, 8080)
+            .await
+            .expect("add_proxy_device");
+
+        let after_start = client.list_instances().await.expect("list after start");
+        let created = after_start
+            .iter()
+            .find(|i| i.name == name)
+            .expect("created instance present");
+        assert!(created.is_running);
+        assert_eq!(created.cpu, "1");
+        assert_eq!(created.workspace_path, ws_str);
+        assert_eq!(created.proxies.len(), 1);
+
+        client
+            .remove_device(name, "workspace")
+            .await
+            .expect("remove workspace");
+        client
+            .remove_device(name, "web")
+            .await
+            .expect("remove proxy");
+
+        client
+            .update_instance_limits(name, "2", "768MiB")
+            .await
+            .expect("update_instance_limits");
+
+        client
+            .push_instance_file(name, "/tmp/cubby-probe.txt", b"hello-live".to_vec())
+            .await
+            .expect("push_instance_file");
+        let pulled = client
+            .pull_instance_file(name, "/tmp/cubby-probe.txt")
+            .await
+            .expect("pull_instance_file");
+        assert_eq!(pulled, b"hello-live");
+
+        let logs = client
+            .list_instance_logs(name)
+            .await
+            .expect("list_instance_logs");
+        assert!(!logs.is_empty());
+        let _ = client
+            .read_instance_log(name, &logs[0])
+            .await
+            .expect("read_instance_log");
+    }
+
+    async fn smoke_infra_pools_nets_and_profiles(
+        client: &IncusClient,
+        name: &str,
+        vol_name: &str,
+        net_name: &str,
+        prof_name: &str,
+    ) {
+        let pools = client
+            .list_storage_pools()
+            .await
+            .expect("list_storage_pools");
+        assert!(pools.iter().any(|p| p.name == "default"));
+        client
+            .create_storage_volume("default", vol_name)
+            .await
+            .expect("create_storage_volume");
+        let vols = client
+            .list_storage_volumes("default")
+            .await
+            .expect("list_storage_volumes");
+        assert!(vols.iter().any(|v| v.name == vol_name));
+        client
+            .attach_custom_volume(name, "cache", "default", vol_name, "/cache")
+            .await
+            .expect("attach_custom_volume");
+        client
+            .remove_device(name, "cache")
+            .await
+            .expect("detach custom volume");
+        client
+            .delete_storage_volume("default", vol_name)
+            .await
+            .expect("delete_storage_volume");
+
+        let nets = client.list_networks().await.expect("list_networks");
+        assert!(nets.iter().any(|n| n.name == "incusbr0"));
+        client
+            .create_network(net_name, crate::incus::infra::BridgeNat::Disabled)
+            .await
+            .expect("create_network");
+        client
+            .delete_network(net_name)
+            .await
+            .expect("delete_network");
+
+        client
+            .create_profile(prof_name, "smoke profile", "1", "256MiB")
+            .await
+            .expect("create_profile");
+        client
+            .update_profile(prof_name, "updated", "2", "512MiB")
+            .await
+            .expect("update_profile");
+        client
+            .delete_profile(prof_name)
+            .await
+            .expect("delete_profile");
+    }
+
     #[tokio::test]
     #[ignore = "requires local running incusd socket at /var/lib/incus/unix.socket"]
     async fn live_incus_full_lifecycle_smoke() {
         let client = IncusClient::default_socket();
         let name = format!("cubby-smoke-{}", std::process::id());
         let clone_name = format!("cubby-clone-{}", std::process::id());
+        let vol_name = format!("cubby-vol-{}", std::process::id());
+        let net_name = format!("cubby-n{}", std::process::id() % 10000);
+        let prof_name = format!("cubby-prof-{}", std::process::id());
         let ws_dir = std::env::temp_dir().join(format!("cubby-ws-{}", std::process::id()));
         std::fs::create_dir_all(&ws_dir).unwrap();
         let ws_str = ws_dir.to_string_lossy().into_owned();
@@ -913,6 +1169,9 @@ mod tests {
         let _ = client.delete_instance(&clone_name).await;
         let _ = client.set_instance_state(&name, "stop").await;
         let _ = client.delete_instance(&name).await;
+        let _ = client.delete_storage_volume("default", &vol_name).await;
+        let _ = client.delete_network(&net_name).await;
+        let _ = client.delete_profile(&prof_name).await;
 
         let initial = client.list_instances().await.expect("list_instances");
         assert!(initial.iter().all(|i| i.name != name));
@@ -923,6 +1182,7 @@ mod tests {
         client
             .create_instance(CreateInstanceParams {
                 name: &name,
+                instance_type: "container",
                 image_alias: "alpine/3.24",
                 memory_limit: "512MiB",
                 cpu_limit: "1",
@@ -933,45 +1193,13 @@ mod tests {
             .await
             .expect("create_instance");
 
-        let res = async {
+        async {
             let images = client.list_images().await.expect("list_images");
             assert!(!images.is_empty());
 
-            client
-                .set_instance_state(&name, "start")
-                .await
-                .expect("start");
-
-            let exec_out = client
-                .exec_command(&name, &["sh".into(), "-c".into(), "echo ok-exec".into()])
-                .await
-                .expect("exec_command");
-            assert_eq!(exec_out.exit_code, 0);
-            assert!(exec_out.stdout.contains("ok-exec"));
-
-            client
-                .add_proxy_device(&name, "web", 18080, 8080)
-                .await
-                .expect("add_proxy_device");
-
-            let after_start = client.list_instances().await.expect("list after start");
-            let created = after_start
-                .iter()
-                .find(|i| i.name == name)
-                .expect("created instance present");
-            assert!(created.is_running);
-            assert_eq!(created.cpu, "1");
-            assert_eq!(created.workspace_path, ws_str);
-            assert_eq!(created.proxies.len(), 1);
-
-            client
-                .remove_device(&name, "workspace")
-                .await
-                .expect("remove workspace");
-            client
-                .remove_device(&name, "web")
-                .await
-                .expect("remove proxy");
+            smoke_instance_exec_files_and_logs(&client, &name, &ws_str).await;
+            smoke_infra_pools_nets_and_profiles(&client, &name, &vol_name, &net_name, &prof_name)
+                .await;
 
             client
                 .set_instance_state(&name, "freeze")
@@ -1027,8 +1255,10 @@ mod tests {
             .delete_instance(&name)
             .await
             .expect("delete_instance");
+        let _ = client.delete_storage_volume("default", &vol_name).await;
+        let _ = client.delete_network(&net_name).await;
+        let _ = client.delete_profile(&prof_name).await;
         let _ = std::fs::remove_dir_all(&ws_dir);
-        res
     }
 
     #[tokio::test]
@@ -1279,7 +1509,7 @@ mod tests {
         assert_eq!(images[0].alias, "debian/12");
         assert_eq!(images[0].description, "Debian bookworm amd64");
         assert_eq!(images[0].architecture, "x86_64");
-        assert_eq!(images[0].size_bytes, 104857600);
+        assert_eq!(images[0].size_bytes, 104_857_600);
         assert_eq!(images[0].size_display, "100 MiB");
 
         client.delete_image("abcdef123456").await.unwrap();
@@ -1364,5 +1594,225 @@ mod tests {
 
         handle.abort();
         let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn list_instances_parses_telemetry_and_instance_type() {
+        let (sock, handle) = spawn_mock_incus(|_, _, _| {
+            let json = r#"{
+                "type": "sync",
+                "status": "Success",
+                "status_code": 200,
+                "metadata": [
+                    {
+                        "name": "vm-box",
+                        "type": "virtual-machine",
+                        "status": "Running",
+                        "architecture": "x86_64",
+                        "config": { "limits.cpu": "4", "limits.memory": "8GiB" },
+                        "state": {
+                            "cpu": { "usage": 12500000000 },
+                            "memory": { "usage": 536870912 },
+                            "disk": {
+                                "root": { "usage": 2147483648, "total": 10737418240 }
+                            },
+                            "network": {
+                                "lo": {
+                                    "addresses": [{"family": "inet", "address": "127.0.0.1", "scope": "local"}],
+                                    "counters": { "bytes_received": 999999999, "bytes_sent": 999999999 }
+                                },
+                                "enp5s0": {
+                                    "addresses": [{"family": "inet", "address": "10.0.0.12", "scope": "global"}],
+                                    "counters": { "bytes_received": 10485760, "bytes_sent": 5242880 }
+                                },
+                                "eth1": {
+                                    "addresses": [],
+                                    "counters": { "bytes_received": 5242880, "bytes_sent": 1048576 }
+                                }
+                            },
+                            "processes": 42
+                        }
+                    },
+                    {
+                        "name": "ct-stopped",
+                        "status": "Stopped",
+                        "architecture": "x86_64",
+                        "config": {},
+                        "state": null
+                    }
+                ]
+            }"#;
+            (StatusCode::OK, json.to_string())
+        })
+        .await;
+
+        let client = IncusClient::new(&sock);
+        let list = client.list_instances().await.unwrap();
+        assert_eq!(list.len(), 2);
+
+        let ct = &list[0];
+        assert_eq!(ct.name, "ct-stopped");
+        assert_eq!(ct.instance_type, "container");
+        assert_eq!(ct.cpu_usage_display, "-");
+        assert_eq!(ct.disk_usage_display, "-");
+        assert_eq!(ct.net_rx_display, "-");
+        assert_eq!(ct.net_tx_display, "-");
+        assert_eq!(ct.processes_display, "-");
+
+        let vm = &list[1];
+        assert_eq!(vm.name, "vm-box");
+        assert_eq!(vm.instance_type, "virtual-machine");
+        assert_eq!(vm.cpu_usage_display, "12.50s");
+        assert_eq!(vm.disk_usage_display, "2.00 GiB");
+        assert_eq!(vm.net_rx_display, "15 MiB");
+        assert_eq!(vm.net_tx_display, "6 MiB");
+        assert_eq!(vm.processes_display, "42");
+
+        handle.abort();
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_vm_instance_and_reject_invalid_instance_type() {
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let seen_clone = Arc::clone(&seen);
+
+        let (sock, handle) = spawn_mock_incus(move |method, uri, body| {
+            if method == "POST" && uri == "/1.0/instances" {
+                seen_clone.lock().unwrap().push(body);
+                (
+                    StatusCode::OK,
+                    r#"{"type":"sync","status":"Success","status_code":200,"metadata":{}}"#
+                        .to_string(),
+                )
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    r#"{"type":"error","error":"unexpected"}"#.to_string(),
+                )
+            }
+        })
+        .await;
+
+        let client = IncusClient::new(&sock);
+        client
+            .create_instance(CreateInstanceParams {
+                name: "vm1",
+                instance_type: "virtual-machine",
+                image_alias: "ubuntu/24.04",
+                memory_limit: "4GiB",
+                cpu_limit: "2",
+                workspace_path: "",
+                profiles: Vec::new(),
+                cloud_init_user_data: "",
+            })
+            .await
+            .unwrap();
+
+        let err = client
+            .create_instance(CreateInstanceParams {
+                name: "bad-type",
+                instance_type: "hypervisor",
+                image_alias: "ubuntu/24.04",
+                memory_limit: "",
+                cpu_limit: "",
+                workspace_path: "",
+                profiles: Vec::new(),
+                cloud_init_user_data: "",
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, IncusError::InvalidInput(_)));
+
+        let bodies = seen.lock().unwrap();
+        assert_eq!(bodies.len(), 1);
+        let sent: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
+        assert_eq!(sent["name"], "vm1");
+        assert_eq!(sent["type"], "virtual-machine");
+
+        handle.abort();
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn update_instance_limits_sets_and_clears_config_keys() {
+        let config_state = Arc::new(Mutex::new(serde_json::json!({
+            "image.os": "Debian"
+        })));
+        let config_clone = Arc::clone(&config_state);
+
+        let (sock, handle) = spawn_mock_incus(move |method, uri, body| {
+            assert_eq!(uri, "/1.0/instances/box1");
+            if method == "GET" {
+                let cfg = config_clone.lock().unwrap().clone();
+                let resp = serde_json::json!({
+                    "type": "sync",
+                    "status": "Success",
+                    "status_code": 200,
+                    "metadata": {
+                        "architecture": "x86_64",
+                        "config": cfg,
+                        "description": "",
+                        "devices": {},
+                        "ephemeral": false,
+                        "profiles": ["default"],
+                        "stateful": false
+                    }
+                });
+                (StatusCode::OK, resp.to_string())
+            } else if method == "PUT" {
+                let put: serde_json::Value = serde_json::from_str(&body).unwrap();
+                *config_clone.lock().unwrap() = put["config"].clone();
+                (
+                    StatusCode::OK,
+                    r#"{"type":"sync","status":"Success","status_code":200,"metadata":{}}"#
+                        .to_string(),
+                )
+            } else {
+                (StatusCode::METHOD_NOT_ALLOWED, "{}".to_string())
+            }
+        })
+        .await;
+
+        let client = IncusClient::new(&sock);
+        client
+            .update_instance_limits("box1", "4", "8GiB")
+            .await
+            .unwrap();
+        {
+            let cfg = config_state.lock().unwrap();
+            assert_eq!(cfg["limits.cpu"], "4");
+            assert_eq!(cfg["limits.memory"], "8GiB");
+            assert_eq!(cfg["image.os"], "Debian");
+        }
+
+        client
+            .update_instance_limits("box1", "   ", "")
+            .await
+            .unwrap();
+        {
+            let cfg = config_state.lock().unwrap();
+            assert!(cfg.get("limits.cpu").is_none());
+            assert!(cfg.get("limits.memory").is_none());
+            assert_eq!(cfg["image.os"], "Debian");
+        }
+
+        handle.abort();
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn send_request_rejects_invalid_uri_paths_without_panicking() {
+        let client = IncusClient::new("/tmp/unused_incus_cubby_test.socket");
+        for bad_path in ["bad path", "/1.0/logs/foo bar", "/1.0/logs/foo\nbar"] {
+            let err = client
+                .send_request(Method::GET, bad_path, Bytes::new(), &[])
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, IncusError::InvalidInput(_)),
+                "expected InvalidInput for '{bad_path}', got {err:?}"
+            );
+        }
     }
 }

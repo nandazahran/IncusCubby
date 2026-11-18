@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+pub(super) fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: Default + Deserialize<'de>,
@@ -39,6 +39,8 @@ pub struct OperationMetadata {
 #[derive(Debug, Deserialize)]
 pub struct ApiInstance {
     pub name: String,
+    #[serde(rename = "type", default)]
+    pub instance_type: String,
     #[serde(default)]
     pub status: String,
     #[serde(default)]
@@ -56,8 +58,25 @@ pub struct ApiInstance {
 
 #[derive(Debug, Deserialize)]
 pub struct InstanceState {
+    pub cpu: Option<CpuState>,
     pub memory: Option<MemoryState>,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub disk: HashMap<String, DiskState>,
     pub network: Option<HashMap<String, NetworkState>>,
+    #[serde(default)]
+    pub processes: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CpuState {
+    #[serde(default)]
+    pub usage: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiskState {
+    #[serde(default)]
+    pub usage: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +89,15 @@ pub struct MemoryState {
 pub struct NetworkState {
     #[serde(default, deserialize_with = "null_to_default")]
     pub addresses: Vec<NetworkAddress>,
+    pub counters: Option<NetworkCounters>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NetworkCounters {
+    #[serde(default)]
+    pub bytes_received: i64,
+    #[serde(default)]
+    pub bytes_sent: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +120,8 @@ pub struct ApiSnapshot {
 #[derive(Debug, Serialize)]
 pub struct CreateInstanceRequest {
     pub name: String,
+    #[serde(rename = "type", skip_serializing_if = "String::is_empty")]
+    pub instance_type: String,
     pub architecture: String,
     pub profiles: Vec<String>,
     pub config: HashMap<String, String>,
@@ -305,6 +335,7 @@ pub struct SnapshotSummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceSummary {
     pub name: String,
+    pub instance_type: String,
     pub status: String,
     pub is_running: bool,
     pub is_frozen: bool,
@@ -314,6 +345,11 @@ pub struct InstanceSummary {
     pub ip: String,
     pub memory: String,
     pub cpu: String,
+    pub cpu_usage_display: String,
+    pub disk_usage_display: String,
+    pub net_rx_display: String,
+    pub net_tx_display: String,
+    pub processes_display: String,
     pub workspace_path: String,
     pub profiles: Vec<String>,
     pub mounts: Vec<MountEntry>,
@@ -325,6 +361,11 @@ impl From<ApiInstance> for InstanceSummary {
     fn from(api: ApiInstance) -> Self {
         let is_running = api.status.eq_ignore_ascii_case("Running");
         let is_frozen = api.status.eq_ignore_ascii_case("Frozen");
+        let instance_type = if api.instance_type.is_empty() {
+            "container".to_string()
+        } else {
+            api.instance_type
+        };
         let image_os = api.config.get("image.os").cloned().unwrap_or_default();
         let image = format_os_release(
             api.config.get("image.os").map(String::as_str),
@@ -343,8 +384,7 @@ impl From<ApiInstance> for InstanceSummary {
             .state
             .as_ref()
             .and_then(|s| s.memory.as_ref())
-            .map(|m| m.usage.max(0) as u64)
-            .unwrap_or(0);
+            .map_or(0, |m| m.usage.max(0) as u64);
         let limit = api.config.get("limits.memory").map(String::as_str);
         let memory = format_memory(is_running, usage_bytes, limit);
         let cpu = api
@@ -353,6 +393,49 @@ impl From<ApiInstance> for InstanceSummary {
             .filter(|s| !s.is_empty())
             .cloned()
             .unwrap_or_else(|| "-".to_string());
+
+        let cpu_usage_display = api
+            .state
+            .as_ref()
+            .and_then(|s| s.cpu.as_ref())
+            .map(|c| c.usage)
+            .filter(|&u| is_running && u > 0)
+            .map_or_else(
+                || "-".to_string(),
+                |u| format!("{:.2}s", u as f64 / 1_000_000_000.0),
+            );
+
+        let disk_usage_display = api
+            .state
+            .as_ref()
+            .and_then(|s| s.disk.get("root"))
+            .map(|d| d.usage)
+            .filter(|&u| u > 0)
+            .map_or_else(|| "-".to_string(), |u| format_bytes(u as u64));
+
+        let (rx_bytes, tx_bytes) = api
+            .state
+            .as_ref()
+            .and_then(|s| s.network.as_ref())
+            .map_or((0, 0), sum_network_counters);
+        let rx_text = if rx_bytes > 0 {
+            format_bytes(rx_bytes)
+        } else {
+            "-".to_string()
+        };
+        let tx_text = if tx_bytes > 0 {
+            format_bytes(tx_bytes)
+        } else {
+            "-".to_string()
+        };
+
+        let processes_display = api
+            .state
+            .as_ref()
+            .map(|s| s.processes)
+            .filter(|&p| is_running && p > 0)
+            .map_or_else(|| "-".to_string(), |p| p.to_string());
+
         let workspace_path = api
             .devices
             .get("workspace")
@@ -403,6 +486,7 @@ impl From<ApiInstance> for InstanceSummary {
 
         Self {
             name: api.name,
+            instance_type,
             status: api.status,
             is_running,
             is_frozen,
@@ -416,6 +500,11 @@ impl From<ApiInstance> for InstanceSummary {
             ip,
             memory,
             cpu,
+            cpu_usage_display,
+            disk_usage_display,
+            net_rx_display: rx_text,
+            net_tx_display: tx_text,
+            processes_display,
             workspace_path,
             profiles: api.profiles,
             mounts,
@@ -448,6 +537,21 @@ fn extract_primary_ipv4(network: &HashMap<String, NetworkState>) -> Option<Strin
     None
 }
 
+fn sum_network_counters(network: &HashMap<String, NetworkState>) -> (u64, u64) {
+    let mut rx = 0u64;
+    let mut tx = 0u64;
+    for (iface, state) in network {
+        if iface == "lo" {
+            continue;
+        }
+        if let Some(counters) = &state.counters {
+            rx = rx.saturating_add(counters.bytes_received.max(0) as u64);
+            tx = tx.saturating_add(counters.bytes_sent.max(0) as u64);
+        }
+    }
+    (rx, tx)
+}
+
 fn format_memory(is_running: bool, usage_bytes: u64, limit: Option<&str>) -> String {
     let limit = limit.filter(|s| !s.is_empty());
     match (is_running, usage_bytes, limit) {
@@ -458,7 +562,7 @@ fn format_memory(is_running: bool, usage_bytes: u64, limit: Option<&str>) -> Str
     }
 }
 
-fn format_bytes(bytes: u64) -> String {
+pub(super) fn format_bytes(bytes: u64) -> String {
     const MIB: f64 = 1024.0 * 1024.0;
     const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
     let b = bytes as f64;

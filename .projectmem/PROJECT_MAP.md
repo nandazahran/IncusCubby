@@ -10,7 +10,8 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - [src/main.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/main.rs) — Slint main thread + background Tokio worker (3s polling, async REST commands, `upgrade_in_event_loop`)
 - [src/incus/mod.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/mod.rs) — Incus module exports
 - [src/incus/models.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/models.rs) — Incus 1.0 REST API request/response structs and UI summary mapping
-- [src/incus/client.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/client.rs) — `hyperlocal` Unix socket client (instances, clone, state, devices/proxies, snapshots, images, profiles, exec)
+- [src/incus/client.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/client.rs) — `hyperlocal` Unix socket client (instances, VMs, clone, limits, state, devices/proxies, snapshots, images, profiles, exec)
+- [src/incus/infra.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/infra.rs) — storage pools & custom volumes, networks & DHCP leases, profile CRUD, instance logs, file push/pull
 - [src/incus/remote_images.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/remote_images.rs) — `reqwest` simplestreams alias fetcher for `images.linuxcontainers.org`
 - [src/incus/packages.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/packages.rs) — OS-aware package upgrade/install command builders with token validation
 - [src/settings.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/settings.rs) — XDG JSON preferences (`preferred_terminal`, `preferred_ide`) and PATH detection

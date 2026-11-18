@@ -17,6 +17,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - gotcha: Incus REST API serializes Go nil slices/maps (config, addresses) as JSON null; use null_to_default deserializer and i64 for memory usage [src/incus/models.rs:4]
 - gotcha: Incus PATCH /1.0/instances/{name} rejects null device entries ("type <nil> is not supported in *api.DevicesMap"); use GET + PUT InstancePut to remove devices [src/incus/client.rs:140]
 - New feature: Add workspace mounts, live polling, codium launcher, and delete confirmations [src/incus/client.rs]
+- New feature: Add DistroShelf/BoxBuddyRS features: clone, freeze/restart, exec packages, mounts/proxies, image cache, and settings [src/incus/client.rs]
 
 ## Key files
 - `.gitattributes`
@@ -36,6 +37,9 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - `/1.0`
 - `api.DevicesMap`
 - `.projectmem/summary.md`
+- `src/incus/packages.rs`
+- `src/incus/remote_images.rs`
+- `src/settings.rs`
 
 ## Open questions
 - None logged yet.

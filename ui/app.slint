@@ -1,5 +1,6 @@
 import {
     Button,
+    CheckBox,
     ComboBox,
     GroupBox,
     HorizontalBox,
@@ -30,6 +31,7 @@ export struct UiProxy {
 export struct UiInstance {
     name: string,
     status: string,
+    instance_type: string,
     arch: string,
     image: string,
     image_os: string,
@@ -38,6 +40,11 @@ export struct UiInstance {
     cpu: string,
     profiles: string,
     workspace_path: string,
+    cpu_usage_display: string,
+    disk_usage_display: string,
+    net_rx_display: string,
+    net_tx_display: string,
+    processes_display: string,
     is_running: bool,
     is_frozen: bool,
     snapshots: [UiSnapshot],
@@ -54,18 +61,53 @@ export struct UiImage {
     size_display: string,
 }
 
+export struct UiStoragePool {
+    name: string,
+    driver: string,
+    status: string,
+    used_display: string,
+    total_display: string,
+}
+
+export struct UiStorageVolume {
+    name: string,
+    pool: string,
+    content_type: string,
+}
+
+export struct UiNetwork {
+    name: string,
+    net_type: string,
+    managed: bool,
+    ipv4: string,
+    nat: bool,
+    leases_display: string,
+}
+
+export struct UiProfile {
+    name: string,
+    description: string,
+}
+
 export component AppWindow inherits Window {
     title: "IncusCubby";
-    preferred-width: 1080px;
-    preferred-height: 760px;
+    preferred-width: 1120px;
+    preferred-height: 800px;
 
     in property <[UiInstance]> instances: [];
     in-out property <int> selected_index: -1;
     in property <bool> has_selection: false;
     in property <UiInstance> selected_instance;
     in property <[UiImage]> local_images: [];
+    in property <[UiStoragePool]> storage_pools: [];
+    in property <[UiStorageVolume]> storage_volumes: [];
+    in property <[UiNetwork]> networks: [];
+    in property <[UiProfile]> profiles: [];
     in property <[string]> remote_aliases: ["debian/12", "debian/13", "ubuntu/24.04", "ubuntu/26.04", "alpine/3.24", "archlinux", "fedora/44"];
     in property <[string]> profile_names: ["default"];
+    in property <[string]> pool_names: ["default"];
+    in property <[string]> instance_logs: [];
+    in-out property <string> selected_log: "";
     in property <[string]> available_terminals: ["auto"];
     in property <[string]> available_ides: ["auto"];
     in-out property <string> preferred_terminal: "auto";
@@ -76,14 +118,17 @@ export component AppWindow inherits Window {
     in property <string> socket_warning: "";
     in property <string> confirm_message: "";
     in property <string> exec_output: "";
+    in property <string> log_content: "";
 
     callback refresh();
     callback select_instance(int);
-    callback create_instance(string, string, string, string, string, string, string);
+    callback create_instance(string, string, string, string, string, string, string, string);
     callback clone_instance(string, string);
     callback set_instance_state(string, string);
+    callback update_instance_limits(string, string, string);
     callback request_delete_instance(string);
     callback add_disk_mount(string, string, string, string);
+    callback attach_custom_volume(string, string, string, string, string);
     callback add_proxy_device(string, string, string, string);
     callback remove_device(string, string);
     callback open_shell(string);
@@ -94,6 +139,17 @@ export component AppWindow inherits Window {
     callback request_delete_snapshot(string, string);
     callback upgrade_packages(string, string);
     callback install_packages(string, string, string);
+    callback refresh_instance_logs(string);
+    callback read_instance_log(string, string);
+    callback push_instance_file(string, string, string);
+    callback pull_instance_file(string, string, string);
+    callback refresh_infra();
+    callback create_storage_volume(string, string);
+    callback request_delete_storage_volume(string, string);
+    callback create_network(string, bool);
+    callback request_delete_network(string);
+    callback save_profile(string, string, string, string, bool);
+    callback request_delete_profile(string);
     callback fetch_remote_images();
     callback refresh_local_images();
     callback request_delete_image(string, string);
@@ -173,7 +229,7 @@ export component AppWindow inherits Window {
                     GroupBox {
                         title: "Sandboxes";
                         horizontal-stretch: 1;
-                        min-width: 260px;
+                        min-width: 250px;
 
                         if root.instances.length == 0: Text {
                             text: "No sandboxes found.";
@@ -209,17 +265,24 @@ export component AppWindow inherits Window {
                                 }
 
                                 Text {
-                                    text: "(" + root.selected_instance.status + ")";
+                                    text: "(" + root.selected_instance.status + ", " + root.selected_instance.instance_type + ")";
                                     vertical-alignment: center;
                                 }
                             }
 
                             Text {
-                                text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch + " | CPU: " + root.selected_instance.cpu;
+                                text: "Image: " + root.selected_instance.image + " | Arch: " + root.selected_instance.arch + " | Profiles: " + root.selected_instance.profiles;
                             }
 
                             Text {
-                                text: "IP: " + root.selected_instance.ip + " | Memory: " + root.selected_instance.memory + " | Profiles: " + root.selected_instance.profiles;
+                                text: "IP: " + root.selected_instance.ip + " | CPU Limit: " + root.selected_instance.cpu + " | Memory: " + root.selected_instance.memory;
+                            }
+
+                            Text {
+                                text: "Telemetry — CPU time: " + root.selected_instance.cpu_usage_display
+                                    + " | Disk: " + root.selected_instance.disk_usage_display
+                                    + " | Net RX/TX: " + root.selected_instance.net_rx_display + " / " + root.selected_instance.net_tx_display
+                                    + " | Procs: " + root.selected_instance.processes_display;
                             }
 
                             HorizontalBox {
@@ -293,24 +356,55 @@ export component AppWindow inherits Window {
                                 vertical-stretch: 1;
 
                                 Tab {
-                                    title: "Clone & Packages";
+                                    title: "Clone, Limits & Packages";
 
                                     VerticalBox {
-                                        GroupBox {
-                                            title: "Clone Sandbox (CoW)";
-                                            HorizontalBox {
-                                                clone_input := LineEdit {
-                                                    placeholder-text: "New sandbox name";
-                                                    enabled: !root.busy;
-                                                    horizontal-stretch: 1;
-                                                }
+                                        HorizontalBox {
+                                            GroupBox {
+                                                title: "Clone (CoW)";
+                                                horizontal-stretch: 1;
+                                                HorizontalBox {
+                                                    clone_input := LineEdit {
+                                                        placeholder-text: "New sandbox name";
+                                                        enabled: !root.busy;
+                                                        horizontal-stretch: 1;
+                                                    }
 
-                                                Button {
-                                                    text: "Clone";
-                                                    enabled: !root.busy && clone_input.text != "";
-                                                    clicked => {
-                                                        root.clone_instance(root.selected_instance.name, clone_input.text);
-                                                        clone_input.text = "";
+                                                    Button {
+                                                        text: "Clone";
+                                                        enabled: !root.busy && clone_input.text != "";
+                                                        clicked => {
+                                                            root.clone_instance(root.selected_instance.name, clone_input.text);
+                                                            clone_input.text = "";
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            GroupBox {
+                                                title: "Live Limits";
+                                                horizontal-stretch: 1;
+                                                HorizontalBox {
+                                                    limit_cpu_input := LineEdit {
+                                                        placeholder-text: "CPU (e.g. 2)";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    limit_mem_input := LineEdit {
+                                                        placeholder-text: "Memory (e.g. 4GiB)";
+                                                        enabled: !root.busy;
+                                                    }
+
+                                                    Button {
+                                                        text: "Apply";
+                                                        enabled: !root.busy;
+                                                        clicked => {
+                                                            root.update_instance_limits(
+                                                                root.selected_instance.name,
+                                                                limit_cpu_input.text,
+                                                                limit_mem_input.text
+                                                            );
+                                                        }
                                                     }
                                                 }
                                             }
@@ -361,36 +455,50 @@ export component AppWindow inherits Window {
 
                                     VerticalBox {
                                         GroupBox {
-                                            title: "Disk Mounts";
+                                            title: "Disk Mounts (Host Path or Custom Volume)";
                                             vertical-stretch: 1;
 
                                             VerticalBox {
                                                 HorizontalBox {
                                                     mount_name_input := LineEdit {
-                                                        placeholder-text: "Name (e.g. workspace)";
+                                                        placeholder-text: "Device name";
                                                         text: "workspace";
                                                         enabled: !root.busy;
                                                     }
 
                                                     mount_host_input := LineEdit {
-                                                        placeholder-text: "Host directory (e.g. ~/projects/app)";
+                                                        placeholder-text: "Host dir (~/app) or volume name";
                                                         enabled: !root.busy;
                                                         horizontal-stretch: 1;
                                                     }
 
                                                     mount_ctr_input := LineEdit {
-                                                        placeholder-text: "Container path (e.g. /workspace)";
+                                                        placeholder-text: "Container path";
                                                         text: "/workspace";
                                                         enabled: !root.busy;
                                                     }
 
                                                     Button {
-                                                        text: "Add Mount";
+                                                        text: "Host Mount";
                                                         enabled: !root.busy && mount_name_input.text != "" && mount_host_input.text != "" && mount_ctr_input.text != "";
                                                         clicked => {
                                                             root.add_disk_mount(
                                                                 root.selected_instance.name,
                                                                 mount_name_input.text,
+                                                                mount_host_input.text,
+                                                                mount_ctr_input.text
+                                                            );
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        text: "Attach Volume";
+                                                        enabled: !root.busy && mount_name_input.text != "" && mount_host_input.text != "" && mount_ctr_input.text != "";
+                                                        clicked => {
+                                                            root.attach_custom_volume(
+                                                                root.selected_instance.name,
+                                                                mount_name_input.text,
+                                                                "default",
                                                                 mount_host_input.text,
                                                                 mount_ctr_input.text
                                                             );
@@ -434,12 +542,12 @@ export component AppWindow inherits Window {
                                                     }
 
                                                     proxy_host_port := LineEdit {
-                                                        placeholder-text: "Host port (e.g. 3000)";
+                                                        placeholder-text: "Host port (3000)";
                                                         enabled: !root.busy;
                                                     }
 
                                                     proxy_ctr_port := LineEdit {
-                                                        placeholder-text: "Container port (e.g. 3000)";
+                                                        placeholder-text: "Container port (3000)";
                                                         enabled: !root.busy;
                                                     }
 
@@ -537,6 +645,91 @@ export component AppWindow inherits Window {
                                         }
                                     }
                                 }
+
+                                Tab {
+                                    title: "Logs & Files";
+
+                                    VerticalBox {
+                                        GroupBox {
+                                            title: "File Transfer";
+                                            HorizontalBox {
+                                                file_host_input := LineEdit {
+                                                    placeholder-text: "Host file path (e.g. ~/.env)";
+                                                    enabled: !root.busy;
+                                                    horizontal-stretch: 1;
+                                                }
+
+                                                file_ctr_input := LineEdit {
+                                                    placeholder-text: "Container file path (e.g. /root/.env)";
+                                                    enabled: !root.busy;
+                                                    horizontal-stretch: 1;
+                                                }
+
+                                                Button {
+                                                    text: "Push ->";
+                                                    enabled: !root.busy && file_host_input.text != "" && file_ctr_input.text != "";
+                                                    clicked => {
+                                                        root.push_instance_file(
+                                                            root.selected_instance.name,
+                                                            file_host_input.text,
+                                                            file_ctr_input.text
+                                                        );
+                                                    }
+                                                }
+
+                                                Button {
+                                                    text: "<- Pull";
+                                                    enabled: !root.busy && file_host_input.text != "" && file_ctr_input.text != "";
+                                                    clicked => {
+                                                        root.pull_instance_file(
+                                                            root.selected_instance.name,
+                                                            file_ctr_input.text,
+                                                            file_host_input.text
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        GroupBox {
+                                            title: "Instance Logs";
+                                            vertical-stretch: 1;
+
+                                            VerticalBox {
+                                                HorizontalBox {
+                                                    Button {
+                                                        text: "List Logs";
+                                                        enabled: !root.busy;
+                                                        clicked => {
+                                                            root.refresh_instance_logs(root.selected_instance.name);
+                                                        }
+                                                    }
+
+                                                    log_combo := ComboBox {
+                                                        model: root.instance_logs;
+                                                        current-value <=> root.selected_log;
+                                                        enabled: !root.busy;
+                                                        horizontal-stretch: 1;
+                                                    }
+
+                                                    Button {
+                                                        text: "View Log";
+                                                        enabled: !root.busy && log_combo.current-value != "";
+                                                        clicked => {
+                                                            root.read_instance_log(root.selected_instance.name, log_combo.current-value);
+                                                        }
+                                                    }
+                                                }
+
+                                                TextEdit {
+                                                    text: root.log_content;
+                                                    read-only: true;
+                                                    vertical-stretch: 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -553,6 +746,12 @@ export component AppWindow inherits Window {
                             HorizontalBox {
                                 create_name_input := LineEdit {
                                     placeholder-text: "Sandbox name (e.g. dev-rust)";
+                                    enabled: !root.busy;
+                                }
+
+                                create_type_combo := ComboBox {
+                                    model: ["container", "virtual-machine"];
+                                    current-value: "container";
                                     enabled: !root.busy;
                                 }
 
@@ -604,13 +803,22 @@ export component AppWindow inherits Window {
                                 }
 
                                 Text {
-                                    text: "Profile:";
+                                    text: "Profiles:";
                                     vertical-alignment: center;
                                 }
 
                                 create_profile_combo := ComboBox {
                                     model: root.profile_names;
                                     current-value: "default";
+                                    enabled: !root.busy;
+                                    selected(val) => {
+                                        create_profiles_input.text = val;
+                                    }
+                                }
+
+                                create_profiles_input := LineEdit {
+                                    text: "default";
+                                    placeholder-text: "Comma-separated profiles";
                                     enabled: !root.busy;
                                 }
                             }
@@ -646,14 +854,245 @@ export component AppWindow inherits Window {
                             clicked => {
                                 root.create_instance(
                                     create_name_input.text,
+                                    create_type_combo.current-value,
                                     create_image_input.text,
                                     create_mem_combo.current-value,
                                     create_cpu_combo.current-value,
                                     create_ws_input.text,
-                                    create_profile_combo.current-value,
+                                    create_profiles_input.text,
                                     cloud_init_edit.text
                                 );
                                 create_name_input.text = "";
+                            }
+                        }
+                    }
+                }
+            }
+
+            Tab {
+                title: "Storage & Networks";
+
+                VerticalBox {
+                    HorizontalBox {
+                        Text {
+                            text: "Local Storage Pools, Shared Cache Volumes, and Networks";
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: "Refresh Storage & Networks";
+                            enabled: !root.busy;
+                            clicked => {
+                                root.refresh_infra();
+                            }
+                        }
+                    }
+
+                    HorizontalBox {
+                        vertical-stretch: 1;
+
+                        GroupBox {
+                            title: "Storage Pools & Custom Volumes";
+                            horizontal-stretch: 1;
+
+                            VerticalBox {
+                                if root.storage_pools.length == 0: Text {
+                                    text: "No storage pools.";
+                                }
+
+                                for pool in root.storage_pools: Text {
+                                    text: pool.name + " (" + pool.driver + ", " + pool.status + ") — " + pool.used_display + " / " + pool.total_display;
+                                }
+
+                                HorizontalBox {
+                                    vol_pool_combo := ComboBox {
+                                        model: root.pool_names;
+                                        current-value: "default";
+                                        enabled: !root.busy;
+                                    }
+
+                                    vol_name_input := LineEdit {
+                                        placeholder-text: "Volume name (e.g. cargo-cache)";
+                                        enabled: !root.busy;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    Button {
+                                        text: "Create Volume";
+                                        enabled: !root.busy && vol_name_input.text != "";
+                                        clicked => {
+                                            root.create_storage_volume(vol_pool_combo.current-value, vol_name_input.text);
+                                            vol_name_input.text = "";
+                                        }
+                                    }
+                                }
+
+                                if root.storage_volumes.length == 0: Text {
+                                    text: "No custom volumes.";
+                                }
+
+                                if root.storage_volumes.length > 0: ListView {
+                                    vertical-stretch: 1;
+                                    for v in root.storage_volumes: HorizontalBox {
+                                        Text {
+                                            text: v.pool + "/" + v.name + " (" + v.content_type + ")";
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+
+                                        Button {
+                                            text: "Delete";
+                                            enabled: !root.busy;
+                                            clicked => {
+                                                root.request_delete_storage_volume(v.pool, v.name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Networks & DHCP Leases";
+                            horizontal-stretch: 1;
+
+                            VerticalBox {
+                                HorizontalBox {
+                                    net_name_input := LineEdit {
+                                        placeholder-text: "Bridge name (e.g. cubby-offline)";
+                                        enabled: !root.busy;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    net_nat_check := CheckBox {
+                                        text: "NAT";
+                                        checked: true;
+                                        enabled: !root.busy;
+                                    }
+
+                                    Button {
+                                        text: "Create Bridge";
+                                        enabled: !root.busy && net_name_input.text != "";
+                                        clicked => {
+                                            root.create_network(net_name_input.text, net_nat_check.checked);
+                                            net_name_input.text = "";
+                                        }
+                                    }
+                                }
+
+                                if root.networks.length == 0: Text {
+                                    text: "No networks.";
+                                }
+
+                                if root.networks.length > 0: ListView {
+                                    vertical-stretch: 1;
+                                    for n in root.networks: HorizontalBox {
+                                        VerticalBox {
+                                            horizontal-stretch: 1;
+                                            Text {
+                                                text: n.name + " (" + n.net_type + ", NAT: " + (n.nat ? "on" : "off") + ", IPv4: " + n.ipv4 + ")";
+                                            }
+
+                                            if n.leases_display != "": Text {
+                                                text: "  Leases: " + n.leases_display;
+                                            }
+                                        }
+
+                                        if n.managed: Button {
+                                            text: "Delete";
+                                            enabled: !root.busy;
+                                            clicked => {
+                                                root.request_delete_network(n.name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Tab {
+                title: "Profiles";
+
+                VerticalBox {
+                    GroupBox {
+                        title: "Create or Update Profile";
+                        VerticalBox {
+                            HorizontalBox {
+                                prof_name_input := LineEdit {
+                                    placeholder-text: "Profile name (e.g. rust-dev)";
+                                    enabled: !root.busy;
+                                }
+
+                                prof_desc_input := LineEdit {
+                                    placeholder-text: "Description";
+                                    enabled: !root.busy;
+                                    horizontal-stretch: 1;
+                                }
+
+                                prof_cpu_input := LineEdit {
+                                    placeholder-text: "CPU (e.g. 4)";
+                                    enabled: !root.busy;
+                                }
+
+                                prof_mem_input := LineEdit {
+                                    placeholder-text: "Memory (e.g. 8GiB)";
+                                    enabled: !root.busy;
+                                }
+
+                                Button {
+                                    text: "Create";
+                                    enabled: !root.busy && prof_name_input.text != "";
+                                    clicked => {
+                                        root.save_profile(
+                                            prof_name_input.text,
+                                            prof_desc_input.text,
+                                            prof_cpu_input.text,
+                                            prof_mem_input.text,
+                                            true
+                                        );
+                                    }
+                                }
+
+                                Button {
+                                    text: "Update";
+                                    enabled: !root.busy && prof_name_input.text != "";
+                                    clicked => {
+                                        root.save_profile(
+                                            prof_name_input.text,
+                                            prof_desc_input.text,
+                                            prof_cpu_input.text,
+                                            prof_mem_input.text,
+                                            false
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.profiles.length == 0: Text {
+                        text: "No profiles found.";
+                    }
+
+                    if root.profiles.length > 0: ListView {
+                        vertical-stretch: 1;
+                        for p in root.profiles: HorizontalBox {
+                            Text {
+                                text: p.name + (p.description != "" ? " — " + p.description : "");
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Button {
+                                text: "Delete";
+                                enabled: !root.busy && p.name != "default";
+                                clicked => {
+                                    root.request_delete_profile(p.name);
+                                }
                             }
                         }
                     }

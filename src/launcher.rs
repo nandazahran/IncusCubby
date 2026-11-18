@@ -48,11 +48,7 @@ pub fn open_shell(instance_name: &str, preferred_terminal: &str) -> anyhow::Resu
     Ok(())
 }
 
-pub fn open_ide(
-    ide: Ide,
-    preferred_ide: &str,
-    workspace_path: Option<&str>,
-) -> anyhow::Result<()> {
+pub fn open_ide(ide: Ide, preferred_ide: &str, workspace_path: Option<&str>) -> anyhow::Result<()> {
     let bin = resolve_ide_binary(ide, preferred_ide)?;
     let mut cmd = Command::new(&bin);
     if let Some(path) = workspace_path.map(str::trim).filter(|p| !p.is_empty()) {
@@ -86,6 +82,18 @@ fn resolve_ide_binary(ide: Ide, preferred_ide: &str) -> anyhow::Result<PathBuf> 
 }
 
 fn detect_terminal(preferred_terminal: &str) -> Option<PathBuf> {
+    const CANDIDATES: &[&str] = &[
+        "x-terminal-emulator",
+        "gnome-terminal",
+        "konsole",
+        "alacritty",
+        "kitty",
+        "foot",
+        "wezterm",
+        "xfce4-terminal",
+        "xterm",
+    ];
+
     let pref = preferred_terminal.trim();
     if !pref.is_empty()
         && pref != "auto"
@@ -103,17 +111,6 @@ fn detect_terminal(preferred_terminal: &str) -> Option<PathBuf> {
         }
     }
 
-    const CANDIDATES: &[&str] = &[
-        "x-terminal-emulator",
-        "gnome-terminal",
-        "konsole",
-        "alacritty",
-        "kitty",
-        "foot",
-        "wezterm",
-        "xfce4-terminal",
-        "xterm",
-    ];
     CANDIDATES.iter().find_map(|name| find_in_path(name))
 }
 
