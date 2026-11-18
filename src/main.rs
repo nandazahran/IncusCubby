@@ -292,6 +292,26 @@ fn init_settings_ui(
         .expect("community catalog mutex poisoned")
         .clone();
     apply_community_apps(ui, &apps, "");
+    init_about_ui(ui);
+}
+
+fn init_about_ui(ui: &AppWindow) {
+    let version = env!("CARGO_PKG_VERSION");
+    let license = env!("CARGO_PKG_LICENSE");
+    let repo = env!("CARGO_PKG_REPOSITORY");
+    let desc = env!("CARGO_PKG_DESCRIPTION");
+
+    ui.set_about_header(format!("IncusCubby v{version} ({license})").into());
+    ui.set_about_description(format!("{desc}\nRepository: {repo}").into());
+    ui.set_about_notices(
+        "IncusCubby is an independent desktop client and is not affiliated with or endorsed by LinuxContainers, Incus, or community-scripts.\n\
+         - Incus daemon & REST API: https://linuxcontainers.org/incus/ (Apache-2.0)\n\
+         - Container & VM base images: https://images.linuxcontainers.org (LinuxContainers Simplestreams)\n\
+         - Community Scripts catalog: https://community-scripts.org (MIT; third-party scripts executed inside containers—review previews before deploying)\n\
+         - Slint UI toolkit: https://slint.dev (GPL-3.0)"
+            .into(),
+    );
+    ui.set_about_license_text(include_str!("../LICENSE").into());
 }
 
 fn spawn_backend_worker(

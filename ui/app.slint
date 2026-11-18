@@ -139,6 +139,10 @@ export component AppWindow inherits Window {
     in property <string> confirm_message: "";
     in property <string> exec_output: "";
     in property <string> log_content: "";
+    in property <string> about_header: "";
+    in property <string> about_description: "";
+    in property <string> about_notices: "";
+    in property <string> about_license_text: "";
 
     callback refresh();
     callback select_instance(int);
@@ -1401,6 +1405,46 @@ export component AppWindow inherits Window {
 
                     Rectangle {
                         vertical-stretch: 1;
+                    }
+                }
+            }
+
+            Tab {
+                title: "About & Legal";
+
+                VerticalBox {
+                    GroupBox {
+                        title: "About IncusCubby";
+                        VerticalBox {
+                            Text {
+                                text: root.about_header;
+                                font-size: 16px;
+                                font-weight: 700;
+                            }
+
+                            Text {
+                                text: root.about_description;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "Third-Party & Ecosystem Notices";
+                        Text {
+                            text: root.about_notices;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    GroupBox {
+                        title: "License (GPL-3.0-or-later)";
+                        vertical-stretch: 1;
+
+                        TextEdit {
+                            text: root.about_license_text;
+                            read-only: true;
+                        }
                     }
                 }
             }

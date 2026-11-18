@@ -46,7 +46,7 @@ flowchart LR
 ```
 
 ### P0 — Scaffold (Done)
-- Rust `2024` Cargo manifest, Slint `build.rs`, GPL-3.0 `LICENSE`, `Cargo.lock` committed.
+- Rust `2024` Cargo manifest, Slint `build.rs`, GPL-3.0-or-later `LICENSE`, `Cargo.lock` committed.
 
 ### P1 — Core REST client & Slint UI (Done)
 - `IncusClient` over `/var/lib/incus/unix.socket` (`list_instances`, `create_instance`, `set_instance_state`, `delete_instance`, `create_snapshot`, `restore_snapshot`, `delete_snapshot`).

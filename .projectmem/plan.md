@@ -19,6 +19,7 @@ _Loose thoughts, not yet committed to._
 - [x] DistroShelf/BoxBuddyRS-inspired Incus features: CoW clone, restart/freeze/unfreeze, REST exec package upgrade/install, profiles + cloud-init user-data, multi-mounts + proxy port forwards, local image cache + simplestreams remote alias fetch, terminal/IDE settings persistence
 - [x] Incus Web UI local features: telemetry + live limits editor, instance logs viewer, storage pools + custom shared volumes, networks + DHCP leases + NAT toggle, profile CRUD, file push/pull, container/VM creation toggle
 - [x] Brand-agnostic external IDE setting + `community-scripts/Incus` catalog, script preview, and REST-API container deployment (`Community Apps` tab)
+- [x] Basic About & Legal tab (Cargo package metadata, third-party/affiliation notices, embedded GPL-3.0-or-later LICENSE text)
 
 ## Next
 - Custom visual styling / theming (explicitly deferred)

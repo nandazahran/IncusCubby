@@ -57,7 +57,7 @@ Build instructions, repository layout, and test commands are covered in [CONTRIB
 
 ## Prior Art & References
 
-IncusCubby is an independent Rust + Slint implementation under the GNU General Public License v3 (`LICENSE`). Inspiration and references consulted:
+IncusCubby is an independent Rust + Slint implementation under the GNU General Public License v3.0 or later (`LICENSE`). Inspiration and references consulted:
 
 - [Incus](https://linuxcontainers.org/incus/) — System container and virtual machine manager (`1.0` Unix socket REST API & Web UI workflows).
 - [DistroShelf](https://github.com/ranfdev/DistroShelf) & [BoxBuddyRS](https://github.com/Dvlv/BoxBuddyRS) — Linux desktop container manager UX workflows (clone, package upgrade/install, terminal/IDE integration).
@@ -68,4 +68,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for building from source, the repository 
 
 ## License
 
-Licensed under the [GNU General Public License v3.0 (`GPL-3.0`)](LICENSE).
+Licensed under the [GNU General Public License v3.0 or later (`GPL-3.0-or-later`)](LICENSE).

@@ -119,5 +119,5 @@ All endpoints, headers, and simplestreams parsing rules are documented in [INCUS
 
 ## 5. Licensing
 
-- Application: GNU General Public License v3 (`LICENSE`).
+- Application: GNU General Public License v3.0 or later (`GPL-3.0-or-later`, `LICENSE`).
 - Strict Rust lint posture enforced in `Cargo.toml`: `unsafe_code = "warn"`, `clippy::all = "warn"`, `clippy::pedantic = "warn"`.

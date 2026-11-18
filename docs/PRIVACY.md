@@ -31,7 +31,7 @@ Deleting that file removes all state stored directly by IncusCubby.
 
 ## Verify it yourself
 
-IncusCubby is free software under the GNU General Public License v3 (`LICENSE`). You do not have to trust this page — read the code at [github.com/nandazahran/IncusCubby](https://github.com/nandazahran/IncusCubby) or build it yourself.
+IncusCubby is free software under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`, `LICENSE`). You do not have to trust this page — read the code at [github.com/nandazahran/IncusCubby](https://github.com/nandazahran/IncusCubby) or build it yourself.
 
 ## Changes
 
