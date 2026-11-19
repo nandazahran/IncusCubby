@@ -70,7 +70,7 @@ bash -n packaging/linux/build-rpm.sh
   incus-cubby-<version>-1.x86_64.rpm
 ```
 
-Local Arch/CachyOS packaging is defined in [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD). Tagged `v*` releases run [`.github/workflows/release.yml`](.github/workflows/release.yml) across `x86_64` and `aarch64`, verifying that the tag matches `Cargo.toml` before attaching `.tar.gz`, `.AppImage`, `.deb`, `.rpm`, and `SHA256SUMS.txt` to the GitHub release (without publishing to external repositories or stores).
+Local Arch/CachyOS packaging is defined in [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD). Tagged `v*` releases run [`.github/workflows/release.yml`](.github/workflows/release.yml) across `x86_64` and `aarch64`, verifying that the tag matches `Cargo.toml` before attaching `.tar.gz`, `.AppImage`, `.deb`, `.rpm`, and `SHA256SUMS.txt` to the GitHub release.
 
 ### Live Incus smoke test
 

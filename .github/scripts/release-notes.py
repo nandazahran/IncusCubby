@@ -154,7 +154,7 @@ def render_notes(
             "---",
             "",
             "### Downloads & Verification",
-            f"Unsigned Linux artifacts for `x86_64` and `aarch64` ({formats} — GitHub releases only, not published to external distro repositories). Verify downloads against `SHA256SUMS.txt` before installing:",
+            f"Unsigned Linux artifacts for `x86_64` and `aarch64` ({formats}). Verify downloads against `SHA256SUMS.txt` before installing:",
             "",
             "```bash",
             "sha256sum -c --ignore-missing SHA256SUMS.txt",
@@ -201,7 +201,7 @@ def run_self_test() -> None:
     assert "### Bug Fixes\n- Retry socket wait ([cccc333](https://github.com/owner/repo/commit/cccc3333cccc3333))" in md
     assert "### Packaging, CI & Docs\n- Clarify PKGBUILD steps ([dddd444](https://github.com/owner/repo/commit/dddd4444dddd4444))" in md
     assert "**Full Changelog**: https://github.com/owner/repo/compare/v0.1.0...v0.1.1" in md
-    assert "(.AppImage, .tar.gz — GitHub releases only" in md
+    assert "(.AppImage, .tar.gz)." in md
     assert "sha256sum -c --ignore-missing SHA256SUMS.txt" in md
 
     empty_md = render_notes("v0.1.0", None, [("eeee5555", "eeee555", "Initial commit")], "owner/repo", ".AppImage")

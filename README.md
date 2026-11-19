@@ -33,7 +33,7 @@ Download prebuilt Linux binaries from the [releases page](https://github.com/nan
 | Fedora / RHEL / openSUSE `aarch64` (`.rpm`) | `incus-cubby-<version>-1.aarch64.rpm` |
 | Checksums | `SHA256SUMS.txt` |
 
-Verify downloaded artifacts against `SHA256SUMS.txt` before installing. Releases are private GitHub release artifacts only (nothing is published to external package repositories or stores). Arch/CachyOS users can also build locally from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD).
+Verify downloaded artifacts against `SHA256SUMS.txt` before installing. Arch/CachyOS users can also build locally from [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD).
 
 ### Runtime prerequisites
 
