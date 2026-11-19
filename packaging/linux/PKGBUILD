@@ -15,7 +15,7 @@ optdepends=(
 )
 # Released source tarball (requires public repo or authenticated fetch).
 source=("https://github.com/nandazahran/IncusCubby/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('123441a9fe827bf469446578ddbd07e00d5481ce99ac39c710a57937c7cc7016')
 
 prepare() {
   cd "${srcdir}/IncusCubby-${pkgver}"
