@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use slint::{
-    ComponentHandle, Image, LogicalSize, Model, ModelNotify, ModelRc, ModelTracker, SharedString,
+    Color, ComponentHandle, LogicalSize, Model, ModelNotify, ModelRc, ModelTracker, SharedString,
     VecModel, Weak,
 };
 use tokio::sync::mpsc;
@@ -29,7 +29,7 @@ use crate::incus::{
     InstanceSummary, NestingMode, NetworkSummary, ProfileSummary, StoragePoolSummary,
     StorageVolumeSummary, detect_distro_id,
 };
-use crate::logos::{LogoRequest, spawn_logo_worker};
+use crate::logos::{LogoRequest, QUICK_CREATE_DISTROS, os_logo_key_and_url, spawn_logo_worker};
 use crate::settings::{
     AppSettings, available_ides, available_terminals, display_ide_label, display_terminal_label,
 };
@@ -270,7 +270,7 @@ struct InfraSnapshot {
 
 #[derive(Default)]
 struct UiLogoStore {
-    images: HashMap<String, Image>,
+    logos: HashMap<String, UiLogo>,
     requested: HashMap<String, String>,
     community_model: Option<Rc<CommunityAppListModel>>,
     logo_tx: Option<mpsc::UnboundedSender<LogoRequest>>,
@@ -335,58 +335,137 @@ impl Model for CommunityAppListModel {
     }
 }
 
-fn lookup_or_request_logo(slug: &str, url: &str) -> Image {
-    if slug.is_empty() {
-        return Image::default();
+fn lookup_or_request_logo(key: &str, url: &str) -> UiLogo {
+    if key.is_empty() {
+        return UiLogo::default();
     }
     UI_LOGO_STORE.with(|store| {
         let mut store = store.borrow_mut();
-        if let Some(img) = store.images.get(slug) {
-            return img.clone();
+        if let Some(logo) = store.logos.get(key) {
+            return logo.clone();
         }
-        let should_request = store.requested.get(slug).is_none_or(|prev| prev != url);
+        let should_request = store.requested.get(key).is_none_or(|prev| prev != url);
         if should_request {
-            store.requested.insert(slug.to_string(), url.to_string());
+            store.requested.insert(key.to_string(), url.to_string());
             if let Some(tx) = store.logo_tx.as_ref() {
                 let _ = tx.send(LogoRequest {
-                    slug: slug.to_string(),
+                    slug: key.to_string(),
                     url: url.to_string(),
                 });
             }
         }
-        Image::default()
+        UiLogo::default()
     })
 }
 
-fn on_logo_ready_ui(ui: &AppWindow, slug: &str, img: Image) {
+fn has_cached_logo(key: &str) -> bool {
+    !key.is_empty() && UI_LOGO_STORE.with(|store| store.borrow().logos.contains_key(key))
+}
+
+fn lookup_or_request_os_logo(distro_id: &str) -> UiLogo {
+    os_logo_key_and_url(distro_id).map_or_else(UiLogo::default, |(key, url)| {
+        lookup_or_request_logo(&key, url)
+    })
+}
+
+fn resolve_instance_logo(app_slug: &str, app_logo_url: &str, distro_id: &str) -> UiLogo {
+    if !app_slug.is_empty() {
+        let app_logo = lookup_or_request_logo(app_slug, app_logo_url);
+        if app_logo.icon.size().width > 0 {
+            return app_logo;
+        }
+    }
+    lookup_or_request_os_logo(distro_id)
+}
+
+fn set_quick_os_logo(ui: &AppWindow, distro_id: &str, logo: UiLogo) {
+    let os_logos = ui.global::<CubbyOsLogos>();
+    match distro_id {
+        "debian" => os_logos.set_debian(logo),
+        "ubuntu" => os_logos.set_ubuntu(logo),
+        "fedora" => os_logos.set_fedora(logo),
+        "arch" => os_logos.set_arch(logo),
+        "alpine" => os_logos.set_alpine(logo),
+        "opensuse" => os_logos.set_opensuse(logo),
+        _ => {}
+    }
+}
+
+fn on_logo_ready_ui(ui: &AppWindow, key: &str, logo: UiLogo) {
     let community_model = UI_LOGO_STORE.with(|store| {
         let mut store = store.borrow_mut();
-        store.images.insert(slug.to_string(), img.clone());
+        store.logos.insert(key.to_string(), logo.clone());
         store.community_model.clone()
     });
 
-    if let Some(model) = community_model {
-        model.notify_slug_changed(slug);
+    if let Some(distro_id) = key.strip_prefix("os-") {
+        set_quick_os_logo(ui, distro_id, logo.clone());
+
+        let remote_model = ui.get_remote_aliases();
+        for row in 0..remote_model.row_count() {
+            if let Some(mut item) = remote_model.row_data(row)
+                && item.distro_id.as_str() == distro_id
+            {
+                item.logo = logo.clone();
+                remote_model.set_row_data(row, item);
+            }
+        }
+
+        let images_model = ui.get_local_images();
+        for row in 0..images_model.row_count() {
+            if let Some(mut img) = images_model.row_data(row)
+                && img.distro_id.as_str() == distro_id
+            {
+                img.logo = logo.clone();
+                images_model.set_row_data(row, img);
+            }
+        }
+
+        let instances_model = ui.get_instances();
+        for row in 0..instances_model.row_count() {
+            if let Some(mut inst) = instances_model.row_data(row)
+                && inst.distro_id.as_str() == distro_id
+                && (inst.app_slug.is_empty() || !has_cached_logo(inst.app_slug.as_str()))
+            {
+                inst.logo = logo.clone();
+                instances_model.set_row_data(row, inst);
+            }
+        }
+
+        if ui.get_has_selection() {
+            let mut selected = ui.get_selected_instance();
+            if selected.distro_id.as_str() == distro_id
+                && (selected.app_slug.is_empty() || !has_cached_logo(selected.app_slug.as_str()))
+            {
+                selected.logo = logo;
+                ui.set_selected_instance(selected);
+            }
+        }
+        return;
     }
 
-    if ui.get_community_selected_slug().as_str() == slug {
-        ui.set_community_app_logo(img.clone());
+    if let Some(model) = community_model {
+        model.notify_slug_changed(key);
+    }
+
+    if ui.get_community_selected_slug().as_str() == key {
+        ui.set_community_app_logo(logo.clone());
     }
 
     let instances_model = ui.get_instances();
     for row in 0..instances_model.row_count() {
         if let Some(mut inst) = instances_model.row_data(row)
-            && inst.app_slug.as_str() == slug
+            && inst.app_slug.as_str() == key
         {
-            inst.logo = img.clone();
+            inst.logo = logo.clone();
             instances_model.set_row_data(row, inst);
         }
     }
 
     if ui.get_has_selection() {
         let mut selected = ui.get_selected_instance();
-        if selected.app_slug.as_str() == slug {
-            selected.logo = img;
+        if selected.app_slug.as_str() == key {
+            selected.logo = logo;
             ui.set_selected_instance(selected);
         }
     }
@@ -408,9 +487,9 @@ fn sync_instance_logos(ui: &AppWindow, apps: &[CommunityApp]) {
                 .get(inst.app_slug.as_str())
                 .copied()
                 .unwrap_or("");
-            let img = lookup_or_request_logo(inst.app_slug.as_str(), url);
-            if img.size().width > 0 && inst.logo != img {
-                inst.logo = img;
+            let logo = resolve_instance_logo(inst.app_slug.as_str(), url, inst.distro_id.as_str());
+            if logo.icon.size().width > 0 && inst.logo != logo {
+                inst.logo = logo;
                 instances_model.set_row_data(row, inst);
             }
         }
@@ -423,9 +502,10 @@ fn sync_instance_logos(ui: &AppWindow, apps: &[CommunityApp]) {
                 .get(selected.app_slug.as_str())
                 .copied()
                 .unwrap_or("");
-            let img = lookup_or_request_logo(selected.app_slug.as_str(), url);
-            if img.size().width > 0 && selected.logo != img {
-                selected.logo = img;
+            let logo =
+                resolve_instance_logo(selected.app_slug.as_str(), url, selected.distro_id.as_str());
+            if logo.icon.size().width > 0 && selected.logo != logo {
+                selected.logo = logo;
                 ui.set_selected_instance(selected);
             }
         }
@@ -437,9 +517,9 @@ fn sync_instance_logos(ui: &AppWindow, apps: &[CommunityApp]) {
             .get(selected_slug.as_str())
             .copied()
             .unwrap_or("");
-        let img = lookup_or_request_logo(&selected_slug, url);
-        if img.size().width > 0 {
-            ui.set_community_app_logo(img);
+        let logo = lookup_or_request_logo(&selected_slug, url);
+        if logo.icon.size().width > 0 {
+            ui.set_community_app_logo(logo);
         }
     }
 }
@@ -513,6 +593,11 @@ fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings, catalogs: &Arc<C
         ui.window().set_size(LogicalSize::new(520.0, 580.0));
     }
 
+    for &distro in QUICK_CREATE_DISTROS {
+        let logo = lookup_or_request_os_logo(distro);
+        set_quick_os_logo(ui, distro, logo);
+    }
+
     let remote_imgs = catalogs
         .remote_images
         .lock()
@@ -570,8 +655,14 @@ fn spawn_backend_worker(
             spawn_logo_worker(logo_rx, move |slug, decoded| {
                 let weak = logo_weak.clone();
                 let _ = weak.upgrade_in_event_loop(move |ui| {
-                    if let Some(img) = decoded.into_slint_image() {
-                        on_logo_ready_ui(&ui, &slug, img);
+                    if let Some((icon, accent)) = decoded.into_slint_logo() {
+                        let ui_logo = UiLogo {
+                            icon,
+                            accent: accent.map_or_else(Color::default, |[r, g, b]| {
+                                Color::from_rgb_u8(r, g, b)
+                            }),
+                        };
+                        on_logo_ready_ui(&ui, &slug, ui_logo);
                     }
                 });
             });
@@ -865,6 +956,12 @@ async fn handle_command(
                     Ok(imgs) if !imgs.is_empty() => {
                         let count = imgs.len();
                         let query = ui.get_remote_search_query().to_string();
+                        UI_LOGO_STORE.with(|store| {
+                            store
+                                .borrow_mut()
+                                .requested
+                                .retain(|k, _| !k.starts_with("os-"));
+                        });
                         apply_remote_aliases(&ui, &imgs, &local_imgs, &query);
                         ui.set_status_message(
                             format!("Loaded {count} remote image aliases").into(),
@@ -2399,8 +2496,10 @@ fn apply_remote_aliases(
             } else {
                 format!("{} · {}", img.os, img.release)
             };
+            let distro_id = detect_distro_id(&img.os, &img.alias);
             UiRemoteAlias {
-                distro_id: detect_distro_id(&img.os, &img.alias).into(),
+                distro_id: distro_id.into(),
+                logo: lookup_or_request_os_logo(distro_id),
                 is_cached: cached_aliases.contains(&img.alias.to_ascii_lowercase()),
                 alias: img.alias.clone().into(),
                 subtitle: subtitle.into(),
@@ -2444,14 +2543,18 @@ fn apply_images(ui: &AppWindow, images: &[ImageSummary], query: &str) {
                 || img.description.to_ascii_lowercase().contains(&needle)
                 || img.fingerprint.to_ascii_lowercase().contains(&needle)
         })
-        .map(|img| UiImage {
-            short_fingerprint: img.fingerprint.chars().take(12).collect::<String>().into(),
-            distro_id: detect_distro_id(&img.description, &img.alias).into(),
-            fingerprint: img.fingerprint.clone().into(),
-            alias: img.alias.clone().into(),
-            description: img.description.clone().into(),
-            architecture: img.architecture.clone().into(),
-            size_display: img.size_display.clone().into(),
+        .map(|img| {
+            let distro_id = detect_distro_id(&img.description, &img.alias);
+            UiImage {
+                short_fingerprint: img.fingerprint.chars().take(12).collect::<String>().into(),
+                distro_id: distro_id.into(),
+                logo: lookup_or_request_os_logo(distro_id),
+                fingerprint: img.fingerprint.clone().into(),
+                alias: img.alias.clone().into(),
+                description: img.description.clone().into(),
+                architecture: img.architecture.clone().into(),
+                size_display: img.size_display.clone().into(),
+            }
         })
         .collect();
     ui.set_local_images(ModelRc::from(Rc::new(VecModel::from(ui_images))));
@@ -2608,11 +2711,7 @@ fn to_shared_string_model(items: Vec<String>) -> ModelRc<SharedString> {
 }
 
 fn to_ui_instance(inst: InstanceSummary, logo_url: &str) -> UiInstance {
-    let logo = if inst.app_slug.is_empty() {
-        Image::default()
-    } else {
-        lookup_or_request_logo(&inst.app_slug, logo_url)
-    };
+    let logo = resolve_instance_logo(&inst.app_slug, logo_url, &inst.distro_id);
     let snaps: Vec<UiSnapshot> = inst
         .snapshots
         .into_iter()

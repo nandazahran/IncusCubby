@@ -4,6 +4,7 @@ import {
     UiCommunityApp,
     UiImage,
     UiInstance,
+    UiLogo,
     UiNetwork,
     UiProfile,
     UiRemoteAlias,
@@ -305,8 +306,7 @@ component SandboxesView inherits HorizontalLayout {
 
                             CubbyDistroBadge {
                                 y: (parent.height - self.height) / 2;
-                                distro: inst.distro_id;
-                                custom_icon: inst.logo;
+                                logo: inst.logo;
                                 size: "sm";
                             }
 
@@ -484,8 +484,7 @@ component SandboxesView inherits HorizontalLayout {
 
                             CubbyDistroBadge {
                                 y: (parent.height - self.height) / 2;
-                                distro: root.selected_instance.distro_id;
-                                custom_icon: root.selected_instance.logo;
+                                logo: root.selected_instance.logo;
                                 size: "md";
                             }
 
@@ -1270,7 +1269,7 @@ component CreateView inherits HorizontalLayout {
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
-    in property <image> community_app_logo;
+    in property <UiLogo> community_app_logo;
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_tags: "";
@@ -1430,7 +1429,7 @@ component CreateView inherits HorizontalLayout {
 
                                 CubbyDistroBadge {
                                     y: (parent.height - self.height) / 2;
-                                    distro: item.distro_id;
+                                    logo: item.logo;
                                     size: "sm";
                                 }
 
@@ -1623,8 +1622,7 @@ component CreateView inherits HorizontalLayout {
 
                                 CubbyDistroBadge {
                                     y: (parent.height - self.height) / 2;
-                                    distro: app.distro_id;
-                                    custom_icon: app.logo;
+                                    logo: app.logo;
                                     size: "sm";
                                 }
 
@@ -2006,8 +2004,7 @@ component CreateView inherits HorizontalLayout {
 
                         CubbyDistroBadge {
                             y: (parent.height - self.height) / 2;
-                            distro: "generic";
-                            custom_icon: root.community_app_logo;
+                            logo: root.community_app_logo;
                             size: "md";
                         }
 
@@ -2759,7 +2756,7 @@ component ImagesView inherits VerticalLayout {
 
                             CubbyDistroBadge {
                                 y: (parent.height - self.height) / 2;
-                                distro: img.distro_id;
+                                logo: img.logo;
                                 size: "sm";
                             }
 
@@ -2857,7 +2854,7 @@ component ImagesView inherits VerticalLayout {
 
                             CubbyDistroBadge {
                                 y: (parent.height - self.height) / 2;
-                                distro: r.distro_id;
+                                logo: r.logo;
                                 size: "sm";
                             }
 
@@ -3288,7 +3285,7 @@ component AboutView inherits ScrollView {
                     CubbyRow {
                         title: "Logo disk cache";
                         meta: "XDG_CACHE_HOME";
-                        subtitle: "Downloaded community app logos are cached locally under $XDG_CACHE_HOME/incus-cubby/logos.";
+                        subtitle: "Downloaded OS and community app logos are cached locally under $XDG_CACHE_HOME/incus-cubby/logos.";
                     }
 
                     CubbyRow {
@@ -3329,7 +3326,7 @@ component AboutView inherits ScrollView {
                 CubbyRow {
                     title: "Explicit network fetches only";
                     meta: "opt-in HTTPS";
-                    subtitle: "Only Remote Aliases (images.linuxcontainers.org), Community Scripts catalog/scripts, and visible app logos initiate HTTPS GET requests.";
+                    subtitle: "Only Remote Aliases (images.linuxcontainers.org), Community Scripts catalog/scripts, and visible OS/app logos initiate HTTPS GET requests.";
                 }
                 CubbyRow {
                     title: "Host filesystem boundaries";
@@ -3576,7 +3573,7 @@ export component AdvancedShell inherits VerticalLayout {
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
-    in property <image> community_app_logo;
+    in property <UiLogo> community_app_logo;
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_tags: "";

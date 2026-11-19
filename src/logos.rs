@@ -22,6 +22,9 @@ const TARGET_ICON_PX: u32 = 64;
 const LOGO_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// Maximum concurrent logo downloads to avoid bursting CDN connections.
 const MAX_CONCURRENT_FETCHES: usize = 6;
+/// OS IDs displayed in Simple mode's Quick Create distro tiles.
+pub const QUICK_CREATE_DISTROS: &[&str] =
+    &["debian", "ubuntu", "fedora", "arch", "alpine", "opensuse"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogoRequest {
@@ -31,7 +34,10 @@ pub struct LogoRequest {
 
 #[derive(Debug, Clone)]
 pub enum DecodedLogo {
-    Raster(SharedPixelBuffer<Rgba8Pixel>),
+    Raster {
+        buffer: SharedPixelBuffer<Rgba8Pixel>,
+        accent: Option<[u8; 3]>,
+    },
     Svg(Vec<u8>),
 }
 
@@ -42,12 +48,127 @@ const _: () = {
 
 impl DecodedLogo {
     #[must_use]
-    pub fn into_slint_image(self) -> Option<Image> {
+    pub fn into_slint_logo(self) -> Option<(Image, Option<[u8; 3]>)> {
         match self {
-            Self::Raster(buf) => Some(Image::from_rgba8_premultiplied(buf)),
-            Self::Svg(bytes) => Image::load_from_svg_data(&bytes).ok(),
+            Self::Raster { buffer, accent } => {
+                Some((Image::from_rgba8_premultiplied(buffer), accent))
+            }
+            Self::Svg(bytes) => {
+                let img = Image::load_from_svg_data(&bytes).ok()?;
+                let sz = img.size();
+                let accent =
+                    if sz.width > 0 && sz.height > 0 && sz.width <= 1024 && sz.height <= 1024 {
+                        img.to_rgba8()
+                            .and_then(|buf| extract_accent_rgb(buf.as_bytes()))
+                    } else {
+                        None
+                    };
+                Some((img, accent))
+            }
         }
     }
+}
+
+#[must_use]
+pub fn os_logo_key_and_url(distro_id: &str) -> Option<(String, &'static str)> {
+    let url = match distro_id {
+        "alma" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/almalinux.webp",
+        "alpine" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/alpine-linux.webp",
+        "arch" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/arch-linux.webp",
+        "cachyos" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/cachyos.webp",
+        "centos" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/centos.webp",
+        "debian" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/debian.webp",
+        "devuan" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/devuan.webp",
+        "fedora" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/fedora.webp",
+        "freebsd" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/freebsd.webp",
+        "gentoo" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/gentoo.webp",
+        "kali" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kali-linux.webp",
+        "nixos" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/nixos.webp",
+        "openeuler" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openeuler.webp",
+        "opensuse" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/opensuse.webp",
+        "openwrt" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openwrt.webp",
+        "oracle" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/oracle.webp",
+        "rocky" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rocky-linux.webp",
+        "ubuntu" => "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ubuntu.webp",
+        _ => return None,
+    };
+    Some((format!("os-{distro_id}"), url))
+}
+
+#[derive(Clone, Copy, Default)]
+struct HueBucket {
+    weight: u64,
+    r_sum: u64,
+    g_sum: u64,
+    b_sum: u64,
+}
+
+#[must_use]
+pub fn extract_accent_rgb(rgba: &[u8]) -> Option<[u8; 3]> {
+    let mut buckets = [HueBucket::default(); 12];
+    let mut total_chromatic_pixels = 0usize;
+
+    for px in rgba.as_chunks::<4>().0 {
+        let [r, g, b, a] = *px;
+        if a < 128 {
+            continue;
+        }
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+        if delta < 30 || max < 40 || min > 230 {
+            continue;
+        }
+
+        let rf = f32::from(r);
+        let gf = f32::from(g);
+        let bf = f32::from(b);
+        let df = f32::from(delta);
+        let raw_hue = if max == r {
+            60.0 * (((gf - bf) / df) % 6.0)
+        } else if max == g {
+            60.0 * (((bf - rf) / df) + 2.0)
+        } else {
+            60.0 * (((rf - gf) / df) + 4.0)
+        };
+        let hue = raw_hue.rem_euclid(360.0);
+        let bucket_idx = ((hue / 30.0) as usize) % 12;
+
+        let weight = u64::from(delta) * u64::from(a);
+        total_chromatic_pixels += 1;
+        let bucket = &mut buckets[bucket_idx];
+        bucket.weight += weight;
+        bucket.r_sum += u64::from(r) * weight;
+        bucket.g_sum += u64::from(g) * weight;
+        bucket.b_sum += u64::from(b) * weight;
+    }
+
+    if total_chromatic_pixels < 6 {
+        return None;
+    }
+
+    let best = buckets.iter().max_by_key(|bucket| bucket.weight)?;
+    if best.weight == 0 {
+        return None;
+    }
+
+    let mut out_r = ((best.r_sum + best.weight / 2) / best.weight).min(255) as f32;
+    let mut out_g = ((best.g_sum + best.weight / 2) / best.weight).min(255) as f32;
+    let mut out_b = ((best.b_sum + best.weight / 2) / best.weight).min(255) as f32;
+
+    let peak = out_r.max(out_g).max(out_b);
+    if peak > 0.0 && peak < 104.0 {
+        let scale = 128.0 / peak;
+        out_r = (out_r * scale).clamp(0.0, 255.0);
+        out_g = (out_g * scale).clamp(0.0, 255.0);
+        out_b = (out_b * scale).clamp(0.0, 255.0);
+    }
+
+    Some([
+        out_r.round() as u8,
+        out_g.round() as u8,
+        out_b.round() as u8,
+    ])
 }
 
 #[must_use]
@@ -143,6 +264,7 @@ pub fn decode_logo_bytes(bytes: &[u8]) -> Option<DecodedLogo> {
         return None;
     }
 
+    let accent = extract_accent_rgb(rgba.as_raw());
     let mut pixels = rgba.into_raw();
     for px in pixels.as_chunks_mut::<4>().0 {
         let a = u16::from(px[3]);
@@ -157,9 +279,10 @@ pub fn decode_logo_bytes(bytes: &[u8]) -> Option<DecodedLogo> {
         }
     }
 
-    Some(DecodedLogo::Raster(SharedPixelBuffer::clone_from_slice(
-        &pixels, w, h,
-    )))
+    Some(DecodedLogo::Raster {
+        buffer: SharedPixelBuffer::clone_from_slice(&pixels, w, h),
+        accent,
+    })
 }
 
 async fn download_logo_bytes(client: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
@@ -291,16 +414,96 @@ mod tests {
             .expect("encode test png");
 
         let decoded = decode_logo_bytes(&encoded).expect("decode test png");
-        let DecodedLogo::Raster(buf) = decoded else {
+        let DecodedLogo::Raster {
+            buffer: buf,
+            accent,
+        } = decoded
+        else {
             panic!("expected raster buffer");
         };
         assert_eq!(buf.width(), 64);
         assert_eq!(buf.height(), 32);
+        assert_eq!(accent, Some([200, 100, 50]));
         let first = buf.as_slice()[0];
         assert_eq!(first.a, 128);
         assert!(first.r <= first.a);
         assert!(first.g <= first.a);
         assert!(first.b <= first.a);
+    }
+
+    #[test]
+    fn extract_accent_rgb_finds_vibrant_color_and_skips_monochrome() {
+        let mut orange_white = Vec::new();
+        for _ in 0..8 {
+            orange_white.extend_from_slice(&[249, 115, 22, 255]);
+        }
+        for _ in 0..20 {
+            orange_white.extend_from_slice(&[255, 255, 255, 255]);
+        }
+        assert_eq!(extract_accent_rgb(&orange_white), Some([249, 115, 22]));
+
+        let mut dark_navy = Vec::new();
+        for _ in 0..8 {
+            dark_navy.extend_from_slice(&[10, 30, 60, 255]);
+        }
+        let lifted = extract_accent_rgb(&dark_navy).expect("dark navy should lift");
+        assert!(
+            lifted[2] >= 120,
+            "expected lifted blue >= 120, got {lifted:?}"
+        );
+        assert!(lifted[2] > lifted[1] && lifted[1] > lifted[0]);
+
+        let mut mono = Vec::new();
+        for _ in 0..10 {
+            mono.extend_from_slice(&[24, 24, 24, 255]);
+            mono.extend_from_slice(&[128, 128, 128, 255]);
+            mono.extend_from_slice(&[250, 250, 250, 255]);
+        }
+        assert_eq!(extract_accent_rgb(&mono), None);
+
+        let mut multi = Vec::new();
+        for _ in 0..12 {
+            multi.extend_from_slice(&[36, 150, 237, 255]);
+        }
+        for _ in 0..6 {
+            multi.extend_from_slice(&[239, 68, 68, 255]);
+        }
+        assert_eq!(extract_accent_rgb(&multi), Some([36, 150, 237]));
+    }
+
+    #[test]
+    fn svg_into_slint_logo_extracts_accent_color() {
+        let colored_svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect width="24" height="24" fill="#2496ED"/></svg>"##;
+        let (img, accent) = DecodedLogo::Svg(colored_svg.to_vec())
+            .into_slint_logo()
+            .expect("colored svg should load");
+        assert_eq!(img.size().width, 24);
+        assert_eq!(accent, Some([36, 150, 237]));
+
+        let mono_svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect width="24" height="24" fill="#181818"/></svg>"##;
+        let (_, mono_accent) = DecodedLogo::Svg(mono_svg.to_vec())
+            .into_slint_logo()
+            .expect("mono svg should load");
+        assert_eq!(mono_accent, None);
+    }
+
+    #[test]
+    fn os_logo_key_and_url_maps_known_distros_and_namespaces_keys() {
+        assert_eq!(
+            os_logo_key_and_url("debian"),
+            Some((
+                "os-debian".to_string(),
+                "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/debian.webp"
+            ))
+        );
+        assert_eq!(
+            os_logo_key_and_url("arch"),
+            Some((
+                "os-arch".to_string(),
+                "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/arch-linux.webp"
+            ))
+        );
+        assert_eq!(os_logo_key_and_url("generic"), None);
     }
 
     #[test]

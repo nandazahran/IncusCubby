@@ -604,6 +604,33 @@ pub fn detect_distro_id(image_os: &str, alias_or_image: &str) -> &'static str {
         if lower == "centos" || lower.starts_with("centos") {
             return "centos";
         }
+        if lower == "cachyos" || lower.starts_with("cachyos") {
+            return "cachyos";
+        }
+        if lower == "devuan" || lower.starts_with("devuan") {
+            return "devuan";
+        }
+        if lower == "freebsd" || lower.starts_with("freebsd") {
+            return "freebsd";
+        }
+        if lower == "gentoo" || lower.starts_with("gentoo") {
+            return "gentoo";
+        }
+        if lower == "kali" || lower.starts_with("kali") {
+            return "kali";
+        }
+        if lower == "nixos" || lower.starts_with("nixos") {
+            return "nixos";
+        }
+        if lower == "openeuler" || lower.starts_with("openeuler") {
+            return "openeuler";
+        }
+        if lower == "openwrt" || lower.starts_with("openwrt") {
+            return "openwrt";
+        }
+        if lower == "oracle" || lower.starts_with("oracle") {
+            return "oracle";
+        }
     }
 
     "generic"
@@ -680,6 +707,11 @@ mod tests {
         assert_eq!(detect_distro_id("Ubuntu", "ubuntu/24.04"), "ubuntu");
         assert_eq!(detect_distro_id("openSUSE Tumbleweed", ""), "opensuse");
         assert_eq!(detect_distro_id("", "rockylinux/9"), "rocky");
+        assert_eq!(detect_distro_id("Kali", "kali/current"), "kali");
+        assert_eq!(detect_distro_id("Nixos", "nixos/25.05"), "nixos");
+        assert_eq!(detect_distro_id("Gentoo", "gentoo/current"), "gentoo");
+        assert_eq!(detect_distro_id("", "freebsd/14.2"), "freebsd");
+        assert_eq!(detect_distro_id("Cachyos", "cachyos/current"), "cachyos");
         assert_eq!(detect_distro_id("unknown", "custom"), "generic");
     }
 }

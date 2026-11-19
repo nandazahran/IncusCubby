@@ -1,5 +1,5 @@
 import { ScrollView } from "std-widgets.slint";
-import { CubbyTheme } from "theme.slint";
+import { CubbyTheme, UiLogo } from "theme.slint";
 
 export component CubbyMark inherits Rectangle {
     in property <string> size: "sm"; // "sm" (22), "md" (28), "lg" (44)
@@ -404,11 +404,11 @@ export component CubbyTag inherits Rectangle {
 }
 
 export component CubbyDistroBadge inherits Rectangle {
-    in property <string> distro: "generic";
-    in property <image> custom_icon;
+    in property <UiLogo> logo;
     in property <string> size: "sm"; // "xs" (16), "sm" (24), "md" (30)
 
-    property <bool> has-custom: root.custom_icon.width > 0 && root.custom_icon.height > 0;
+    property <bool> has-icon: root.logo.icon.width > 0 && root.logo.icon.height > 0;
+    property <bool> has-accent: root.logo.accent.alpha > 0;
 
     horizontal-stretch: 0;
     vertical-stretch: 0;
@@ -417,22 +417,22 @@ export component CubbyDistroBadge inherits Rectangle {
     border-radius: size == "md" ? CubbyTheme.radius_md : (size == "xs" ? 3px : CubbyTheme.radius_sm);
     background: size == "xs"
         ? transparent
-        : (root.has-custom
-            ? (CubbyTheme.is_light ? CubbyTheme.well : rgba(242, 243, 245, 0.10))
-            : CubbyTheme.distro_bg(distro));
+        : (root.has-accent
+            ? root.logo.accent.with-alpha(0.12)
+            : (CubbyTheme.is_light ? CubbyTheme.well : rgba(242, 243, 245, 0.10)));
     border-width: size == "xs" ? 0px : 1px;
     border-color: size == "xs"
         ? transparent
-        : (root.has-custom ? CubbyTheme.border : CubbyTheme.distro_border(distro));
+        : (root.has-accent ? root.logo.accent.with-alpha(0.34) : CubbyTheme.border);
 
     Image {
         width: root.size == "md"
-            ? (root.has-custom ? 18px : 17px)
-            : (root.size == "xs" ? 12px : (root.has-custom ? 15px : 14px));
+            ? (root.has-icon ? 18px : 17px)
+            : (root.size == "xs" ? 12px : (root.has-icon ? 15px : 14px));
         height: self.width;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        source: root.has-custom ? root.custom_icon : CubbyTheme.distro_icon(root.distro);
+        source: root.has-icon ? root.logo.icon : @image-url("icons/generic.svg");
         image-fit: contain;
     }
 }

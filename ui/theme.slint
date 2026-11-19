@@ -5,6 +5,11 @@ import "fonts/GeistMono-Regular.ttf";
 import "fonts/GeistMono-Medium.ttf";
 import "fonts/GeistMono-SemiBold.ttf";
 
+export struct UiLogo {
+    icon: image,
+    accent: color,
+}
+
 export struct UiSnapshot {
     name: string,
     created_at: string,
@@ -31,7 +36,7 @@ export struct UiInstance {
     image_os: string,
     app_slug: string,
     distro_id: string,
-    logo: image,
+    logo: UiLogo,
     ip: string,
     net_iface: string,
     memory: string,
@@ -64,11 +69,13 @@ export struct UiImage {
     architecture: string,
     size_display: string,
     distro_id: string,
+    logo: UiLogo,
 }
 
 export struct UiRemoteAlias {
     alias: string,
     distro_id: string,
+    logo: UiLogo,
     subtitle: string,
     release_hint: string,
     is_cached: bool,
@@ -116,7 +123,7 @@ export struct UiCommunityApp {
     name: string,
     description: string,
     distro_id: string,
-    logo: image,
+    logo: UiLogo,
     is_dev: bool,
 }
 
@@ -163,19 +170,6 @@ export global CubbyTheme {
     out property <length> text_md: 15px;
     out property <length> text_lg: 19px;
     out property <length> text_kpi: 20px;
-
-    public pure function distro_icon(d: string) -> image {
-        if d == "debian" { return @image-url("icons/debian.svg"); }
-        if d == "ubuntu" { return @image-url("icons/ubuntu.svg"); }
-        if d == "fedora" { return @image-url("icons/fedora.svg"); }
-        if d == "arch" { return @image-url("icons/arch.svg"); }
-        if d == "alpine" { return @image-url("icons/alpine.svg"); }
-        if d == "opensuse" { return @image-url("icons/opensuse.svg"); }
-        if d == "alma" { return @image-url("icons/alma.svg"); }
-        if d == "rocky" { return @image-url("icons/rocky.svg"); }
-        if d == "centos" { return @image-url("icons/centos.svg"); }
-        return @image-url("icons/generic.svg");
-    }
 
     public pure function ui_icon(name: string) -> image {
         if name == "settings" { return @image-url("icons/lucide/settings.svg"); }
@@ -236,30 +230,24 @@ export global CubbyTheme {
         if name == "scale" { return @image-url("icons/lucide/scale.svg"); }
         return @image-url("icons/lucide/settings.svg");
     }
+}
 
-    public pure function distro_bg(d: string) -> color {
-        if d == "debian" { return rgba(225, 29, 100, 0.12); }
-        if d == "ubuntu" { return rgba(233, 84, 32, 0.12); }
-        if d == "fedora" { return rgba(81, 162, 218, 0.12); }
-        if d == "arch" { return rgba(23, 147, 209, 0.12); }
-        if d == "alpine" { return rgba(56, 189, 248, 0.11); }
-        if d == "opensuse" { return rgba(115, 186, 37, 0.12); }
-        if d == "alma" { return rgba(244, 63, 94, 0.10); }
-        if d == "rocky" { return rgba(16, 185, 129, 0.12); }
-        if d == "centos" { return rgba(192, 132, 252, 0.12); }
-        return rgba(155, 160, 168, 0.10);
-    }
+export global CubbyOsLogos {
+    property <UiLogo> empty;
+    in-out property <UiLogo> debian;
+    in-out property <UiLogo> ubuntu;
+    in-out property <UiLogo> fedora;
+    in-out property <UiLogo> arch;
+    in-out property <UiLogo> alpine;
+    in-out property <UiLogo> opensuse;
 
-    public pure function distro_border(d: string) -> color {
-        if d == "debian" { return rgba(225, 29, 100, 0.34); }
-        if d == "ubuntu" { return rgba(233, 84, 32, 0.34); }
-        if d == "fedora" { return rgba(81, 162, 218, 0.34); }
-        if d == "arch" { return rgba(23, 147, 209, 0.34); }
-        if d == "alpine" { return rgba(56, 189, 248, 0.30); }
-        if d == "opensuse" { return rgba(115, 186, 37, 0.34); }
-        if d == "alma" { return rgba(244, 63, 94, 0.28); }
-        if d == "rocky" { return rgba(16, 185, 129, 0.32); }
-        if d == "centos" { return rgba(192, 132, 252, 0.32); }
-        return rgba(155, 160, 168, 0.24);
+    public pure function for_id(d: string) -> UiLogo {
+        if d == "debian" { return root.debian; }
+        if d == "ubuntu" { return root.ubuntu; }
+        if d == "fedora" { return root.fedora; }
+        if d == "arch" { return root.arch; }
+        if d == "alpine" { return root.alpine; }
+        if d == "opensuse" { return root.opensuse; }
+        return root.empty;
     }
 }

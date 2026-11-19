@@ -1,9 +1,11 @@
 import { Palette } from "std-widgets.slint";
 import {
+    CubbyOsLogos,
     CubbyTheme,
     UiCommunityApp,
     UiImage,
     UiInstance,
+    UiLogo,
     UiNetwork,
     UiNetworkLease,
     UiProfile,
@@ -18,7 +20,9 @@ import { AdvancedShell } from "advanced.slint";
 import { SimpleShell } from "simple.slint";
 
 export {
+    CubbyOsLogos,
     CubbyTheme,
+    UiLogo,
     UiSnapshot,
     UiMount,
     UiProxy,
@@ -85,7 +89,7 @@ export component AppWindow inherits Window {
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
-    in property <image> community_app_logo;
+    in property <UiLogo> community_app_logo;
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_tags: "";
