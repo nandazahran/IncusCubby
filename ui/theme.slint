@@ -183,6 +183,66 @@ export global CubbyTheme {
         return @image-url("icons/generic.svg");
     }
 
+    public pure function ui_icon(name: string) -> image {
+        if name == "settings" { return @image-url("icons/lucide/settings.svg"); }
+        if name == "refresh" { return @image-url("icons/lucide/refresh.svg"); }
+        if name == "back" { return @image-url("icons/lucide/back.svg"); }
+        if name == "forward" { return @image-url("icons/lucide/forward.svg"); }
+        if name == "chevron" { return @image-url("icons/lucide/chevron.svg"); }
+        if name == "chevron-right" { return @image-url("icons/lucide/chevron-right.svg"); }
+        if name == "chevron-up" { return @image-url("icons/lucide/chevron-up.svg"); }
+        if name == "search" { return @image-url("icons/lucide/search.svg"); }
+        if name == "filter" { return @image-url("icons/lucide/filter.svg"); }
+        if name == "ellipsis" { return @image-url("icons/lucide/ellipsis.svg"); }
+        if name == "external-link" { return @image-url("icons/lucide/external-link.svg"); }
+        if name == "apps" { return @image-url("icons/lucide/apps.svg"); }
+        if name == "play" { return @image-url("icons/lucide/play.svg"); }
+        if name == "stop" { return @image-url("icons/lucide/stop.svg"); }
+        if name == "restart" { return @image-url("icons/lucide/restart.svg"); }
+        if name == "restore" { return @image-url("icons/lucide/restore.svg"); }
+        if name == "freeze" { return @image-url("icons/lucide/freeze.svg"); }
+        if name == "power" { return @image-url("icons/lucide/power.svg"); }
+        if name == "plus" { return @image-url("icons/lucide/plus.svg"); }
+        if name == "close" { return @image-url("icons/lucide/close.svg"); }
+        if name == "check" { return @image-url("icons/lucide/check.svg"); }
+        if name == "copy" { return @image-url("icons/lucide/copy.svg"); }
+        if name == "trash" { return @image-url("icons/lucide/trash.svg"); }
+        if name == "unlink" { return @image-url("icons/lucide/unlink.svg"); }
+        if name == "pencil" { return @image-url("icons/lucide/pencil.svg"); }
+        if name == "save" { return @image-url("icons/lucide/save.svg"); }
+        if name == "terminal" { return @image-url("icons/lucide/terminal.svg"); }
+        if name == "code" { return @image-url("icons/lucide/code.svg"); }
+        if name == "download" { return @image-url("icons/lucide/download.svg"); }
+        if name == "upload" { return @image-url("icons/lucide/upload.svg"); }
+        if name == "cloud-download" { return @image-url("icons/lucide/cloud-download.svg"); }
+        if name == "folder" { return @image-url("icons/lucide/folder.svg"); }
+        if name == "file-text" { return @image-url("icons/lucide/file-text.svg"); }
+        if name == "camera" { return @image-url("icons/lucide/camera.svg"); }
+        if name == "history" { return @image-url("icons/lucide/history.svg"); }
+        if name == "eye" { return @image-url("icons/lucide/eye.svg"); }
+        if name == "eye-off" { return @image-url("icons/lucide/eye-off.svg"); }
+        if name == "package" { return @image-url("icons/lucide/package.svg"); }
+        if name == "box" { return @image-url("icons/lucide/box.svg"); }
+        if name == "cpu" { return @image-url("icons/lucide/cpu.svg"); }
+        if name == "hard-drive" { return @image-url("icons/lucide/hard-drive.svg"); }
+        if name == "database" { return @image-url("icons/lucide/database.svg"); }
+        if name == "network" { return @image-url("icons/lucide/network.svg"); }
+        if name == "globe" { return @image-url("icons/lucide/globe.svg"); }
+        if name == "server" { return @image-url("icons/lucide/server.svg"); }
+        if name == "layers" { return @image-url("icons/lucide/layers.svg"); }
+        if name == "sliders" { return @image-url("icons/lucide/sliders.svg"); }
+        if name == "wrench" { return @image-url("icons/lucide/wrench.svg"); }
+        if name == "sun" { return @image-url("icons/lucide/sun.svg"); }
+        if name == "moon" { return @image-url("icons/lucide/moon.svg"); }
+        if name == "shield" { return @image-url("icons/lucide/shield.svg"); }
+        if name == "lock" { return @image-url("icons/lucide/lock.svg"); }
+        if name == "lock-open" { return @image-url("icons/lucide/lock-open.svg"); }
+        if name == "alert" { return @image-url("icons/lucide/alert.svg"); }
+        if name == "info" { return @image-url("icons/lucide/info.svg"); }
+        if name == "scale" { return @image-url("icons/lucide/scale.svg"); }
+        return @image-url("icons/lucide/settings.svg");
+    }
+
     public pure function distro_bg(d: string) -> color {
         if d == "debian" { return rgba(225, 29, 100, 0.12); }
         if d == "ubuntu" { return rgba(233, 84, 32, 0.12); }

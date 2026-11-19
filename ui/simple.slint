@@ -5,10 +5,11 @@ import {
     UiInstance,
 } from "theme.slint";
 import {
+    CubbyActionButton,
     CubbyBanner,
-    CubbyButton,
     CubbyCodeBox,
     CubbyDistroBadge,
+    CubbyIconButton,
     CubbyInput,
     CubbyMark,
     CubbyModeSwitch,
@@ -26,6 +27,7 @@ component CubbySimpleTopBar inherits Rectangle {
     in property <bool> socket_connected: false;
     in property <bool> simple_mode: true;
     callback toggle_simple_mode(bool);
+    callback open_prefs();
 
     height: 48px;
     background: CubbyTheme.surface;
@@ -57,17 +59,33 @@ component CubbySimpleTopBar inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 tone: root.socket_connected ? "live" : "err";
                 label: !root.socket_connected
-                    ? "Socket Denied"
+                    ? "Denied"
                     : (root.simple_view == "new"
-                        ? "New Sandbox"
-                        : ((root.simple_view == "apps" || root.simple_view == "app_detail") ? "App Store" : "Ready"));
+                        ? "New"
+                        : ((root.simple_view == "apps" || root.simple_view == "app_detail")
+                            ? "Apps"
+                            : ((root.simple_view == "prefs" || root.simple_view == "about" || root.simple_view == "legal") ? "Settings" : "Ready")));
             }
         }
 
-        CubbyModeSwitch {
-            y: (parent.height - self.height) / 2;
-            is_simple: root.simple_mode;
-            select_mode(s) => { root.toggle_simple_mode(s); }
+        HorizontalLayout {
+            spacing: 6px;
+
+            CubbyIconButton {
+                y: (parent.height - self.height) / 2;
+                icon: "settings";
+                tone: "outline";
+                size: "sm";
+                tooltip: "Preferences";
+                active: root.simple_view == "prefs" || root.simple_view == "about" || root.simple_view == "legal";
+                clicked => { root.open_prefs(); }
+            }
+
+            CubbyModeSwitch {
+                y: (parent.height - self.height) / 2;
+                is_simple: root.simple_mode;
+                select_mode(s) => { root.toggle_simple_mode(s); }
+            }
         }
     }
 
@@ -214,40 +232,46 @@ export component SimpleShell inherits VerticalLayout {
         socket_connected: root.socket_connected;
         simple_mode: root.simple_mode;
         toggle_simple_mode(s) => { root.toggle_simple_mode(s); }
+        open_prefs => {
+            root.simple_view = (root.simple_view == "prefs" || root.simple_view == "about" || root.simple_view == "legal") ? "hub" : "prefs";
+        }
     }
 
     if root.confirm_message != "": CubbyBanner {
         tone: "warn";
-        title: "Confirm Action";
+        title: "Confirm";
         body: root.confirm_message;
 
-        CubbyButton {
+        CubbyActionButton {
             y: (parent.height - self.height) / 2;
+            icon: "check";
             tone: "danger";
             size: "sm";
             label: "Confirm";
             enabled: !root.busy;
             clicked => { root.confirm_action(); }
         }
-        CubbyButton {
+        CubbyIconButton {
             y: (parent.height - self.height) / 2;
+            icon: "close";
             tone: "outline";
             size: "sm";
-            label: "Cancel";
+            tooltip: "Cancel";
             clicked => { root.cancel_confirm(); }
         }
     }
 
     if root.socket_warning != "" && root.simple_view != "prefs": CubbyBanner {
         tone: "err";
-        title: "Incus Socket Warning";
+        title: "Socket Warning";
         body: root.socket_warning;
 
-        CubbyButton {
+        CubbyIconButton {
             y: (parent.height - self.height) / 2;
+            icon: "refresh";
             tone: "outline";
             size: "sm";
-            label: "Retry";
+            tooltip: "Retry";
             enabled: !root.busy;
             clicked => { root.refresh(); }
         }
@@ -271,16 +295,16 @@ export component SimpleShell inherits VerticalLayout {
 
                 VerticalLayout {
                     horizontal-stretch: 1;
-                    spacing: 3px;
+                    spacing: 2px;
                     Text {
-                        text: "Your Sandboxes";
+                        text: "Sandboxes";
                         font-family: CubbyTheme.font_sans;
                         font-size: 14px;
                         font-weight: 600;
                         color: CubbyTheme.ink;
                     }
                     Text {
-                        text: "Safe isolated Linux workspaces for everyday dev work";
+                        text: root.instances.length + " local workspaces";
                         font-family: CubbyTheme.font_sans;
                         font-size: 11.5px;
                         color: CubbyTheme.ink_secondary;
@@ -290,18 +314,20 @@ export component SimpleShell inherits VerticalLayout {
 
                 HorizontalLayout {
                     spacing: 6px;
-                    CubbyButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "apps";
                         tone: "outline";
                         size: "sm";
-                        label: "Apps";
+                        tooltip: "App Store";
                         clicked => { root.simple_view = "apps"; }
                     }
-                    CubbyButton {
+                    CubbyActionButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "plus";
                         tone: "primary";
                         size: "sm";
-                        label: "+ New";
+                        label: "New";
                         clicked => { root.simple_view = "new"; }
                     }
                 }
@@ -412,54 +438,69 @@ export component SimpleShell inherits VerticalLayout {
                         HorizontalLayout {
                             spacing: 6px;
 
-                            if inst.is_running: CubbyButton {
+                            if inst.is_running && is-sel: CubbyActionButton {
                                 y: (parent.height - self.height) / 2;
-                                tone: is-sel ? "primary" : "outline";
+                                icon: "terminal";
+                                tone: "primary";
                                 size: "sm";
-                                label: "Terminal";
+                                label: "Shell";
                                 clicked => { root.open_shell(inst.name); }
                             }
 
-                            if inst.is_running && inst.workspace_path != "": CubbyButton {
+                            if inst.is_running && !is-sel: CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "terminal";
                                 tone: "outline";
                                 size: "sm";
-                                label: root.resolved_ide_name;
+                                tooltip: "Shell";
+                                clicked => { root.open_shell(inst.name); }
+                            }
+
+                            if inst.is_running && inst.workspace_path != "": CubbyIconButton {
+                                y: (parent.height - self.height) / 2;
+                                icon: "code";
+                                tone: "outline";
+                                size: "sm";
+                                tooltip: root.resolved_ide_name;
                                 clicked => { root.open_ide(inst.workspace_path); }
                             }
 
-                            if inst.is_running: CubbyButton {
+                            if inst.is_running: CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "stop";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Stop";
+                                tooltip: "Stop";
                                 enabled: !root.busy;
                                 clicked => { root.set_instance_state(inst.name, "stop"); }
                             }
 
-                            if inst.is_frozen: CubbyButton {
+                            if inst.is_frozen: CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "play";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Resume";
+                                tooltip: "Resume";
                                 enabled: !root.busy;
                                 clicked => { root.set_instance_state(inst.name, "unfreeze"); }
                             }
 
-                            if !inst.is_running && !inst.is_frozen: CubbyButton {
+                            if !inst.is_running && !inst.is_frozen: CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "play";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Start";
+                                tooltip: "Start";
                                 enabled: !root.busy;
                                 clicked => { root.set_instance_state(inst.name, "start"); }
                             }
 
-                            if !inst.is_running: CubbyButton {
+                            if !inst.is_running: CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "sliders";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Manage";
+                                tooltip: "Manage";
                                 clicked => {
                                     root.select_instance_by_name(inst.name);
                                     root.simple_view = "manage";
@@ -499,7 +540,7 @@ export component SimpleShell inherits VerticalLayout {
                 Text {
                     text: (!root.status_is_idle && root.status_message != "")
                         ? root.status_message
-                        : ("Opens in " + root.resolved_terminal_name + " & " + root.resolved_ide_name);
+                        : (root.resolved_terminal_name + " · " + root.resolved_ide_name);
                     font-family: CubbyTheme.font_sans;
                     font-size: 11.5px;
                     color: CubbyTheme.ink_muted;
@@ -510,19 +551,13 @@ export component SimpleShell inherits VerticalLayout {
 
                 HorizontalLayout {
                     spacing: 6px;
-                    if root.has_selection: CubbyButton {
+                    if root.has_selection: CubbyActionButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "sliders";
                         tone: "outline";
                         size: "sm";
-                        label: "Manage " + root.selected_instance.name;
+                        label: "Manage";
                         clicked => { root.simple_view = "manage"; }
-                    }
-                    CubbyButton {
-                        y: (parent.height - self.height) / 2;
-                        tone: "outline";
-                        size: "sm";
-                        label: "Preferences";
-                        clicked => { root.simple_view = "prefs"; }
                     }
                 }
             }
@@ -536,23 +571,26 @@ export component SimpleShell inherits VerticalLayout {
         Rectangle {
             height: 48px;
             HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                alignment: space-between;
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
+                alignment: start;
+
+                CubbyIconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: "back";
+                    tone: "outline";
+                    size: "sm";
+                    tooltip: "Back";
+                    clicked => { root.simple_view = "hub"; }
+                }
                 Text {
-                    text: "Create a New Sandbox";
+                    text: "New Sandbox";
                     font-family: CubbyTheme.font_sans;
                     font-size: 14px;
                     font-weight: 600;
                     color: CubbyTheme.ink;
                     vertical-alignment: center;
-                }
-                CubbyButton {
-                    y: (parent.height - self.height) / 2;
-                    tone: "outline";
-                    size: "sm";
-                    label: "Back";
-                    clicked => { root.simple_view = "hub"; }
                 }
             }
             Rectangle {
@@ -656,9 +694,11 @@ export component SimpleShell inherits VerticalLayout {
                             placeholder: "~/projects/my-app";
                             enabled: !root.busy;
                         }
-                        CubbyButton {
+                        CubbyIconButton {
+                            icon: "folder";
                             tone: "outline";
-                            label: "Browse...";
+                            size: "md";
+                            tooltip: "Browse folder";
                             enabled: !root.busy;
                             clicked => { root.browse_workspace_folder(); }
                         }
@@ -674,11 +714,11 @@ export component SimpleShell inherits VerticalLayout {
             HorizontalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
-                spacing: 8px;
+                spacing: 6px;
                 alignment: space-between;
 
                 Text {
-                    text: "Ready in seconds · safe to delete anytime";
+                    text: "Instant · delete anytime";
                     font-family: CubbyTheme.font_sans;
                     font-size: 11.5px;
                     color: CubbyTheme.ink_muted;
@@ -687,17 +727,21 @@ export component SimpleShell inherits VerticalLayout {
                     overflow: elide;
                 }
 
-                CubbyButton {
+                CubbyIconButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "close";
                     tone: "outline";
-                    label: "Cancel";
+                    size: "sm";
+                    tooltip: "Cancel";
                     clicked => { root.simple_view = "hub"; }
                 }
 
-                CubbyButton {
+                CubbyActionButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "plus";
                     tone: "primary";
-                    label: "Create Sandbox";
+                    size: "sm";
+                    label: "Create";
                     enabled: !root.busy && root.create_name != "";
                     clicked => {
                         root.create_instance(
@@ -735,11 +779,12 @@ export component SimpleShell inherits VerticalLayout {
                     spacing: 10px;
                     horizontal-stretch: 1;
 
-                    CubbyButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "back";
                         tone: "outline";
                         size: "sm";
-                        label: "<- All";
+                        tooltip: "All sandboxes";
                         clicked => { root.simple_view = "hub"; }
                     }
 
@@ -781,19 +826,21 @@ export component SimpleShell inherits VerticalLayout {
 
                 HorizontalLayout {
                     spacing: 6px;
-                    CubbyButton {
+                    CubbyActionButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "terminal";
                         tone: "primary";
                         size: "sm";
-                        label: "Terminal";
+                        label: "Shell";
                         enabled: root.selected_instance.is_running;
                         clicked => { root.open_shell(root.selected_instance.name); }
                     }
-                    CubbyButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
+                        icon: root.selected_instance.is_running ? "stop" : "play";
                         tone: "outline";
                         size: "sm";
-                        label: root.selected_instance.is_running ? "Stop" : (root.selected_instance.is_frozen ? "Resume" : "Start");
+                        tooltip: root.selected_instance.is_running ? "Stop" : (root.selected_instance.is_frozen ? "Resume" : "Start");
                         enabled: !root.busy;
                         clicked => {
                             root.set_instance_state(
@@ -820,13 +867,13 @@ export component SimpleShell inherits VerticalLayout {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: space-between;
-                        Text { text: "Install Apps"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "Packages"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
                         Text {
                             text: root.selected_instance.pkg_manager != ""
-                                ? "Uses " + root.selected_instance.image_os + " " + root.selected_instance.pkg_manager + " automatically"
+                                ? root.selected_instance.image_os + " · " + root.selected_instance.pkg_manager
                                 : "OS package helper";
-                            font-family: CubbyTheme.font_sans;
-                            font-size: 11px;
+                            font-family: CubbyTheme.font_mono;
+                            font-size: 10.5px;
                             color: CubbyTheme.ink_muted;
                         }
                     }
@@ -835,10 +882,11 @@ export component SimpleShell inherits VerticalLayout {
                         s-pkg := CubbyInput {
                             horizontal-stretch: 1;
                             mono: true;
-                            placeholder: "App names (e.g. git curl python3)";
+                            placeholder: "Packages (e.g. git curl python3)";
                             enabled: !root.busy && root.selected_instance.is_running;
                         }
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "download";
                             tone: "primary";
                             size: "sm";
                             label: "Install";
@@ -848,10 +896,11 @@ export component SimpleShell inherits VerticalLayout {
                                 s-pkg.text = "";
                             }
                         }
-                        CubbyButton {
+                        CubbyIconButton {
+                            icon: "refresh";
                             tone: "outline";
                             size: "sm";
-                            label: "Update All";
+                            tooltip: "Upgrade all packages";
                             enabled: !root.busy && root.selected_instance.is_running;
                             clicked => { root.upgrade_packages(root.selected_instance.name, root.selected_instance.image_os); }
                         }
@@ -871,11 +920,12 @@ export component SimpleShell inherits VerticalLayout {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: space-between;
-                        Text { text: "Shared Project Folder"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
-                        CubbyButton {
+                        Text { text: "Workspace"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                        CubbyActionButton {
+                            icon: "code";
                             tone: "outline";
                             size: "sm";
-                            label: "Open in " + root.resolved_ide_name;
+                            label: root.resolved_ide_name;
                             clicked => { root.open_ide(root.selected_instance.workspace_path); }
                         }
                     }
@@ -893,11 +943,12 @@ export component SimpleShell inherits VerticalLayout {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: space-between;
-                        Text { text: "Quick Backups (Snapshots)"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
-                        CubbyButton {
+                        Text { text: "Snapshots"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                        CubbyIconButton {
+                            icon: "camera";
                             tone: "outline";
                             size: "sm";
-                            label: "+ Save Backup";
+                            tooltip: "Save snapshot";
                             enabled: !root.busy;
                             clicked => { root.show_backup_row = !root.show_backup_row; }
                         }
@@ -908,10 +959,11 @@ export component SimpleShell inherits VerticalLayout {
                         s-snap := CubbyInput {
                             horizontal-stretch: 1;
                             mono: true;
-                            placeholder: "Backup name (e.g. before-upgrade)";
+                            placeholder: "Snapshot name (e.g. before-upgrade)";
                             enabled: !root.busy;
                         }
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "check";
                             tone: "primary";
                             size: "sm";
                             label: "Save";
@@ -925,7 +977,7 @@ export component SimpleShell inherits VerticalLayout {
                     }
 
                     if root.selected_instance.snapshots.length == 0: Text {
-                        text: "No backups saved yet.";
+                        text: "No snapshots yet.";
                         font-family: CubbyTheme.font_sans;
                         font-size: 11.5px;
                         color: CubbyTheme.ink_muted;
@@ -959,11 +1011,12 @@ export component SimpleShell inherits VerticalLayout {
                                 vertical-alignment: center;
                                 overflow: elide;
                             }
-                            CubbyButton {
+                            CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "restore";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Restore";
+                                tooltip: "Restore snapshot";
                                 enabled: !root.busy;
                                 clicked => { root.request_restore_snapshot(root.selected_instance.name, snap.name); }
                             }
@@ -981,24 +1034,26 @@ export component SimpleShell inherits VerticalLayout {
                         VerticalLayout {
                             horizontal-stretch: 1;
                             spacing: 1px;
-                            Text { text: "Make a Copy or Remove"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
-                            Text { text: "Instant duplicate or permanent delete"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_muted; }
+                            Text { text: "Clone / Delete"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                            Text { text: "CoW copy or permanent remove"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_muted; }
                         }
                         HorizontalLayout {
                             spacing: 6px;
-                            CubbyButton {
+                            CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "copy";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Duplicate";
+                                tooltip: "Clone sandbox";
                                 enabled: !root.busy;
                                 clicked => { root.show_clone_row = !root.show_clone_row; }
                             }
-                            CubbyButton {
+                            CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "trash";
                                 tone: "danger";
                                 size: "sm";
-                                label: "Remove";
+                                tooltip: "Delete sandbox";
                                 enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
                                 clicked => { root.request_delete_instance(root.selected_instance.name); }
                             }
@@ -1013,7 +1068,8 @@ export component SimpleShell inherits VerticalLayout {
                             placeholder: "Copy name (e.g. " + root.selected_instance.name + "-copy)";
                             enabled: !root.busy;
                         }
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "copy";
                             tone: "primary";
                             size: "sm";
                             label: "Clone";
@@ -1038,17 +1094,18 @@ export component SimpleShell inherits VerticalLayout {
                 padding-right: 16px;
                 alignment: space-between;
                 Text {
-                    text: "Need ports, logs, profiles or networks?";
+                    text: "Ports, logs, profiles & networks";
                     font-family: CubbyTheme.font_sans;
                     font-size: 11.5px;
                     color: CubbyTheme.ink_muted;
                     vertical-alignment: center;
                 }
-                CubbyButton {
+                CubbyActionButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "sliders";
                     tone: "outline";
                     size: "sm";
-                    label: "Switch to Advanced";
+                    label: "Advanced";
                     clicked => { root.toggle_simple_mode(false); }
                 }
             }
@@ -1063,21 +1120,38 @@ export component SimpleShell inherits VerticalLayout {
             min-height: apps-hdr.preferred-height;
             vertical-stretch: 0;
             apps-hdr := HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-top: 12px;
-                padding-bottom: 12px;
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 11px;
+                padding-bottom: 11px;
+                spacing: 10px;
                 alignment: space-between;
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 2px;
-                    Text { text: "Community App Store"; font-family: CubbyTheme.font_sans; font-size: 14px; font-weight: 600; color: CubbyTheme.ink; }
-                    Text { text: "One-click self-hosted apps powered by community-scripts.org"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; overflow: elide; }
-                }
                 HorizontalLayout {
-                    spacing: 6px;
-                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Reload"; enabled: !root.busy; clicked => { root.fetch_community_catalog(); } }
-                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Back"; clicked => { root.simple_view = "hub"; } }
+                    spacing: 10px;
+                    horizontal-stretch: 1;
+                    CubbyIconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: "back";
+                        tone: "outline";
+                        size: "sm";
+                        tooltip: "Back";
+                        clicked => { root.simple_view = "hub"; }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 1px;
+                        Text { text: "App Store"; font-family: CubbyTheme.font_sans; font-size: 14px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "community-scripts.org"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; overflow: elide; }
+                    }
+                }
+                CubbyIconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: "refresh";
+                    tone: "outline";
+                    size: "sm";
+                    tooltip: "Reload catalog";
+                    enabled: !root.busy;
+                    clicked => { root.fetch_community_catalog(); }
                 }
             }
             Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
@@ -1175,11 +1249,12 @@ export component SimpleShell inherits VerticalLayout {
                             }
                         }
 
-                        CubbyButton {
+                        CubbyIconButton {
                             y: (parent.height - self.height) / 2;
+                            icon: "file-text";
                             tone: "outline";
                             size: "sm";
-                            label: "Script";
+                            tooltip: "View script";
                             enabled: !root.busy;
                             clicked => {
                                 root.show_full_script = true;
@@ -1189,11 +1264,12 @@ export component SimpleShell inherits VerticalLayout {
                             }
                         }
 
-                        CubbyButton {
+                        CubbyIconButton {
                             y: (parent.height - self.height) / 2;
+                            icon: "download";
                             tone: "primary";
                             size: "sm";
-                            label: "Install";
+                            tooltip: "Install";
                             enabled: !root.busy;
                             clicked => {
                                 root.show_full_script = false;
@@ -1239,11 +1315,12 @@ export component SimpleShell inherits VerticalLayout {
                     spacing: 10px;
                     horizontal-stretch: 1;
 
-                    CubbyButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "back";
                         tone: "outline";
                         size: "sm";
-                        label: "<- Store";
+                        tooltip: "App Store";
                         clicked => { root.simple_view = "apps"; }
                     }
 
@@ -1275,11 +1352,12 @@ export component SimpleShell inherits VerticalLayout {
                     }
                 }
 
-                CubbyButton {
+                CubbyActionButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "play";
                     tone: "primary";
                     size: "sm";
-                    label: root.busy ? "Deploying..." : "Create & Install";
+                    label: root.busy ? "Deploying..." : "Deploy";
                     enabled: !root.busy && root.community_selected_slug != "" && root.simple_app_name_input != "";
                     clicked => {
                         root.show_full_script = false;
@@ -1306,7 +1384,7 @@ export component SimpleShell inherits VerticalLayout {
 
             HorizontalLayout {
                 spacing: 8px;
-                Text { text: "Sandbox Name:"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                Text { text: "Name"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
                 CubbyInput {
                     horizontal-stretch: 1;
                     mono: true;
@@ -1314,10 +1392,11 @@ export component SimpleShell inherits VerticalLayout {
                     placeholder: root.community_selected_slug;
                     enabled: !root.busy;
                 }
-                CubbyButton {
+                CubbyIconButton {
+                    icon: root.show_full_script ? "terminal" : "file-text";
                     tone: "outline";
-                    size: "sm";
-                    label: root.show_full_script ? "Show Output" : "View Full Script";
+                    size: "md";
+                    tooltip: root.show_full_script ? "Show Output" : "View Script";
                     clicked => { root.show_full_script = !root.show_full_script; }
                 }
             }
@@ -1342,7 +1421,7 @@ export component SimpleShell inherits VerticalLayout {
                     ? root.community_install_script
                     : (root.community_output != ""
                         ? root.community_output
-                        : "Review script trust summary or click 'Create & Install' to deploy into a new sandbox.");
+                        : "Inspect script or click Deploy to install into a new sandbox.");
             }
         }
 
@@ -1355,7 +1434,7 @@ export component SimpleShell inherits VerticalLayout {
                 padding-right: 16px;
                 alignment: space-between;
                 Text {
-                    text: root.status_message != "" ? root.status_message : "Saved in Sandboxes after install";
+                    text: root.status_message != "" ? root.status_message : "Saved in Sandboxes after deploy";
                     font-family: CubbyTheme.font_sans;
                     font-size: 11px;
                     color: CubbyTheme.ink_muted;
@@ -1363,11 +1442,12 @@ export component SimpleShell inherits VerticalLayout {
                     horizontal-stretch: 1;
                     overflow: elide;
                 }
-                CubbyButton {
+                CubbyActionButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "back";
                     tone: "outline";
                     size: "sm";
-                    label: "Open Hub";
+                    label: "Hub";
                     clicked => { root.simple_view = "hub"; }
                 }
             }
@@ -1382,23 +1462,25 @@ export component SimpleShell inherits VerticalLayout {
             min-height: prefs-hdr.preferred-height;
             vertical-stretch: 0;
             prefs-hdr := HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-top: 12px;
-                padding-bottom: 12px;
-                alignment: space-between;
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 2px;
-                    Text { text: "Preferences"; font-family: CubbyTheme.font_sans; font-size: 14px; font-weight: 600; color: CubbyTheme.ink; }
-                    Text { text: "Terminal, code editor, theme, and Incus connection check"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                }
-                CubbyButton {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 11px;
+                padding-bottom: 11px;
+                spacing: 10px;
+                alignment: start;
+                CubbyIconButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "back";
                     tone: "outline";
                     size: "sm";
-                    label: "<- Hub";
+                    tooltip: "Hub";
                     clicked => { root.simple_view = "hub"; }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 1px;
+                    Text { text: "Preferences"; font-family: CubbyTheme.font_sans; font-size: 14px; font-weight: 600; color: CubbyTheme.ink; }
+                    Text { text: "Apps, theme & Incus socket"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                 }
             }
             Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: CubbyTheme.border; }
@@ -1414,7 +1496,7 @@ export component SimpleShell inherits VerticalLayout {
 
                 HorizontalLayout {
                     alignment: space-between;
-                    Text { text: "Apps & Workspace"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                    Text { text: "Launchers"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
                     Text { text: "settings.json"; font-family: CubbyTheme.font_mono; font-size: 11px; color: CubbyTheme.ink_muted; }
                 }
 
@@ -1423,13 +1505,13 @@ export component SimpleShell inherits VerticalLayout {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
-                        Text { text: "Terminal App"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                        Text { text: "Terminal"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         CubbySelect { model: root.available_terminals; current_value <=> root.preferred_terminal; }
                     }
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
-                        Text { text: "Code Editor"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                        Text { text: "Editor"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         CubbySelect { model: root.available_ides; current_value <=> root.preferred_ide; }
                     }
                 }
@@ -1446,7 +1528,8 @@ export component SimpleShell inherits VerticalLayout {
                 HorizontalLayout {
                     spacing: 8px;
                     CubbyCodeBox { horizontal-stretch: 1; uri: root.settings_file_path; }
-                    CubbyButton {
+                    CubbyActionButton {
+                        icon: "check";
                         tone: "primary";
                         size: "sm";
                         label: "Save";
@@ -1458,7 +1541,7 @@ export component SimpleShell inherits VerticalLayout {
 
                 HorizontalLayout {
                     alignment: space-between;
-                    Text { text: "Incus Connection"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
+                    Text { text: "Incus Socket"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
                     CubbyStatusDot { tone: root.socket_connected ? "live" : "err"; label: root.socket_connected ? "Reachable" : "Unavailable"; }
                 }
 
@@ -1466,14 +1549,15 @@ export component SimpleShell inherits VerticalLayout {
 
                 CubbyBanner {
                     tone: root.socket_connected ? "warn" : "err";
-                    title: "Sandboxes won't load on first run?";
-                    body: "Add your user to incus-admin, then click Retry.";
+                    title: "Permission denied?";
+                    body: "Join incus-admin, then retry.";
 
-                    CubbyButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "refresh";
                         tone: "outline";
                         size: "sm";
-                        label: "Retry";
+                        tooltip: "Retry socket";
                         clicked => { root.refresh(); }
                     }
                 }
@@ -1492,13 +1576,13 @@ export component SimpleShell inherits VerticalLayout {
                         VerticalLayout {
                             spacing: 1px;
                             Text { text: "IncusCubby Desktop"; font-family: CubbyTheme.font_sans; font-size: 12.5px; font-weight: 600; color: CubbyTheme.ink; }
-                            Text { text: "GPL-3.0+ · Local-first, zero telemetry"; font-family: CubbyTheme.font_sans; font-size: 11px; color: CubbyTheme.ink_muted; }
+                            Text { text: "GPL-3.0+ · 0 telemetry"; font-family: CubbyTheme.font_sans; font-size: 11px; color: CubbyTheme.ink_muted; }
                         }
                     }
                     HorizontalLayout {
                         spacing: 6px;
-                        CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "About"; clicked => { root.simple_view = "about"; } }
-                        CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Licenses"; clicked => { root.simple_view = "legal"; } }
+                        CubbyIconButton { y: (parent.height - self.height) / 2; icon: "info"; tone: "outline"; size: "sm"; tooltip: "About & Privacy"; clicked => { root.simple_view = "about"; } }
+                        CubbyIconButton { y: (parent.height - self.height) / 2; icon: "scale"; tone: "outline"; size: "sm"; tooltip: "Licenses & Credits"; clicked => { root.simple_view = "legal"; } }
                     }
                 }
             }
@@ -1512,8 +1596,8 @@ export component SimpleShell inherits VerticalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
                 alignment: space-between;
-                Text { text: "Need pools, networks or YAML profiles?"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_muted; vertical-alignment: center; }
-                CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "Switch to Advanced"; clicked => { root.toggle_simple_mode(false); } }
+                Text { text: "Pools, bridges & YAML profiles"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_muted; vertical-alignment: center; }
+                CubbyActionButton { y: (parent.height - self.height) / 2; icon: "sliders"; tone: "outline"; size: "sm"; label: "Advanced"; clicked => { root.toggle_simple_mode(false); } }
             }
         }
     }
@@ -1530,8 +1614,8 @@ export component SimpleShell inherits VerticalLayout {
                 alignment: space-between;
                 HorizontalLayout {
                     spacing: 8px;
-                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "<- Prefs"; clicked => { root.simple_view = "prefs"; } }
-                    Text { text: "About & Privacy"; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                    CubbyIconButton { y: (parent.height - self.height) / 2; icon: "back"; tone: "outline"; size: "sm"; tooltip: "Preferences"; clicked => { root.simple_view = "prefs"; } }
+                    Text { text: "About"; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
                 }
                 CubbySegmentTrack {
                     y: (parent.height - self.height) / 2;
@@ -1560,7 +1644,7 @@ export component SimpleShell inherits VerticalLayout {
                     }
                     HorizontalLayout {
                         spacing: 6px;
-                        CubbyButton { y: (parent.height - self.height) / 2; tone: "primary"; size: "sm"; label: "GitHub"; clicked => { root.open_url("https://github.com/nandazahran/IncusCubby"); } }
+                        CubbyIconButton { y: (parent.height - self.height) / 2; icon: "external-link"; tone: "primary"; size: "sm"; tooltip: "GitHub"; clicked => { root.open_url("https://github.com/nandazahran/IncusCubby"); } }
                     }
                 }
 
@@ -1573,7 +1657,7 @@ export component SimpleShell inherits VerticalLayout {
 
                 HorizontalLayout {
                     alignment: end;
-                    CubbyButton { tone: "danger"; size: "sm"; label: "Reset Settings"; clicked => { root.request_reset_settings(); } }
+                    CubbyActionButton { icon: "trash"; tone: "danger"; size: "sm"; label: "Reset"; clicked => { root.request_reset_settings(); } }
                 }
             }
         }
@@ -1591,8 +1675,8 @@ export component SimpleShell inherits VerticalLayout {
                 alignment: space-between;
                 HorizontalLayout {
                     spacing: 8px;
-                    CubbyButton { y: (parent.height - self.height) / 2; tone: "outline"; size: "sm"; label: "<- Prefs"; clicked => { root.simple_view = "prefs"; } }
-                    Text { text: "Licenses & Credits"; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
+                    CubbyIconButton { y: (parent.height - self.height) / 2; icon: "back"; tone: "outline"; size: "sm"; tooltip: "Preferences"; clicked => { root.simple_view = "prefs"; } }
+                    Text { text: "Licenses"; font-family: CubbyTheme.font_sans; font-size: 13.5px; font-weight: 600; color: CubbyTheme.ink; vertical-alignment: center; }
                 }
                 CubbySegmentTrack {
                     y: (parent.height - self.height) / 2;
@@ -1615,11 +1699,12 @@ export component SimpleShell inherits VerticalLayout {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 2px;
-                        Text { text: "GNU GPL v3.0 or later"; font-family: CubbyTheme.font_sans; font-size: 13px; font-weight: 600; color: CubbyTheme.ink; }
-                        Text { text: "Inspect, modify, and share source under GPL-3.0+."; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                        Text { text: "GNU GPL v3.0+"; font-family: CubbyTheme.font_sans; font-size: 13px; font-weight: 600; color: CubbyTheme.ink; }
+                        Text { text: "Free copyleft software · Lucide icons ISC."; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                     }
-                    CubbyButton {
+                    CubbyActionButton {
                         y: (parent.height - self.height) / 2;
+                        icon: root.show_license_text ? "eye-off" : "file-text";
                         tone: "primary";
                         size: "sm";
                         label: root.show_license_text ? "Hide" : "LICENSE";
@@ -1638,6 +1723,7 @@ export component SimpleShell inherits VerticalLayout {
                 CubbyRow { title: "community-scripts.org"; meta: "MIT"; subtitle: "Public Incus & DevScripts app installers."; }
                 CubbyRow { title: "DistroShelf, BoxBuddyRS & Incus Web UI"; meta: "FOSS inspiration"; subtitle: "Quick terminal/IDE flows, distro badges, and telemetry cues."; }
                 CubbyRow { mono_title: true; title: "slint 1.18 · tokio · hyper"; meta: "GPL-3.0 / MIT"; subtitle: "Native desktop UI toolkit and async Unix socket worker."; }
+                CubbyRow { mono_title: true; title: "Lucide Icons"; meta: "ISC"; subtitle: "Unified monochrome UI vector glyphs."; }
                 CubbyRow { last: true; mono_title: true; title: "Geist & Geist Mono"; meta: "SIL OFL-1.1"; subtitle: "Precision sans-serif and monospace typography."; }
             }
         }

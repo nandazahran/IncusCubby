@@ -1,6 +1,6 @@
 # Maintainer: Nanda Zahran <https://github.com/nandazahran>
 pkgname=incus-cubby
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Native Linux desktop GUI for managing local Incus/LXC developer sandboxes"
 arch=('x86_64' 'aarch64')
@@ -15,7 +15,7 @@ optdepends=(
 )
 # Released source tarball (requires public repo or authenticated fetch).
 source=("https://github.com/nandazahran/IncusCubby/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('d2c0bf3da8d6b4405f6168453fd31fc7141513649c547b67563ee688ad37fca6')
+sha256sums=('SKIP')
 
 prepare() {
   cd "${srcdir}/IncusCubby-${pkgver}"

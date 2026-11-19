@@ -11,9 +11,9 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 ## Decisions
 - Use custom-styled Slint Precision Instrument components (Geist/Geist Mono fonts, Dark Graphite & Light Studio themes, Simple & Advanced modes) directly implementing the Doop design system without std-widgets styling lock-in [ui/app.slint]
 - Use Linux-only GitHub Actions CI (with non-code paths-ignore and cargo-deny) and x86_64/aarch64 AppImage+tarball release workflow modeled on KineAnchor [.github/workflows/]
+- Standardize UI iconography on single-pack Lucide monochrome SVGs (CubbyIcon, CubbyIconButton, CubbyActionButton) across Doop design system and future Slint UI to replace wordy utility and row-action buttons [ui/components.slint]
 
 ## Notes
-- Added IncusCubby documentation suite modeled on KineAnchor: README.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/INCUS_API.md, docs/ROADMAP.md, and docs/PRIVACY.md
 - New feature: Add documentation suite for IncusCubby [CONTRIBUTING.md]
 - gotcha: community-scripts/Incus only mirrors stable ProxmoxVE scripts; dev/new apps like surfsense and t3code live in community-scripts/DevScripts and are listed on community-scripts.org [src/incus/community.rs:1]
 - New feature: Add About & Legal tab and set license to GPL-3.0-or-later [src/main.rs]
@@ -23,6 +23,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - Published v0.1.0 release (run 44298031256) with x86_64/aarch64 AppImage, tar.gz, and SHA256SUMS.txt; updated PKGBUILD sha256sums [.github/workflows/release.yml]
 - Added private .deb and .rpm GitHub release packaging scripts (dpkg-deb and rpmbuild) without publishing to external repos or stores [packaging/linux/build-deb.sh]
 - New feature: Add .deb and .rpm packaging to GitHub release workflow [packaging/linux/build-deb.sh]
+- Ported 56-icon Lucide SVG system (ISC) into Slint desktop app: ui/icons/lucide/*.svg, CubbyTheme.ui_icon, CubbyIcon/CubbyIconButton/CubbyActionButton, and full sweeps of ui/simple.slint and ui/advanced.slint; verified with cargo test, clippy -D warnings, and cargo fmt --check [ui/theme.slint]
 
 ## Key files
 - `.gitattributes`

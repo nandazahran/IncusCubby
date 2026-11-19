@@ -11,11 +11,12 @@ import {
     UiStorageVolume,
 } from "theme.slint";
 import {
+    CubbyActionButton,
     CubbyBanner,
-    CubbyButton,
     CubbyCheckBox,
     CubbyCodeBox,
     CubbyDistroBadge,
+    CubbyIconButton,
     CubbyInput,
     CubbyMark,
     CubbyMetricCell,
@@ -107,20 +108,22 @@ component CubbyTopBar inherits Rectangle {
             spacing: 8px;
             alignment: end;
 
-            CubbyButton {
+            CubbyIconButton {
                 y: (parent.height - self.height) / 2;
+                icon: "refresh";
                 tone: "outline";
                 size: "sm";
-                label: root.busy ? "Working..." : "Refresh";
+                tooltip: root.busy ? "Working..." : "Refresh";
                 enabled: !root.busy;
                 clicked => { root.refresh(); }
             }
 
-            CubbyButton {
+            CubbyIconButton {
                 y: (parent.height - self.height) / 2;
+                icon: "settings";
                 tone: "outline";
                 size: "sm";
-                label: "Settings";
+                tooltip: "Settings";
                 active: root.active_tab == "settings" || root.active_tab == "about" || root.active_tab == "legal";
                 clicked => { root.active_tab = "settings"; }
             }
@@ -219,11 +222,12 @@ component SandboxesView inherits HorizontalLayout {
                         }
                     }
 
-                    CubbyButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
+                        icon: "plus";
                         tone: "primary";
                         size: "sm";
-                        label: "+ New";
+                        tooltip: "New sandbox";
                         clicked => { root.go_create(); }
                     }
                 }
@@ -446,10 +450,11 @@ component SandboxesView inherits HorizontalLayout {
 
             HorizontalLayout {
                 alignment: center;
-                CubbyButton {
+                CubbyActionButton {
+                    icon: "plus";
                     tone: "primary";
                     size: "md";
-                    label: "+ Create Sandbox";
+                    label: "Create";
                     clicked => { root.go_create(); }
                 }
             }
@@ -530,78 +535,83 @@ component SandboxesView inherits HorizontalLayout {
                         }
                     }
 
-                    VerticalLayout {
+                    HorizontalLayout {
+                        y: (parent.height - self.height) / 2;
                         spacing: 6px;
-                        alignment: start;
+                        alignment: end;
 
-                        HorizontalLayout {
-                            alignment: end;
-                            spacing: 6px;
+                        CubbyActionButton {
+                            icon: "terminal";
+                            tone: "primary";
+                            size: "sm";
+                            label: "Shell";
+                            enabled: root.selected_instance.is_running;
+                            clicked => { root.open_shell(root.selected_instance.name); }
+                        }
 
-                            CubbyButton {
-                                tone: "primary";
-                                size: "sm";
-                                label: "Open Shell";
-                                enabled: root.selected_instance.is_running;
-                                clicked => { root.open_shell(root.selected_instance.name); }
-                            }
+                        CubbyActionButton {
+                            icon: "code";
+                            tone: "outline";
+                            size: "sm";
+                            label: root.resolved_ide_name;
+                            clicked => { root.open_ide(root.selected_instance.workspace_path); }
+                        }
 
-                            CubbyButton {
-                                tone: "outline";
-                                size: "sm";
-                                label: "Open " + root.resolved_ide_name;
-                                clicked => { root.open_ide(root.selected_instance.workspace_path); }
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 1px;
+                            height: 18px;
+                            background: CubbyTheme.border;
+                        }
+
+                        if !root.selected_instance.is_running && !root.selected_instance.is_frozen: CubbyIconButton {
+                            icon: "play";
+                            tone: "outline";
+                            size: "sm";
+                            tooltip: "Start";
+                            enabled: !root.busy;
+                            clicked => { root.set_instance_state(root.selected_instance.name, "start"); }
+                        }
+
+                        if root.selected_instance.is_running || root.selected_instance.is_frozen: CubbyIconButton {
+                            icon: "stop";
+                            tone: "outline";
+                            size: "sm";
+                            tooltip: "Stop";
+                            enabled: !root.busy;
+                            clicked => { root.set_instance_state(root.selected_instance.name, "stop"); }
+                        }
+
+                        CubbyIconButton {
+                            icon: "restart";
+                            tone: "outline";
+                            size: "sm";
+                            tooltip: "Restart";
+                            enabled: !root.busy && root.selected_instance.is_running;
+                            clicked => { root.set_instance_state(root.selected_instance.name, "restart"); }
+                        }
+
+                        CubbyIconButton {
+                            icon: root.selected_instance.is_frozen ? "play" : "freeze";
+                            tone: "outline";
+                            size: "sm";
+                            tooltip: root.selected_instance.is_frozen ? "Unfreeze" : "Freeze";
+                            enabled: !root.busy && (root.selected_instance.is_running || root.selected_instance.is_frozen);
+                            clicked => {
+                                root.set_instance_state(
+                                    root.selected_instance.name,
+                                    root.selected_instance.is_frozen ? "unfreeze" : "freeze"
+                                );
                             }
                         }
 
-                        HorizontalLayout {
-                            alignment: end;
-                            spacing: 6px;
-
-                            if !root.selected_instance.is_running && !root.selected_instance.is_frozen: CubbyButton {
-                                tone: "outline";
-                                size: "sm";
-                                label: "Start";
-                                enabled: !root.busy;
-                                clicked => { root.set_instance_state(root.selected_instance.name, "start"); }
-                            }
-
-                            if root.selected_instance.is_running || root.selected_instance.is_frozen: CubbyButton {
-                                tone: "outline";
-                                size: "sm";
-                                label: "Stop";
-                                enabled: !root.busy;
-                                clicked => { root.set_instance_state(root.selected_instance.name, "stop"); }
-                            }
-
-                            CubbyButton {
-                                tone: "outline";
-                                size: "sm";
-                                label: "Restart";
-                                enabled: !root.busy && root.selected_instance.is_running;
-                                clicked => { root.set_instance_state(root.selected_instance.name, "restart"); }
-                            }
-
-                            CubbyButton {
-                                tone: "outline";
-                                size: "sm";
-                                label: root.selected_instance.is_frozen ? "Unfreeze" : "Freeze";
-                                enabled: !root.busy && (root.selected_instance.is_running || root.selected_instance.is_frozen);
-                                clicked => {
-                                    root.set_instance_state(
-                                        root.selected_instance.name,
-                                        root.selected_instance.is_frozen ? "unfreeze" : "freeze"
-                                    );
-                                }
-                            }
-
-                            CubbyButton {
-                                tone: "danger";
-                                size: "sm";
-                                label: "Delete";
-                                enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
-                                clicked => { root.request_delete_instance(root.selected_instance.name); }
-                            }
+                        CubbyIconButton {
+                            icon: "trash";
+                            tone: "danger";
+                            size: "sm";
+                            tooltip: "Delete";
+                            enabled: !root.busy && !root.selected_instance.is_running && !root.selected_instance.is_frozen;
+                            clicked => { root.request_delete_instance(root.selected_instance.name); }
                         }
                     }
                 }
@@ -740,9 +750,11 @@ component SandboxesView inherits HorizontalLayout {
                                 enabled: !root.busy;
                             }
 
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "copy";
                                 tone: "outline";
-                                label: "Clone";
+                                size: "md";
+                                tooltip: "Clone sandbox";
                                 enabled: !root.busy && clone-input.text != "";
                                 clicked => {
                                     root.clone_instance(root.selected_instance.name, clone-input.text);
@@ -792,9 +804,11 @@ component SandboxesView inherits HorizontalLayout {
                                 enabled: !root.busy;
                             }
 
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "check";
                                 tone: "outline";
-                                label: "Apply";
+                                size: "md";
+                                tooltip: "Apply limits";
                                 enabled: !root.busy;
                                 clicked => {
                                     root.update_instance_limits(
@@ -817,9 +831,11 @@ component SandboxesView inherits HorizontalLayout {
                     HorizontalLayout {
                         spacing: 8px;
 
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "refresh";
                             tone: "outline";
-                            label: "Upgrade All Packages";
+                            size: "md";
+                            label: "Upgrade";
                             enabled: !root.busy && root.selected_instance.is_running;
                             clicked => {
                                 root.upgrade_packages(root.selected_instance.name, root.selected_instance.image_os);
@@ -839,8 +855,10 @@ component SandboxesView inherits HorizontalLayout {
                             }
                         }
 
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "download";
                             tone: "primary";
+                            size: "md";
                             label: "Install";
                             enabled: !root.busy && root.selected_instance.is_running && pkg-input.text != "";
                             clicked => {
@@ -909,9 +927,11 @@ component SandboxesView inherits HorizontalLayout {
                                 enabled: !root.busy;
                             }
 
-                            CubbyButton {
+                            CubbyActionButton {
+                                icon: "folder";
                                 tone: "primary";
-                                label: "Host Mount";
+                                size: "md";
+                                label: "Mount";
                                 enabled: !root.busy && mount-name.text != "" && mount-host.text != "" && mount-ctr.text != "";
                                 clicked => {
                                     root.add_disk_mount(
@@ -923,9 +943,11 @@ component SandboxesView inherits HorizontalLayout {
                                 }
                             }
 
-                            CubbyButton {
+                            CubbyActionButton {
+                                icon: "plus";
                                 tone: "outline";
-                                label: "Attach Volume";
+                                size: "md";
+                                label: "Volume";
                                 enabled: !root.busy && mount-name.text != "" && mount-host.text != "" && mount-ctr.text != "";
                                 clicked => {
                                     root.attach_custom_volume(
@@ -953,10 +975,11 @@ component SandboxesView inherits HorizontalLayout {
                             meta: "disk";
                             subtitle: m.host_path + " -> " + m.container_path;
 
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "unlink";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Remove";
+                                tooltip: "Remove mount";
                                 enabled: !root.busy;
                                 clicked => { root.remove_device(root.selected_instance.name, m.name); }
                             }
@@ -991,9 +1014,11 @@ component SandboxesView inherits HorizontalLayout {
                                 enabled: !root.busy;
                             }
 
-                            CubbyButton {
+                            CubbyActionButton {
+                                icon: "plus";
                                 tone: "primary";
-                                label: "Forward Port";
+                                size: "md";
+                                label: "Forward";
                                 enabled: !root.busy && proxy-name.text != "" && proxy-host.text != "" && proxy-ctr.text != "";
                                 clicked => {
                                     root.add_proxy_device(
@@ -1023,10 +1048,11 @@ component SandboxesView inherits HorizontalLayout {
                             meta: "proxy · tcp";
                             subtitle: p.listen + " -> " + p.connect;
 
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "unlink";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Remove";
+                                tooltip: "Remove proxy";
                                 enabled: !root.busy;
                                 clicked => { root.remove_device(root.selected_instance.name, p.name); }
                             }
@@ -1067,9 +1093,11 @@ component SandboxesView inherits HorizontalLayout {
                                 }
                             }
 
-                            CubbyButton {
+                            CubbyActionButton {
+                                icon: "camera";
                                 tone: "primary";
-                                label: "Take Snapshot";
+                                size: "md";
+                                label: "Snapshot";
                                 enabled: !root.busy && snap-input.text != "";
                                 clicked => {
                                     root.create_snapshot(root.selected_instance.name, snap-input.text);
@@ -1096,18 +1124,20 @@ component SandboxesView inherits HorizontalLayout {
                             title: snap.name;
                             meta: snap.created_at;
 
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "restore";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Restore";
+                                tooltip: "Restore snapshot";
                                 enabled: !root.busy;
                                 clicked => { root.request_restore_snapshot(root.selected_instance.name, snap.name); }
                             }
 
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "trash";
                                 tone: "danger";
                                 size: "sm";
-                                label: "Delete";
+                                tooltip: "Delete snapshot";
                                 enabled: !root.busy;
                                 clicked => { root.request_delete_snapshot(root.selected_instance.name, snap.name); }
                             }
@@ -1146,18 +1176,22 @@ component SandboxesView inherits HorizontalLayout {
                             enabled: !root.busy;
                         }
 
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "upload";
                             tone: "primary";
-                            label: "Push ->";
+                            size: "md";
+                            label: "Push";
                             enabled: !root.busy && file-host.text != "" && file-ctr.text != "";
                             clicked => {
                                 root.push_instance_file(root.selected_instance.name, file-host.text, file-ctr.text);
                             }
                         }
 
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "download";
                             tone: "outline";
-                            label: "<- Pull";
+                            size: "md";
+                            label: "Pull";
                             enabled: !root.busy && file-host.text != "" && file-ctr.text != "";
                             clicked => {
                                 root.pull_instance_file(root.selected_instance.name, file-ctr.text, file-host.text);
@@ -1174,9 +1208,11 @@ component SandboxesView inherits HorizontalLayout {
                     HorizontalLayout {
                         spacing: 8px;
 
-                        CubbyButton {
+                        CubbyIconButton {
+                            icon: "refresh";
                             tone: "outline";
-                            label: "List Logs";
+                            size: "md";
+                            tooltip: "List logs";
                             enabled: !root.busy;
                             clicked => { root.refresh_instance_logs(root.selected_instance.name); }
                         }
@@ -1189,9 +1225,11 @@ component SandboxesView inherits HorizontalLayout {
                             enabled: !root.busy;
                         }
 
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "eye";
                             tone: "primary";
-                            label: "View Log";
+                            size: "md";
+                            label: "View";
                             enabled: !root.busy && root.selected_log != "";
                             clicked => { root.read_instance_log(root.selected_instance.name, root.selected_log); }
                         }
@@ -1202,7 +1240,7 @@ component SandboxesView inherits HorizontalLayout {
                         read_only: true;
                         mono: true;
                         text: root.log_content;
-                        placeholder: "Click 'List Logs' then 'View Log' to inspect instance log files.";
+                        placeholder: "Refresh logs then click View to inspect instance log files.";
                     }
                 }
             }
@@ -1332,11 +1370,12 @@ component CreateView inherits HorizontalLayout {
                             edited(q) => { root.filter_remote_aliases(q); }
                         }
 
-                        CubbyButton {
+                        CubbyIconButton {
                             y: 2px;
+                            icon: "cloud-download";
                             tone: "outline";
-                            size: "sm";
-                            label: "Fetch";
+                            size: "md";
+                            tooltip: "Fetch remote aliases";
                             enabled: !root.busy;
                             clicked => { root.fetch_remote_images(); }
                         }
@@ -1488,11 +1527,12 @@ component CreateView inherits HorizontalLayout {
                             edited(q) => { root.filter_community_apps(q); }
                         }
 
-                        CubbyButton {
+                        CubbyIconButton {
                             y: 2px;
+                            icon: "refresh";
                             tone: "outline";
-                            size: "sm";
-                            label: "Reload";
+                            size: "md";
+                            tooltip: "Reload catalog";
                             enabled: !root.busy;
                             clicked => { root.fetch_community_catalog(); }
                         }
@@ -1880,10 +1920,11 @@ component CreateView inherits HorizontalLayout {
                                 placeholder: "Optional host directory (~/projects/app)";
                                 enabled: !root.busy;
                             }
-                            CubbyButton {
+                            CubbyIconButton {
+                                icon: "folder";
                                 tone: "outline";
-                                size: "sm";
-                                label: "Browse";
+                                size: "md";
+                                tooltip: "Browse host folder";
                                 enabled: !root.busy;
                                 clicked => { root.browse_workspace_folder(); }
                             }
@@ -2022,10 +2063,11 @@ component CreateView inherits HorizontalLayout {
                         enabled: !root.busy;
                     }
 
-                    CubbyButton {
+                    CubbyIconButton {
+                        icon: "play";
                         tone: "outline";
-                        size: "sm";
-                        label: "Run in Selected";
+                        size: "md";
+                        tooltip: "Run in selected sandbox";
                         enabled: !root.busy && root.community_target_instance != "";
                         clicked => {
                             root.community_view_tab = 1;
@@ -2099,17 +2141,21 @@ component CreateView inherits HorizontalLayout {
                         : "POST /1.0/instances { name: \"" + (root.create_name != "" ? root.create_name : "...") + "\", alias: \"" + root.create_image_alias + "\" }";
                 }
 
-                CubbyButton {
+                CubbyIconButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "close";
                     tone: "outline";
-                    label: "Cancel";
+                    size: "md";
+                    tooltip: "Cancel";
                     clicked => { root.cancel_to_sandboxes(); }
                 }
 
-                CubbyButton {
+                CubbyActionButton {
                     y: (parent.height - self.height) / 2;
+                    icon: root.create_use_community ? "play" : "plus";
                     tone: "primary";
-                    label: root.create_use_community ? "Create & Run Script" : "Create Sandbox";
+                    size: "md";
+                    label: root.create_use_community ? "Deploy" : "Create";
                     enabled: !root.busy
                         && root.create_name != ""
                         && root.create_image_alias != ""
@@ -2192,10 +2238,12 @@ component InfraView inherits ScrollView {
                 }
             }
 
-            CubbyButton {
+            CubbyIconButton {
                 y: (parent.height - self.height) / 2;
+                icon: "refresh";
                 tone: "outline";
-                label: "Refresh Storage & Networks";
+                size: "md";
+                tooltip: "Refresh storage and networks";
                 enabled: !root.busy;
                 clicked => { root.refresh_infra(); }
             }
@@ -2294,9 +2342,11 @@ component InfraView inherits ScrollView {
                             enabled: !root.busy;
                         }
 
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "plus";
                             tone: "primary";
-                            label: "Create Volume";
+                            size: "md";
+                            label: "Volume";
                             enabled: !root.busy && vol-input.text != "";
                             clicked => {
                                 root.create_storage_volume(root.selected_pool, vol-input.text);
@@ -2318,10 +2368,11 @@ component InfraView inherits ScrollView {
                         title: v.pool + "/" + v.name;
                         meta: v.content_type;
 
-                        CubbyButton {
+                        CubbyIconButton {
+                            icon: "trash";
                             tone: "danger";
                             size: "sm";
-                            label: "Delete";
+                            tooltip: "Delete volume";
                             enabled: !root.busy;
                             clicked => { root.request_delete_storage_volume(v.pool, v.name); }
                         }
@@ -2367,9 +2418,11 @@ component InfraView inherits ScrollView {
                         }
                     }
 
-                    CubbyButton {
+                    CubbyActionButton {
+                        icon: "plus";
                         tone: "primary";
-                        label: "Create Bridge";
+                        size: "md";
+                        label: "Bridge";
                         enabled: !root.busy && net-name.text != "";
                         clicked => {
                             root.create_network(net-name.text, net-nat.checked);
@@ -2422,10 +2475,11 @@ component InfraView inherits ScrollView {
                             }
                         }
 
-                        if n.managed: CubbyButton {
+                        if n.managed: CubbyIconButton {
+                            icon: "trash";
                             tone: "danger";
                             size: "sm";
-                            label: "Delete";
+                            tooltip: "Delete network";
                             enabled: !root.busy;
                             clicked => { root.request_delete_network(n.name); }
                         }
@@ -2524,8 +2578,10 @@ component ProfilesView inherits ScrollView {
                     enabled: !root.busy;
                 }
 
-                CubbyButton {
+                CubbyActionButton {
+                    icon: "plus";
                     tone: "primary";
+                    size: "md";
                     label: "Create";
                     enabled: !root.busy && prof-name.text != "";
                     clicked => {
@@ -2533,9 +2589,11 @@ component ProfilesView inherits ScrollView {
                     }
                 }
 
-                CubbyButton {
+                CubbyIconButton {
+                    icon: "save";
                     tone: "outline";
-                    label: "Update";
+                    size: "md";
+                    tooltip: "Update profile";
                     enabled: !root.busy && prof-name.text != "";
                     clicked => {
                         root.save_profile(prof-name.text, prof-desc.text, prof-cpu.text, prof-mem.text, false);
@@ -2565,10 +2623,11 @@ component ProfilesView inherits ScrollView {
                     + p.memory;
                 subtitle: p.description != "" ? p.description : "No description";
 
-                CubbyButton {
+                CubbyIconButton {
+                    icon: "pencil";
                     tone: "outline";
                     size: "sm";
-                    label: "Edit";
+                    tooltip: "Edit profile";
                     enabled: !root.busy;
                     clicked => {
                         prof-name.text = p.name;
@@ -2578,10 +2637,11 @@ component ProfilesView inherits ScrollView {
                     }
                 }
 
-                if p.name != "default": CubbyButton {
+                if p.name != "default": CubbyIconButton {
+                    icon: "trash";
                     tone: "danger";
                     size: "sm";
-                    label: "Delete";
+                    tooltip: "Delete profile";
                     enabled: !root.busy;
                     clicked => { root.request_delete_profile(p.name); }
                 }
@@ -2629,17 +2689,21 @@ component ImagesView inherits VerticalLayout {
 
         HorizontalLayout {
             spacing: 8px;
-            CubbyButton {
+            CubbyActionButton {
                 y: (parent.height - self.height) / 2;
+                icon: "cloud-download";
                 tone: "outline";
-                label: "Fetch Remote Aliases";
+                size: "md";
+                label: "Fetch";
                 enabled: !root.busy;
                 clicked => { root.fetch_remote_images(); }
             }
-            CubbyButton {
+            CubbyIconButton {
                 y: (parent.height - self.height) / 2;
+                icon: "refresh";
                 tone: "primary";
-                label: "Refresh Images";
+                size: "md";
+                tooltip: "Refresh local images";
                 enabled: !root.busy;
                 clicked => { root.refresh_local_images(); }
             }
@@ -2727,20 +2791,22 @@ component ImagesView inherits VerticalLayout {
                                 }
                             }
 
-                            CubbyButton {
+                            CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "plus";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Use";
+                                tooltip: "Use image alias";
                                 enabled: !root.busy && img.alias != "";
                                 clicked => { root.use_image_alias(img.alias); }
                             }
 
-                            CubbyButton {
+                            CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "trash";
                                 tone: "danger";
                                 size: "sm";
-                                label: "Delete";
+                                tooltip: "Delete image";
                                 enabled: !root.busy;
                                 clicked => { root.request_delete_image(img.fingerprint, label-str); }
                             }
@@ -2823,11 +2889,12 @@ component ImagesView inherits VerticalLayout {
                                 }
                             }
 
-                            CubbyButton {
+                            CubbyIconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: "plus";
                                 tone: "outline";
                                 size: "sm";
-                                label: "Create";
+                                tooltip: "Create sandbox from alias";
                                 enabled: !root.busy;
                                 clicked => { root.use_image_alias(r.alias); }
                             }
@@ -2944,9 +3011,11 @@ component SettingsView inherits ScrollView {
 
                     HorizontalLayout {
                         alignment: end;
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "check";
                             tone: "primary";
-                            label: "Save Settings";
+                            size: "md";
+                            label: "Save";
                             clicked => { root.save_settings(root.preferred_terminal, root.preferred_ide); }
                         }
                     }
@@ -2993,11 +3062,12 @@ component SettingsView inherits ScrollView {
                             ? root.socket_warning
                             : "Ensure incusd is running and your Linux user belongs to the incus-admin group.";
 
-                        CubbyButton {
+                        CubbyIconButton {
                             y: (parent.height - self.height) / 2;
+                            icon: "refresh";
                             tone: "outline";
                             size: "sm";
-                            label: "Retry Socket";
+                            tooltip: "Retry socket";
                             clicked => { root.refresh(); }
                         }
                     }
@@ -3063,16 +3133,18 @@ component SettingsView inherits ScrollView {
                     HorizontalLayout {
                         spacing: 8px;
                         alignment: end;
-                        CubbyButton {
+                        CubbyIconButton {
+                            icon: "info";
                             tone: "outline";
                             size: "sm";
-                            label: "About & Privacy";
+                            tooltip: "About & Privacy";
                             clicked => { root.open_about(); }
                         }
-                        CubbyButton {
+                        CubbyIconButton {
+                            icon: "scale";
                             tone: "outline";
                             size: "sm";
-                            label: "Licenses & Credits";
+                            tooltip: "Licenses & Credits";
                             clicked => { root.open_legal(); }
                         }
                     }
@@ -3103,11 +3175,12 @@ component AboutView inherits ScrollView {
 
             HorizontalLayout {
                 spacing: 12px;
-                CubbyButton {
+                CubbyIconButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "back";
                     tone: "outline";
                     size: "sm";
-                    label: "<- Settings";
+                    tooltip: "Back to settings";
                     clicked => { root.back_settings(); }
                 }
                 VerticalLayout {
@@ -3171,22 +3244,25 @@ component AboutView inherits ScrollView {
 
                     HorizontalLayout {
                         spacing: 8px;
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "code";
                             tone: "primary";
                             size: "sm";
-                            label: "Source on GitHub";
+                            label: "GitHub";
                             clicked => { root.open_url("https://github.com/nandazahran/IncusCubby"); }
                         }
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "scale";
                             tone: "outline";
                             size: "sm";
-                            label: "Licenses & Credits";
+                            label: "Licenses";
                             clicked => { root.open_legal(); }
                         }
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "info";
                             tone: "outline";
                             size: "sm";
-                            label: "Report Issue";
+                            label: "Issue";
                             clicked => { root.open_url("https://github.com/nandazahran/IncusCubby/issues"); }
                         }
                     }
@@ -3213,10 +3289,11 @@ component AboutView inherits ScrollView {
 
                     HorizontalLayout {
                         alignment: end;
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "trash";
                             tone: "danger";
                             size: "sm";
-                            label: "Reset Settings File";
+                            label: "Reset";
                             clicked => { root.request_reset_settings(); }
                         }
                     }
@@ -3279,11 +3356,12 @@ component LegalView inherits ScrollView {
 
             HorizontalLayout {
                 spacing: 12px;
-                CubbyButton {
+                CubbyIconButton {
                     y: (parent.height - self.height) / 2;
+                    icon: "back";
                     tone: "outline";
                     size: "sm";
-                    label: "<- Settings";
+                    tooltip: "Back to settings";
                     clicked => { root.back_settings(); }
                 }
                 VerticalLayout {
@@ -3332,10 +3410,11 @@ component LegalView inherits ScrollView {
 
                     HorizontalLayout {
                         spacing: 8px;
-                        CubbyButton {
+                        CubbyActionButton {
+                            icon: "file-text";
                             tone: "primary";
                             size: "sm";
-                            label: root.show_license ? "Hide LICENSE text" : "View LICENSE text";
+                            label: root.show_license ? "Hide" : "LICENSE";
                             clicked => { root.show_license = !root.show_license; }
                         }
                     }
@@ -3418,11 +3497,17 @@ component LegalView inherits ScrollView {
                     subtitle: "Typed Unix socket errors and context propagation";
                 }
                 CubbyRow {
-                    last: true;
                     mono_title: true;
                     title: "Geist & Geist Mono";
                     meta: "SIL OFL-1.1";
                     subtitle: "Bundled precision sans-serif and monospace typography";
+                }
+                CubbyRow {
+                    last: true;
+                    mono_title: true;
+                    title: "Lucide Icons";
+                    meta: "ISC";
+                    subtitle: "Unified 2px single-color geometric SVG icon library";
                 }
             }
         }
@@ -3563,19 +3648,21 @@ export component AdvancedShell inherits VerticalLayout {
         title: "Confirm Destructive Action";
         body: root.confirm_message;
 
-        CubbyButton {
+        CubbyActionButton {
             y: (parent.height - self.height) / 2;
+            icon: "check";
             tone: "danger";
             size: "sm";
             label: "Confirm";
             enabled: !root.busy;
             clicked => { root.confirm_action(); }
         }
-        CubbyButton {
+        CubbyIconButton {
             y: (parent.height - self.height) / 2;
+            icon: "close";
             tone: "outline";
             size: "sm";
-            label: "Cancel";
+            tooltip: "Cancel";
             clicked => { root.cancel_confirm(); }
         }
     }
@@ -3585,11 +3672,12 @@ export component AdvancedShell inherits VerticalLayout {
         title: "Incus Socket Warning";
         body: root.socket_warning;
 
-        CubbyButton {
+        CubbyIconButton {
             y: (parent.height - self.height) / 2;
+            icon: "refresh";
             tone: "outline";
             size: "sm";
-            label: "Retry Socket";
+            tooltip: "Retry socket";
             enabled: !root.busy;
             clicked => { root.refresh(); }
         }

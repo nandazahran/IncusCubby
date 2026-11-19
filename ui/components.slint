@@ -142,6 +142,152 @@ export component CubbyButton inherits Rectangle {
     }
 }
 
+export component CubbyIcon inherits Image {
+    in property <string> name: "settings";
+    in property <length> icon_size: 15px;
+    in property <color> tint: CubbyTheme.ink;
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    width: root.icon_size;
+    height: root.icon_size;
+    source: CubbyTheme.ui_icon(root.name);
+    colorize: root.tint;
+    image-fit: contain;
+}
+
+export component CubbyIconButton inherits Rectangle {
+    in property <string> icon: "settings";
+    in property <string> tone: "outline"; // "primary" | "outline" | "danger" | "ghost"
+    in property <string> size: "sm";      // "sm" (28) | "md" (32)
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    in property <string> tooltip: "";
+    callback clicked();
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    width: size == "md" ? 32px : 28px;
+    height: self.width;
+    border-radius: CubbyTheme.radius_md;
+    border-width: 1px;
+    opacity: enabled ? 1.0 : 0.45;
+    accessible-role: button;
+    accessible-label: root.tooltip != "" ? root.tooltip : root.icon;
+
+    property <bool> is-primary: tone == "primary" || active;
+
+    background: is-primary
+        ? CubbyTheme.cta_bg
+        : (tone == "danger"
+            ? CubbyTheme.err_bg
+            : (tone == "ghost"
+                ? (ta.has-hover && enabled ? CubbyTheme.hover_fill : transparent)
+                : (ta.has-hover && enabled ? CubbyTheme.well : CubbyTheme.surface)));
+
+    border-color: is-primary
+        ? CubbyTheme.cta_bg
+        : (tone == "danger"
+            ? CubbyTheme.err_border
+            : (tone == "ghost" ? transparent : CubbyTheme.border));
+
+    property <color> glyph-color: root.is-primary
+        ? CubbyTheme.cta_ink
+        : (root.tone == "danger"
+            ? CubbyTheme.err
+            : (ta.has-hover && enabled ? CubbyTheme.ink : CubbyTheme.ink_secondary));
+
+    CubbyIcon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: root.icon;
+        icon_size: root.size == "md" ? 15px : 14px;
+        tint: root.glyph-color;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component CubbyActionButton inherits Rectangle {
+    in property <string> icon: "terminal";
+    in property <string> label: "";
+    in property <string> tone: "primary"; // "primary" | "outline" | "danger" | "ghost"
+    in property <string> size: "sm";      // "sm" (28) | "md" (32)
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    height: size == "md" ? 32px : 28px;
+    min-width: label-text.preferred-width + (size == "md" ? 42px : 36px);
+    border-radius: CubbyTheme.radius_md;
+    border-width: 1px;
+    opacity: enabled ? 1.0 : 0.45;
+    accessible-role: button;
+    accessible-label: root.label;
+
+    property <bool> is-primary: tone == "primary" || active;
+
+    background: is-primary
+        ? CubbyTheme.cta_bg
+        : (tone == "danger"
+            ? CubbyTheme.err_bg
+            : (tone == "ghost"
+                ? (ta.has-hover && enabled ? CubbyTheme.hover_fill : transparent)
+                : (ta.has-hover && enabled ? CubbyTheme.well : CubbyTheme.surface)));
+
+    border-color: is-primary
+        ? CubbyTheme.cta_bg
+        : (tone == "danger"
+            ? CubbyTheme.err_border
+            : (tone == "ghost" ? transparent : CubbyTheme.border));
+
+    property <color> fg-color: root.is-primary
+        ? CubbyTheme.cta_ink
+        : (root.tone == "danger"
+            ? CubbyTheme.err
+            : (root.tone == "ghost" ? CubbyTheme.ink_secondary : CubbyTheme.ink));
+
+    HorizontalLayout {
+        padding-left: root.size == "md" ? 10px : 8px;
+        padding-right: root.size == "md" ? 12px : 10px;
+        spacing: 6px;
+        alignment: center;
+
+        CubbyIcon {
+            y: (parent.height - self.height) / 2;
+            name: root.icon;
+            icon_size: root.size == "md" ? 14px : 13.5px;
+            tint: root.fg-color;
+        }
+
+        label-text := Text {
+            text: root.label;
+            font-family: CubbyTheme.font_sans;
+            font-size: root.size == "md" ? 12.5px : 12px;
+            font-weight: 500;
+            color: root.fg-color;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component CubbySegmentTrack inherits Rectangle {
     horizontal-stretch: 0;
     vertical-stretch: 0;
@@ -698,12 +844,11 @@ export component CubbySelect inherits Rectangle {
             overflow: elide;
         }
 
-        Text {
-            text: "v";
-            font-family: CubbyTheme.font_mono;
-            font-size: 10px;
-            color: CubbyTheme.ink_muted;
-            vertical-alignment: center;
+        CubbyIcon {
+            y: (parent.height - self.height) / 2;
+            name: "chevron";
+            icon_size: 13px;
+            tint: CubbyTheme.ink_muted;
         }
     }
 
