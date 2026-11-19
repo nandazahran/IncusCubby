@@ -178,6 +178,7 @@ export component SimpleShell inherits VerticalLayout {
     in-out property <string> community_search_query: "";
     in-out property <string> community_repo_filter: "all";
     in property <string> community_selected_slug: "";
+    in property <image> community_app_logo;
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_source_repo: "";
@@ -398,6 +399,7 @@ export component SimpleShell inherits VerticalLayout {
                         CubbyDistroBadge {
                             y: (parent.height - self.height) / 2;
                             distro: inst.distro_id;
+                            custom_icon: inst.logo;
                             size: "md";
                         }
 
@@ -791,6 +793,7 @@ export component SimpleShell inherits VerticalLayout {
                     CubbyDistroBadge {
                         y: (parent.height - self.height) / 2;
                         distro: root.selected_instance.distro_id;
+                        custom_icon: root.selected_instance.logo;
                         size: "md";
                     }
 
@@ -1216,6 +1219,7 @@ export component SimpleShell inherits VerticalLayout {
                         CubbyDistroBadge {
                             y: (parent.height - self.height) / 2;
                             distro: app.distro_id;
+                            custom_icon: app.logo;
                             size: "md";
                         }
 
@@ -1326,7 +1330,8 @@ export component SimpleShell inherits VerticalLayout {
 
                     CubbyDistroBadge {
                         y: (parent.height - self.height) / 2;
-                        distro: root.community_selected_slug;
+                        distro: "generic";
+                        custom_icon: root.community_app_logo;
                         size: "md";
                     }
 
@@ -1650,7 +1655,7 @@ export component SimpleShell inherits VerticalLayout {
 
                 CubbyRow { title: "Zero data collection"; meta: "0 telemetry"; subtitle: "No analytics, telemetry, crash reports, or user accounts."; }
                 CubbyRow { title: "Local socket only"; meta: "unix.socket"; subtitle: "Every sandbox call stays on /var/lib/incus/unix.socket."; }
-                CubbyRow { title: "Opt-in web fetches only"; meta: "HTTPS GET"; subtitle: "Internet runs only for Remote Images or Community Apps."; }
+                CubbyRow { title: "Opt-in web fetches only"; meta: "HTTPS GET"; subtitle: "Internet runs only for Remote Images, Community Apps & logos."; }
                 CubbyRow { last: true; title: "Minimal local config"; meta: "JSON only"; subtitle: "Stores only local UI choices; Incus holds all state."; }
 
                 CubbyCodeBox { uri: root.settings_file_path; }

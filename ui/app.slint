@@ -85,6 +85,7 @@ export component AppWindow inherits Window {
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
+    in property <image> community_app_logo;
     in property <string> community_app_name: "";
     in property <string> community_description: "";
     in property <string> community_tags: "";
@@ -224,6 +225,7 @@ export component AppWindow inherits Window {
         running_instance_names: root.running_instance_names;
         community_target_instance <=> root.community_target_instance;
         community_selected_slug: root.community_selected_slug;
+        community_app_logo: root.community_app_logo;
         community_app_name: root.community_app_name;
         community_description: root.community_description;
         community_tags: root.community_tags;
@@ -316,6 +318,7 @@ export component AppWindow inherits Window {
         community_search_query <=> root.community_search_query;
         community_repo_filter <=> root.community_repo_filter;
         community_selected_slug: root.community_selected_slug;
+        community_app_logo: root.community_app_logo;
         community_app_name: root.community_app_name;
         community_description: root.community_description;
         community_source_repo: root.community_source_repo;

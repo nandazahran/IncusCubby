@@ -1,16 +1,20 @@
 mod incus;
 mod launcher;
+mod logos;
 mod settings;
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use slint::{ComponentHandle, LogicalSize, Model, ModelRc, SharedString, VecModel, Weak};
+use slint::{
+    ComponentHandle, Image, LogicalSize, Model, ModelNotify, ModelRc, ModelTracker, SharedString,
+    VecModel, Weak,
+};
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
@@ -25,6 +29,7 @@ use crate::incus::{
     InstanceSummary, NestingMode, NetworkSummary, ProfileSummary, StoragePoolSummary,
     StorageVolumeSummary, detect_distro_id,
 };
+use crate::logos::{LogoRequest, spawn_logo_worker};
 use crate::settings::{
     AppSettings, available_ides, available_terminals, display_ide_label, display_terminal_label,
 };
@@ -263,6 +268,191 @@ struct InfraSnapshot {
     networks: Vec<NetworkSummary>,
 }
 
+#[derive(Default)]
+struct UiLogoStore {
+    images: HashMap<String, Image>,
+    requested: HashMap<String, String>,
+    community_model: Option<Rc<CommunityAppListModel>>,
+    logo_tx: Option<mpsc::UnboundedSender<LogoRequest>>,
+}
+
+thread_local! {
+    static UI_LOGO_STORE: RefCell<UiLogoStore> = RefCell::new(UiLogoStore::default());
+}
+
+struct CommunityAppListModel {
+    items: RefCell<Vec<CommunityApp>>,
+    notify: ModelNotify,
+}
+
+impl CommunityAppListModel {
+    fn new(items: Vec<CommunityApp>) -> Self {
+        Self {
+            items: RefCell::new(items),
+            notify: ModelNotify::default(),
+        }
+    }
+
+    fn set_apps(&self, apps: Vec<CommunityApp>) {
+        *self.items.borrow_mut() = apps;
+        self.notify.reset();
+    }
+
+    fn notify_slug_changed(&self, slug: &str) {
+        let idx = self.items.borrow().iter().position(|app| app.slug == slug);
+        if let Some(row) = idx {
+            self.notify.row_changed(row);
+        }
+    }
+}
+
+impl Model for CommunityAppListModel {
+    type Data = UiCommunityApp;
+
+    fn row_count(&self) -> usize {
+        self.items.borrow().len()
+    }
+
+    fn row_data(&self, row: usize) -> Option<Self::Data> {
+        let app = self.items.borrow().get(row).cloned()?;
+        let logo = lookup_or_request_logo(&app.slug, &app.logo_url);
+        Some(UiCommunityApp {
+            slug: app.slug.into(),
+            name: app.name.into(),
+            description: app.description.into(),
+            distro_id: "generic".into(),
+            logo,
+            is_dev: app.is_dev,
+        })
+    }
+
+    fn model_tracker(&self) -> &dyn ModelTracker {
+        &self.notify
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+fn lookup_or_request_logo(slug: &str, url: &str) -> Image {
+    if slug.is_empty() {
+        return Image::default();
+    }
+    UI_LOGO_STORE.with(|store| {
+        let mut store = store.borrow_mut();
+        if let Some(img) = store.images.get(slug) {
+            return img.clone();
+        }
+        let should_request = store.requested.get(slug).is_none_or(|prev| prev != url);
+        if should_request {
+            store.requested.insert(slug.to_string(), url.to_string());
+            if let Some(tx) = store.logo_tx.as_ref() {
+                let _ = tx.send(LogoRequest {
+                    slug: slug.to_string(),
+                    url: url.to_string(),
+                });
+            }
+        }
+        Image::default()
+    })
+}
+
+fn on_logo_ready_ui(ui: &AppWindow, slug: &str, img: Image) {
+    let community_model = UI_LOGO_STORE.with(|store| {
+        let mut store = store.borrow_mut();
+        store.images.insert(slug.to_string(), img.clone());
+        store.community_model.clone()
+    });
+
+    if let Some(model) = community_model {
+        model.notify_slug_changed(slug);
+    }
+
+    if ui.get_community_selected_slug().as_str() == slug {
+        ui.set_community_app_logo(img.clone());
+    }
+
+    let instances_model = ui.get_instances();
+    for row in 0..instances_model.row_count() {
+        if let Some(mut inst) = instances_model.row_data(row)
+            && inst.app_slug.as_str() == slug
+        {
+            inst.logo = img.clone();
+            instances_model.set_row_data(row, inst);
+        }
+    }
+
+    if ui.get_has_selection() {
+        let mut selected = ui.get_selected_instance();
+        if selected.app_slug.as_str() == slug {
+            selected.logo = img;
+            ui.set_selected_instance(selected);
+        }
+    }
+}
+
+fn sync_instance_logos(ui: &AppWindow, apps: &[CommunityApp]) {
+    let url_by_slug: HashMap<&str, &str> = apps
+        .iter()
+        .filter(|a| !a.logo_url.is_empty())
+        .map(|a| (a.slug.as_str(), a.logo_url.as_str()))
+        .collect();
+
+    let instances_model = ui.get_instances();
+    for row in 0..instances_model.row_count() {
+        if let Some(mut inst) = instances_model.row_data(row)
+            && !inst.app_slug.is_empty()
+        {
+            let url = url_by_slug
+                .get(inst.app_slug.as_str())
+                .copied()
+                .unwrap_or("");
+            let img = lookup_or_request_logo(inst.app_slug.as_str(), url);
+            if img.size().width > 0 && inst.logo != img {
+                inst.logo = img;
+                instances_model.set_row_data(row, inst);
+            }
+        }
+    }
+
+    if ui.get_has_selection() {
+        let mut selected = ui.get_selected_instance();
+        if !selected.app_slug.is_empty() {
+            let url = url_by_slug
+                .get(selected.app_slug.as_str())
+                .copied()
+                .unwrap_or("");
+            let img = lookup_or_request_logo(selected.app_slug.as_str(), url);
+            if img.size().width > 0 && selected.logo != img {
+                selected.logo = img;
+                ui.set_selected_instance(selected);
+            }
+        }
+    }
+
+    let selected_slug = ui.get_community_selected_slug().to_string();
+    if !selected_slug.is_empty() {
+        let url = url_by_slug
+            .get(selected_slug.as_str())
+            .copied()
+            .unwrap_or("");
+        let img = lookup_or_request_logo(&selected_slug, url);
+        if img.size().width > 0 {
+            ui.set_community_app_logo(img);
+        }
+    }
+}
+
+fn community_logo_url(community_apps: &Mutex<Vec<CommunityApp>>, slug: &str) -> String {
+    community_apps
+        .lock()
+        .expect("community catalog mutex poisoned")
+        .iter()
+        .find(|app| app.slug == slug)
+        .map_or_else(String::new, |app| app.logo_url.clone())
+}
+
 fn main() -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
     let app_settings = AppSettings::load();
@@ -272,10 +462,20 @@ fn main() -> anyhow::Result<()> {
         instances: Mutex::new(Vec::new()),
         local_images: Mutex::new(Vec::new()),
     });
+
+    let (logo_tx, logo_rx) = mpsc::unbounded_channel::<LogoRequest>();
+    let community_model = Rc::new(CommunityAppListModel::new(Vec::new()));
+    UI_LOGO_STORE.with(|store| {
+        let mut store = store.borrow_mut();
+        store.community_model = Some(Rc::clone(&community_model));
+        store.logo_tx = Some(logo_tx);
+    });
+    ui.set_community_apps(ModelRc::from(community_model));
+
     init_settings_ui(&ui, &app_settings, &catalogs);
 
     let (tx, rx) = mpsc::unbounded_channel::<BackendCommand>();
-    spawn_backend_worker(ui.as_weak(), rx, Arc::clone(&catalogs));
+    spawn_backend_worker(ui.as_weak(), rx, logo_rx, Arc::clone(&catalogs));
     wire_ui_callbacks(&ui, &tx, app_settings, &catalogs);
 
     let _ = tx.send(BackendCommand::Refresh);
@@ -330,7 +530,7 @@ fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings, catalogs: &Arc<C
         .lock()
         .expect("community catalog mutex poisoned")
         .clone();
-    apply_community_apps(ui, &apps, "", "all");
+    apply_community_apps(&apps, "", "all");
     init_about_ui(ui);
 }
 
@@ -356,6 +556,7 @@ fn init_about_ui(ui: &AppWindow) {
 fn spawn_backend_worker(
     ui_weak: Weak<AppWindow>,
     mut rx: mpsc::UnboundedReceiver<BackendCommand>,
+    logo_rx: mpsc::UnboundedReceiver<LogoRequest>,
     catalogs: Arc<CatalogCaches>,
 ) {
     std::thread::spawn(move || {
@@ -365,6 +566,16 @@ fn spawn_backend_worker(
             .expect("Failed to initialize Tokio runtime");
 
         rt.block_on(async move {
+            let logo_weak = ui_weak.clone();
+            spawn_logo_worker(logo_rx, move |slug, decoded| {
+                let weak = logo_weak.clone();
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    if let Some(img) = decoded.into_slint_image() {
+                        on_logo_ready_ui(&ui, &slug, img);
+                    }
+                });
+            });
+
             let client = IncusClient::default_socket();
             let mut poll_tick = tokio::time::interval(Duration::from_secs(3));
             poll_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -387,7 +598,8 @@ fn spawn_backend_worker(
                         let _ = weak_startup.upgrade_in_event_loop(move |ui| {
                             let query = ui.get_community_search_query().to_string();
                             let repo_filter = ui.get_community_repo_filter().to_string();
-                            apply_community_apps(&ui, &apps, &query, &repo_filter);
+                            apply_community_apps(&apps, &query, &repo_filter);
+                            sync_instance_logos(&ui, &apps);
                         });
                     }
                 });
@@ -428,9 +640,14 @@ fn spawn_backend_worker(
                                         .expect("instances mutex poisoned")
                                         .clone_from(&instances);
                                     let weak_poll = ui_weak.clone();
+                                    let catalog_poll = Arc::clone(&catalogs);
                                     let _ = weak_poll.upgrade_in_event_loop(move |ui| {
                                         if !ui.get_busy() {
-                                            apply_instances(&ui, &instances);
+                                            apply_instances(
+                                                &ui,
+                                                &instances,
+                                                &catalog_poll.community_apps,
+                                            );
                                         }
                                     });
                                 }
@@ -483,7 +700,9 @@ async fn handle_command(
                         let count = apps.len();
                         let query = ui.get_community_search_query().to_string();
                         let repo_filter = ui.get_community_repo_filter().to_string();
-                        apply_community_apps(&ui, &apps, &query, &repo_filter);
+                        UI_LOGO_STORE.with(|store| store.borrow_mut().requested.clear());
+                        apply_community_apps(&apps, &query, &repo_filter);
+                        sync_instance_logos(&ui, &apps);
                         ui.set_status_message(format!("Loaded {count} community apps").into());
                     }
                     Err(err) => {
@@ -495,6 +714,7 @@ async fn handle_command(
         }
         BackendCommand::LoadCommunityAppSpec { slug } => {
             let res = load_or_cached_spec(&slug, &catalogs.community_apps, cached_spec).await;
+            let logo_url = community_logo_url(&catalogs.community_apps, &slug);
             let weak = ui_weak.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_busy(false);
@@ -506,7 +726,9 @@ async fn handle_command(
                             CommunityRepo::DevScripts => "community-scripts/DevScripts",
                             CommunityRepo::ProxmoxVe => "community-scripts/ProxmoxVE",
                         };
+                        let logo = lookup_or_request_logo(&spec.slug, &logo_url);
                         ui.set_community_selected_slug(spec.slug.into());
+                        ui.set_community_app_logo(logo);
                         ui.set_community_app_name(spec.app_name.into());
                         ui.set_community_description(spec.description.into());
                         ui.set_community_tags(spec.tags.into());
@@ -564,10 +786,11 @@ async fn handle_command(
                     .clone_from(instances);
             }
             let weak = ui_weak.clone();
+            let catalog_done = Arc::clone(catalogs);
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_busy(false);
                 if let Ok(instances) = list_res {
-                    apply_instances(&ui, &instances);
+                    apply_instances(&ui, &instances, &catalog_done.community_apps);
                 }
                 match deploy_res {
                     Ok(out) => {
@@ -925,11 +1148,12 @@ async fn handle_command(
         .clone();
 
     let weak_done = ui_weak.clone();
+    let catalog_done = Arc::clone(catalogs);
     let _ = weak_done.upgrade_in_event_loop(move |ui| {
         ui.set_busy(false);
         match list_result {
             Ok(instances) => {
-                apply_instances(&ui, &instances);
+                apply_instances(&ui, &instances, &catalog_done.community_apps);
                 let mut warnings = Vec::new();
                 match images_res {
                     Some(Ok(images)) => {
@@ -1337,7 +1561,7 @@ fn wire_ui_callbacks(
                     .expect("instances mutex poisoned")
                     .clone();
                 ui.set_sandbox_search_query(query);
-                apply_instances(&ui, &all);
+                apply_instances(&ui, &all, &caches.community_apps);
             }
         });
     }
@@ -1945,14 +2169,20 @@ fn wire_ui_callbacks(
                     .expect("community catalog mutex poisoned")
                     .clone();
                 let repo_filter = ui.get_community_repo_filter().to_string();
-                apply_community_apps(&ui, &apps, query.as_str(), &repo_filter);
+                apply_community_apps(&apps, query.as_str(), &repo_filter);
             }
         });
     }
 
     {
+        let weak = ui.as_weak();
         let tx = tx.clone();
+        let caches = Arc::clone(catalogs);
         ui.on_select_community_app(move |slug| {
+            if let Some(ui) = weak.upgrade() {
+                let logo_url = community_logo_url(&caches.community_apps, slug.as_str());
+                ui.set_community_app_logo(lookup_or_request_logo(slug.as_str(), &logo_url));
+            }
             let _ = tx.send(BackendCommand::LoadCommunityAppSpec {
                 slug: slug.to_string(),
             });
@@ -2052,7 +2282,33 @@ fn clear_confirm(ui: &AppWindow, pending: &Rc<RefCell<Option<PendingConfirm>>>) 
     ui.set_confirm_message("".into());
 }
 
-fn apply_instances(ui: &AppWindow, instances: &[InstanceSummary]) {
+fn collect_instance_logo_urls(
+    instances: &[InstanceSummary],
+    community_apps: &Mutex<Vec<CommunityApp>>,
+) -> HashMap<String, String> {
+    let needed: HashSet<&str> = instances
+        .iter()
+        .filter(|inst| !inst.app_slug.is_empty())
+        .map(|inst| inst.app_slug.as_str())
+        .collect();
+    if needed.is_empty() {
+        return HashMap::new();
+    }
+    let guard = community_apps
+        .lock()
+        .expect("community catalog mutex poisoned");
+    guard
+        .iter()
+        .filter(|app| !app.logo_url.is_empty() && needed.contains(app.slug.as_str()))
+        .map(|app| (app.slug.clone(), app.logo_url.clone()))
+        .collect()
+}
+
+fn apply_instances(
+    ui: &AppWindow,
+    instances: &[InstanceSummary],
+    community_apps: &Mutex<Vec<CommunityApp>>,
+) {
     let prev_name = if ui.get_has_selection() {
         Some(ui.get_selected_instance().name.to_string())
     } else {
@@ -2080,6 +2336,7 @@ fn apply_instances(ui: &AppWindow, instances: &[InstanceSummary]) {
         running_names.first().cloned().unwrap_or_default()
     };
 
+    let app_logo_urls = collect_instance_logo_urls(instances, community_apps);
     let needle = ui.get_sandbox_search_query().trim().to_ascii_lowercase();
     let ui_rows: Vec<UiInstance> = instances
         .iter()
@@ -2091,7 +2348,10 @@ fn apply_instances(ui: &AppWindow, instances: &[InstanceSummary]) {
                 || inst.ip.to_ascii_lowercase().contains(&needle)
         })
         .cloned()
-        .map(to_ui_instance)
+        .map(|inst| {
+            let url = app_logo_urls.get(&inst.app_slug).map_or("", String::as_str);
+            to_ui_instance(inst, url)
+        })
         .collect();
     let visible_count = ui_rows.len();
     let next_idx = prev_name
@@ -2140,7 +2400,7 @@ fn apply_remote_aliases(
                 format!("{} · {}", img.os, img.release)
             };
             UiRemoteAlias {
-                distro_id: detect_distro_id("", &img.os, &img.alias).into(),
+                distro_id: detect_distro_id(&img.os, &img.alias).into(),
                 is_cached: cached_aliases.contains(&img.alias.to_ascii_lowercase()),
                 alias: img.alias.clone().into(),
                 subtitle: subtitle.into(),
@@ -2151,9 +2411,9 @@ fn apply_remote_aliases(
     ui.set_remote_aliases(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
-fn apply_community_apps(ui: &AppWindow, apps: &[CommunityApp], query: &str, repo_filter: &str) {
+fn apply_community_apps(apps: &[CommunityApp], query: &str, repo_filter: &str) {
     let needle = query.trim().to_ascii_lowercase();
-    let rows: Vec<UiCommunityApp> = apps
+    let filtered: Vec<CommunityApp> = apps
         .iter()
         .filter(|a| match repo_filter {
             "incus" => !a.is_dev,
@@ -2166,15 +2426,12 @@ fn apply_community_apps(ui: &AppWindow, apps: &[CommunityApp], query: &str, repo
                 || a.name.to_ascii_lowercase().contains(&needle)
                 || a.description.to_ascii_lowercase().contains(&needle)
         })
-        .map(|a| UiCommunityApp {
-            distro_id: detect_distro_id(&a.slug, "", "").into(),
-            slug: a.slug.clone().into(),
-            name: a.name.clone().into(),
-            description: a.description.clone().into(),
-            is_dev: a.is_dev,
-        })
+        .cloned()
         .collect();
-    ui.set_community_apps(ModelRc::from(Rc::new(VecModel::from(rows))));
+    let model = UI_LOGO_STORE.with(|store| store.borrow().community_model.clone());
+    if let Some(model) = model {
+        model.set_apps(filtered);
+    }
 }
 
 fn apply_images(ui: &AppWindow, images: &[ImageSummary], query: &str) {
@@ -2189,7 +2446,7 @@ fn apply_images(ui: &AppWindow, images: &[ImageSummary], query: &str) {
         })
         .map(|img| UiImage {
             short_fingerprint: img.fingerprint.chars().take(12).collect::<String>().into(),
-            distro_id: detect_distro_id("", &img.description, &img.alias).into(),
+            distro_id: detect_distro_id(&img.description, &img.alias).into(),
             fingerprint: img.fingerprint.clone().into(),
             alias: img.alias.clone().into(),
             description: img.description.clone().into(),
@@ -2350,7 +2607,12 @@ fn to_shared_string_model(items: Vec<String>) -> ModelRc<SharedString> {
     ModelRc::from(Rc::new(VecModel::from(shared)))
 }
 
-fn to_ui_instance(inst: InstanceSummary) -> UiInstance {
+fn to_ui_instance(inst: InstanceSummary, logo_url: &str) -> UiInstance {
+    let logo = if inst.app_slug.is_empty() {
+        Image::default()
+    } else {
+        lookup_or_request_logo(&inst.app_slug, logo_url)
+    };
     let snaps: Vec<UiSnapshot> = inst
         .snapshots
         .into_iter()
@@ -2396,6 +2658,7 @@ fn to_ui_instance(inst: InstanceSummary) -> UiInstance {
         image_os: inst.image_os.into(),
         app_slug: inst.app_slug.into(),
         distro_id: inst.distro_id.into(),
+        logo,
         ip: inst.ip.into(),
         net_iface: inst.net_iface.into(),
         memory: inst.memory.into(),

@@ -44,6 +44,7 @@ pub struct CommunityApp {
     pub slug: String,
     pub name: String,
     pub description: String,
+    pub logo_url: String,
     pub repo: CommunityRepo,
     pub is_dev: bool,
 }
@@ -116,6 +117,7 @@ pub fn curated_community_apps() -> Vec<CommunityApp> {
         slug: slug.to_string(),
         name: name.to_string(),
         description: String::new(),
+        logo_url: String::new(),
         repo: CommunityRepo::Incus,
         is_dev: false,
     })
@@ -190,10 +192,20 @@ pub fn parse_github_tree_json(
             name: slug_to_display_name(&slug),
             slug,
             description: String::new(),
+            logo_url: String::new(),
             repo,
             is_dev: repo == CommunityRepo::DevScripts,
         })
         .collect())
+}
+
+fn sanitize_logo_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        String::new()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -204,6 +216,8 @@ struct SiteScriptEntry {
     name: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    logo: String,
     #[serde(default)]
     is_dev: bool,
     #[serde(default)]
@@ -271,6 +285,7 @@ pub fn parse_community_org_html(html: &str) -> Option<Vec<CommunityApp>> {
                     slug: item.slug,
                     name: display_name,
                     description: item.description.trim().to_string(),
+                    logo_url: sanitize_logo_url(&item.logo),
                     repo,
                     is_dev: item.is_dev || repo == CommunityRepo::DevScripts,
                 },
@@ -751,6 +766,7 @@ mod tests {
                     slug: "caddy".to_string(),
                     name: "Caddy".to_string(),
                     description: String::new(),
+                    logo_url: String::new(),
                     repo: CommunityRepo::Incus,
                     is_dev: false,
                 },
@@ -758,6 +774,7 @@ mod tests {
                     slug: "code-server".to_string(),
                     name: "Code Server".to_string(),
                     description: String::new(),
+                    logo_url: String::new(),
                     repo: CommunityRepo::Incus,
                     is_dev: false,
                 },
@@ -765,6 +782,7 @@ mod tests {
                     slug: "my_app".to_string(),
                     name: "My App".to_string(),
                     description: String::new(),
+                    logo_url: String::new(),
                     repo: CommunityRepo::Incus,
                     is_dev: false,
                 },
@@ -774,7 +792,7 @@ mod tests {
 
     #[test]
     fn parse_community_org_html_extracts_stable_and_dev_apps() {
-        let inner_json = r#"34:["$","$c",null,{"initData":{"scripts":[{"slug":"surfsense","name":"SurfSense","description":"NotebookLM alternative","is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/surfsense.sh)\""},{"slug":"t3code","name":"T3 Code","description":"Agent surface","is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/t3code.sh)\""},{"slug":"docker","name":"Docker","description":"Containers","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"var_os='debian' bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/docker.sh)\""},{"slug":"old-vm","name":"Old VM","description":"Skip VM","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/old-vm.sh)\""},{"slug":"gone","name":"Gone","description":"Deleted","is_dev":false,"is_deleted":true,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/gone.sh)\""}]}}]"#;
+        let inner_json = r#"34:["$","$c",null,{"initData":{"scripts":[{"slug":"surfsense","name":"SurfSense","description":"NotebookLM alternative","logo":"https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/surfsense.webp","is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/surfsense.sh)\""},{"slug":"t3code","name":"T3 Code","description":"Agent surface","logo":"https://cdn.jsdelivr.net/gh/example/t3code/icon.svg","is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/t3code.sh)\""},{"slug":"docker","name":"Docker","description":"Containers","logo":"http://insecure.example.com/docker.png","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"var_os='debian' bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/docker.sh)\""},{"slug":"old-vm","name":"Old VM","description":"Skip VM","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/old-vm.sh)\""},{"slug":"gone","name":"Gone","description":"Deleted","is_dev":false,"is_deleted":true,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/gone.sh)\""}]}}]"#;
         let escaped = serde_json::to_string(inner_json).unwrap();
         let html =
             format!("<html><body><script>self.__next_f.push([1,{escaped}])</script></body></html>");
@@ -783,13 +801,22 @@ mod tests {
         assert_eq!(apps.len(), 3);
         assert_eq!(apps[0].slug, "docker");
         assert_eq!(apps[0].repo, CommunityRepo::Incus);
+        assert_eq!(apps[0].logo_url, "");
         assert!(!apps[0].is_dev);
         assert_eq!(apps[1].slug, "surfsense");
         assert_eq!(apps[1].name, "SurfSense");
+        assert_eq!(
+            apps[1].logo_url,
+            "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/surfsense.webp"
+        );
         assert_eq!(apps[1].repo, CommunityRepo::DevScripts);
         assert!(apps[1].is_dev);
         assert_eq!(apps[2].slug, "t3code");
         assert_eq!(apps[2].name, "T3 Code");
+        assert_eq!(
+            apps[2].logo_url,
+            "https://cdn.jsdelivr.net/gh/example/t3code/icon.svg"
+        );
         assert_eq!(apps[2].repo, CommunityRepo::DevScripts);
     }
 
@@ -806,6 +833,7 @@ mod tests {
             .find(|a| a.slug == "surfsense")
             .expect("surfsense should be in catalog");
         assert_eq!(surf.repo, CommunityRepo::DevScripts);
+        assert!(surf.logo_url.starts_with("https://"));
         let surf_spec = fetch_community_app_spec(&surf.slug, surf.repo, &surf.description)
             .await
             .expect("fetch surfsense spec");
@@ -816,6 +844,7 @@ mod tests {
             .find(|a| a.slug == "t3code")
             .expect("t3code should be in catalog");
         assert_eq!(t3.repo, CommunityRepo::DevScripts);
+        assert!(t3.logo_url.starts_with("https://"));
         let t3_spec = fetch_community_app_spec(&t3.slug, t3.repo, &t3.description)
             .await
             .expect("fetch t3code spec");

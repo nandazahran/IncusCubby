@@ -393,7 +393,7 @@ impl From<ApiInstance> for InstanceSummary {
             api.config.get("image.release").map(String::as_str),
             "-",
         );
-        let distro_id = detect_distro_id(&app_slug, &image_os, &image).to_string();
+        let distro_id = detect_distro_id(&image_os, &image).to_string();
 
         let (net_iface, ip) = api
             .state
@@ -571,22 +571,7 @@ impl From<ApiInstance> for InstanceSummary {
 }
 
 #[must_use]
-pub fn detect_distro_id(app_slug: &str, image_os: &str, alias_or_image: &str) -> &'static str {
-    let app = app_slug.trim().to_ascii_lowercase();
-    if !app.is_empty() {
-        match app.as_str() {
-            "docker" => return "docker",
-            "ollama" => return "ollama",
-            "forgejo" => return "forgejo",
-            "postgresql" | "postgres" => return "postgresql",
-            "nginx" => return "nginx",
-            "redis" => return "redis",
-            "caddy" => return "caddy",
-            "gitea" => return "gitea",
-            _ => {}
-        }
-    }
-
+pub fn detect_distro_id(image_os: &str, alias_or_image: &str) -> &'static str {
     for candidate in [image_os, alias_or_image] {
         let lower = candidate.trim().to_ascii_lowercase();
         if lower.is_empty() {
@@ -690,12 +675,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detect_distro_id_prioritizes_app_slug_then_os_then_alias() {
-        assert_eq!(detect_distro_id("docker", "debian", "debian/12"), "docker");
-        assert_eq!(detect_distro_id("postgres", "debian", ""), "postgresql");
-        assert_eq!(detect_distro_id("", "Ubuntu", "ubuntu/24.04"), "ubuntu");
-        assert_eq!(detect_distro_id("", "openSUSE Tumbleweed", ""), "opensuse");
-        assert_eq!(detect_distro_id("", "", "rockylinux/9"), "rocky");
-        assert_eq!(detect_distro_id("", "unknown", "custom"), "generic");
+    fn detect_distro_id_matches_os_then_alias() {
+        assert_eq!(detect_distro_id("Debian", "debian/12"), "debian");
+        assert_eq!(detect_distro_id("Ubuntu", "ubuntu/24.04"), "ubuntu");
+        assert_eq!(detect_distro_id("openSUSE Tumbleweed", ""), "opensuse");
+        assert_eq!(detect_distro_id("", "rockylinux/9"), "rocky");
+        assert_eq!(detect_distro_id("unknown", "custom"), "generic");
     }
 }
