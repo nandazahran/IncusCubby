@@ -16,7 +16,6 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - Fetch both OS distro and community app logos dynamically from selfhst/icons and community-scripts.org with XDG disk cache and automatic dominant HSV accent extraction instead of bundling third-party SVGs [src/logos.rs]
 
 ## Notes
-- gotcha: community-scripts/Incus only mirrors stable ProxmoxVE scripts; dev/new apps like surfsense and t3code live in community-scripts/DevScripts and are listed on community-scripts.org [src/incus/community.rs:1]
 - New feature: Add About & Legal tab and set license to GPL-3.0-or-later [src/main.rs]
 - Implemented Doop Precision Instrument UI in Slint across ui/theme.slint, ui/components.slint, ui/advanced.slint, ui/simple.slint, and ui/app.slint with bundled Geist/Geist Mono TTFs and 18 local distro/app SVG icons [ui/theme.slint]
 - gotcha: IncusCubby uses let_chains (Rust 1.88+), cmake (aws-lc-sys), libfontconfig1-dev (yeslogic-fontconfig-sys), and Slint GPL-3.0-only in deny.toml [.github/workflows/ci.yml]
@@ -26,6 +25,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - New feature: Add .deb and .rpm packaging to GitHub release workflow [packaging/linux/build-deb.sh]
 - Ported 56-icon Lucide SVG system (ISC) into Slint desktop app: ui/icons/lucide/*.svg, CubbyTheme.ui_icon, CubbyIcon/CubbyIconButton/CubbyActionButton, and full sweeps of ui/simple.slint and ui/advanced.slint; verified with cargo test, clippy -D warnings, and cargo fmt --check [ui/theme.slint]
 - Published v0.1.1 release (run 44426078199) with x86_64/aarch64 AppImage, tar.gz, deb, rpm, and SHA256SUMS.txt; updated PKGBUILD sha256sums in f8df7e4 [.github/workflows/release.yml]
+- Added .github/scripts/release-notes.py for commit-based changelog release notes and updated v0.1.0/v0.1.1 GitHub releases [.github/scripts/release-notes.py]
 
 ## Key files
 - `.gitattributes`

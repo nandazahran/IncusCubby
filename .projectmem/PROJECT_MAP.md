@@ -20,6 +20,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - [deny.toml](file:///home/nanda/Dokumen/GitHub/IncusCubby/deny.toml) — `cargo-deny` GPLv3-compatible license, ban, and source policy
 - [.github/workflows/ci.yml](file:///home/nanda/Dokumen/GitHub/IncusCubby/.github/workflows/ci.yml) — Linux CI (`fmt`, `clippy`, `test`, packaging check, `cargo-deny`) with non-code `paths-ignore`
 - [.github/workflows/release.yml](file:///home/nanda/Dokumen/GitHub/IncusCubby/.github/workflows/release.yml) — tagged `v*` + manual Linux `x86_64`/`aarch64` `.tar.gz`, `.AppImage`, `.deb`, and `.rpm` GitHub release pipeline
+- [.github/scripts/release-notes.py](file:///home/nanda/Dokumen/GitHub/IncusCubby/.github/scripts/release-notes.py) — generates commit-categorized GitHub release notes (What's New, Bug Fixes, Packaging/CI/Docs) and SHA256SUMS verification instructions
 - [packaging/linux/build-appimage.sh](file:///home/nanda/Dokumen/GitHub/IncusCubby/packaging/linux/build-appimage.sh) — portable AppImage packager alongside `build-deb.sh`, `build-rpm.sh`, `.desktop`, 512x512 PNG icon, and local `PKGBUILD`
 
 ## Relationships

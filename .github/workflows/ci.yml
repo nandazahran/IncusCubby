@@ -48,6 +48,8 @@ jobs:
           bash -n packaging/linux/build-appimage.sh
           bash -n packaging/linux/build-deb.sh
           bash -n packaging/linux/build-rpm.sh
+          python3 .github/scripts/release-notes.py --self-test
+          python3 .github/scripts/release-notes.py --tag HEAD --repo nandazahran/IncusCubby >/dev/null
 
   licenses:
     runs-on: ubuntu-latest
