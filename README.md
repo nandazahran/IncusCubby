@@ -11,7 +11,7 @@ IncusCubby talks directly to the local Incus 1.0 REST API over its Unix domain s
 - **Direct Unix Socket Client**: Communicates with `incusd` over `/var/lib/incus/unix.socket` using `hyper` + `hyperlocal` with async `/1.0/operations/{id}/wait` handling and automatic `Incus Socket Warning` diagnostics if permissions or the daemon are missing.
 - **Live Telemetry & Lifecycle**: Polls `/1.0/instances?recursion=2` every 3 seconds when idle, showing status (`Running`, `Stopped`, `Frozen`), IPv4 address, memory usage/limits, CPU seconds, root disk usage, network RX/TX counters, and process counts. Supports `Start`, `Stop`, `Restart`, `Freeze`/`Unfreeze`, CoW `Clone`, live CPU/memory limit edits, and inline-confirmed `Delete`.
 - **Developer Workflow Integration**:
-  - **Shell & IDE Launchers**: Opens an interactive root shell (`incus exec <name> -- su -l root`) in your configured or auto-detected terminal emulator (`alacritty`, `kitty`, `foot`, `wezterm`, `konsole`, `gnome-terminal`, `xfce4-terminal`, `xterm`, `x-terminal-emulator`), and opens mounted workspaces in **VSCodium/VS Code** or **Zed**.
+  - **Shell & IDE Launchers**: Opens an interactive root shell (`incus exec <name> -- su -l root`) in your configured or auto-detected terminal emulator (`ghostty`, `alacritty`, `kitty`, `foot`, `wezterm`, `konsole`, `gnome-terminal`, `xfce4-terminal`, `xterm`, `x-terminal-emulator`), and opens mounted workspaces in your configured or auto-detected editor (`codium`, `code`, `zed`, `zeditor`, `kate`, `subl`, `hx`, `nvim`, `emacs`, or custom command).
   - **Workspace & Custom Disk Mounts**: Attaches host directories with `shift: "true"` ID-mapped ownership (default `/workspace`) or custom Incus storage volumes, plus `proxy` port-forwarding devices (`127.0.0.1:<host_port>` to `127.0.0.1:<container_port>`).
   - **OS-Aware Package Actions**: Runs non-interactive package upgrades and validated package installs via `/1.0/instances/{name}/exec` for Debian/Ubuntu (`apt-get`), Alpine (`apk`), Arch Linux (`pacman`), Fedora/RHEL-family (`dnf`), and openSUSE (`zypper`).
 - **Containers, VMs, Cloud-Init & Snapshots**: Create `container` or `virtual-machine` instances from local or `images.linuxcontainers.org` simplestreams aliases, pass `cloud-init.user-data`, apply profiles, and take/restore/delete snapshots.
@@ -60,13 +60,13 @@ Linux system dependencies, repository layout, test commands, and packaging steps
 
 1. Ensure `incusd` is running and your user belongs to `incus-admin`.
 2. Launch `cargo run --release` (or the compiled `target/release/incus-cubby` binary).
-3. Use the top-level tabs:
+3. Switch between **Simple** and **Advanced** UI modes (and **Dark** / **Light** themes) in the header, or navigate the Advanced views:
    - **Sandboxes**: Select an instance to inspect telemetry, start/stop/restart/freeze, open a shell or IDE, clone, edit CPU/RAM limits, upgrade/install packages, manage disk mounts and proxy ports, take/restore snapshots, view logs, or push/pull files.
    - **Create**: Switch between **Official Images (LinuxContainers)** (`container` or `virtual-machine`, presets or fetched `images.linuxcontainers.org` aliases, CPU/memory/profiles, `/workspace` bind-mount, `cloud-init.user-data`) and **Community Scripts (community-scripts/Incus)** (search/filter catalog, preview `ct`/`install` scripts, deploy new containers or run in existing ones).
    - **Storage & Networks**: View pool capacity, create/delete custom volumes, create/delete managed bridge networks (with IPv4/IPv6 NAT toggle), and inspect DHCP leases.
    - **Profiles**: Create, update, or delete non-`default` Incus profiles with CPU and memory limits.
    - **Images**: Inspect and delete locally cached Incus base images.
-   - **Settings**: Persist preferred terminal emulator and IDE to `$XDG_CONFIG_HOME/incus-cubby/settings.json` (or `~/.config/incus-cubby/settings.json`).
+   - **Settings / About / Legal**: Persist preferred terminal emulator, preferred/custom IDE, UI mode (`simple_mode`), and theme (`light_theme`) to `$XDG_CONFIG_HOME/incus-cubby/settings.json` (or `~/.config/incus-cubby/settings.json`), and view license and attribution notices.
 
 ## Documentation
 

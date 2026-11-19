@@ -6,8 +6,9 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 ## Structure
 - [Cargo.toml](file:///home/nanda/Dokumen/GitHub/IncusCubby/Cargo.toml) — Rust 2024 manifest (`slint`, `tokio`, `hyper`, `hyperlocal`, `reqwest`, `serde`, `thiserror`, `anyhow`)
 - [build.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/build.rs) — compiles Slint UI markup
-- [ui/app.slint](file:///home/nanda/Dokumen/GitHub/IncusCubby/ui/app.slint) — standard-widget `TabWidget` GUI (Sandboxes, Create Sandbox, Images, Settings, inline confirmations & socket warning)
+- [ui/app.slint](file:///home/nanda/Dokumen/GitHub/IncusCubby/ui/app.slint) — Precision Instrument Slint shell (`ui/theme.slint`, `ui/components.slint`, `ui/simple.slint`, `ui/advanced.slint`, bundled fonts & Lucide icons)
 - [src/main.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/main.rs) — Slint main thread + background Tokio worker (3s polling, async REST commands, `upgrade_in_event_loop`)
+- [src/logos.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/logos.rs) — async OS/app logo fetcher, `$XDG_CACHE_HOME/incus-cubby/logos/` cache, image decoder, and badge accent extractor
 - [src/incus/mod.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/mod.rs) — Incus module exports
 - [src/incus/models.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/models.rs) — Incus 1.0 REST API request/response structs and UI summary mapping
 - [src/incus/client.rs](file:///home/nanda/Dokumen/GitHub/IncusCubby/src/incus/client.rs) — `hyperlocal` Unix socket client (instances, VMs, clone, limits, state, devices/proxies, snapshots, images, profiles, exec)

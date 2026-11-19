@@ -9,11 +9,11 @@ Observed dev environment: Linux desktop with `rustc 1.98.0`, `edition = "2024"`,
 ## Design decisions
 
 > [!NOTE]
-> IncusCubby follows a local-first, single-binary design using standard Slint widgets and direct Unix socket REST calls. No background daemon of its own or external database is introduced; Incus itself remains the single source of truth.
+> IncusCubby follows a local-first, single-binary design using custom Precision Instrument Slint components and direct Unix socket REST calls. No background daemon of its own or external database is introduced; Incus itself remains the single source of truth.
 
 - **Direct Unix socket REST over CLI wrapping**: All state queries and lifecycle actions go through `hyperlocal` -> `/var/lib/incus/unix.socket` (`IncusClient`). Only interactive terminal attachment shells out (`incus exec <name> -- su -l root`).
 - **`GET` + `PUT InstancePut` over `PATCH`**: Incus rejects `null` device entries in `PATCH /1.0/instances/{name}`, so device removal, disk/proxy attachment, and live limit edits read-modify-write the full `InstancePut` (and similarly `ProfilePut` for profiles).
-- **`std-widgets.slint` over custom theming**: Standard Slint widgets keep the UI maintainable and responsive while custom visual styling/theming remains deferred.
+- **Custom Precision Instrument Slint UI**: Styled components (`ui/theme.slint`, `ui/components.slint`, `ui/simple.slint`, `ui/advanced.slint`) with Geist/Geist Mono fonts, Lucide icons, Simple/Advanced modes, and Dark Graphite / Light Studio themes.
 - **ID-mapped bind mounts (`shift: "true"`)**: Host workspace mounts default to `shift: "true"` at `/workspace` so unprivileged containers can read/write host project files without manual UID remapping.
 
 ---
@@ -26,7 +26,7 @@ Observed dev environment: Linux desktop with `rustc 1.98.0`, `edition = "2024"`,
 | R2 | Incus Go `nil` slices/maps serialize as JSON `null` | `serde_json` deserialization failure on empty `config`, `devices`, `profiles`, `addresses` | `null_to_default` deserializer on all nullable collections; `i64` for signed/negative memory fields. |
 | R3 | `PATCH` device removal rejected by Incus | Unable to detach mounts or proxy devices | Always use `GET` + `PUT` with `InstancePut` / `ProfilePut`, preserving unrelated config and devices. |
 | R4 | Host filesystem lacks ID-mapped mount (`shift: "true"`) support | Mount attachment fails on older kernels/filesystems | Surface exact `IncusError::Api` message in the status bar; custom storage volumes remain available as an alternative. |
-| R5 | Cloud-init ignored on non-`/cloud` images | `cloud-init.user-data` config stored on instance but never executed | UI GroupBox explicitly labels cloud-init as `"Optional Cloud-Init User Data (for /cloud images)"`. |
+| R5 | Cloud-init ignored on non-`/cloud` images | `cloud-init.user-data` config stored on instance but never executed | Create form explicitly labels cloud-init as `"Optional Cloud-Init User Data (for /cloud images)"`. |
 | R6 | Package manager differs or OS metadata absent | Upgrade/install action cannot infer command | `packages.rs` covers Debian/Ubuntu, Alpine, Arch, Fedora/Alma/Rocky/CentOS, and openSUSE; unsupported OS values return a clear error without executing anything. |
 | R7 | 3-second polling races with user action | UI refreshes overwrite busy indicator or stale state | Polling updates `AppWindow` via `upgrade_in_event_loop` only when `!ui.get_busy()` and state changed. |
 | R8 | Accidental destructive click (delete instance/snapshot/network/volume/profile/image) | Irreversible data loss | All destructive actions gate behind `pending_confirm` and the inline `Confirm Action` banner; deleting the `"default"` profile is blocked in both UI and client. |
@@ -42,7 +42,7 @@ flowchart LR
   P1 --> P2["P2 Launchers & Mounts"]
   P2 --> P3["P3 DistroShelf/BoxBuddyRS Parity"]
   P3 --> P4["P4 Incus Web UI & Clippy Hardening"]
-  P4 --> P5["P5 Next / Deferred"]
+  P4 --> P5["P5 UI Overhaul, Packaging & CI"]
 ```
 
 ### P0 — Scaffold (Done)
@@ -64,9 +64,9 @@ flowchart LR
 - Storage pools + custom volume CRUD/attach, networks + DHCP leases + NAT bridge creation, profile CRUD, instance logs viewer, file push/pull, container/VM type toggle.
 - Strict `clippy::pedantic` + `unsafe_code = "warn"` lints enabled cleanly across the crate.
 
-### P5 — Packaging, CI/CD & Next
-- Custom visual styling and theming (`ui/theme.slint`, `ui/components.slint`, `ui/simple.slint`, `ui/advanced.slint`) implemented.
-- Distro packaging (`.desktop`, AppImage builder, `PKGBUILD`), `deny.toml` license gate, and GitHub Actions CI + tagged release workflows implemented.
+### P5 — UI Overhaul, Packaging & CI
+- Custom Precision Instrument Slint UI (`ui/theme.slint`, `ui/components.slint`, `ui/simple.slint`, `ui/advanced.slint`), Lucide icons, Simple/Advanced modes, and dynamic OS/app logo fetching (`src/logos.rs`) implemented.
+- Distro packaging (`.desktop`, AppImage via `build-appimage.sh`, `.deb` via `build-deb.sh`, `.rpm` via `build-rpm.sh`, local `PKGBUILD`), `deny.toml` license gate, `.github/scripts/release-notes.py`, and GitHub Actions CI + tagged release workflows implemented.
 - Configurable Incus socket path / remote contexts remains deferred beyond local `/var/lib/incus/unix.socket`.
 
 ---
@@ -75,6 +75,6 @@ flowchart LR
 
 | Scope | Automated | Manual |
 |---|---|---|
-| Core & Client | `cargo test --locked` (28 passing tests across `client.rs`, `infra.rs`, `packages.rs`, `remote_images.rs`, `settings.rs` using mock `hyper` Unix sockets and pure unit tests). | — |
+| Core & Client | `cargo test --locked` (47 passing tests, 3 ignored across `client.rs`, `infra.rs`, `community.rs`, `packages.rs`, `remote_images.rs`, `logos.rs`, `settings.rs` using mock `hyper` Unix sockets and pure unit tests). | — |
 | Lint & Format | `cargo fmt --all --check` and `cargo clippy --all-targets --locked -- -D warnings`. | — |
 | Live Incus E2E | `cargo test --locked live_incus_full_lifecycle_smoke -- --ignored --nocapture` against `/var/lib/incus/unix.socket`. | Verify UI tabs, inline socket warning (`incusd` stopped or non-`incus-admin` user), terminal/IDE spawning, and VM vs container creation on desktop. |

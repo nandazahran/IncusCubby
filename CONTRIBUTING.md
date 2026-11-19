@@ -28,17 +28,20 @@ cargo run --release
 
 - [`Cargo.toml`](Cargo.toml): Crate manifest (`incus-cubby`), dependencies, and strict `clippy::pedantic` + `unsafe_code = "warn"` lint configuration.
 - [`build.rs`](build.rs): Compiles `ui/app.slint` via `slint_build::compile`.
-- [`ui/app.slint`](ui/app.slint): Slint `std-widgets` GUI (`AppWindow` with 6 top-level tabs, inline socket warning, and inline destructive-action confirmation banner).
+- [`ui/app.slint`](ui/app.slint): Precision Instrument Slint `AppWindow` shell dispatching between [`ui/simple.slint`](ui/simple.slint) and [`ui/advanced.slint`](ui/advanced.slint) using [`ui/theme.slint`](ui/theme.slint) and [`ui/components.slint`](ui/components.slint).
 - [`src/main.rs`](src/main.rs): Slint main event loop, `BackendCommand` mpsc dispatch, 3-second polling Tokio worker, and `upgrade_in_event_loop` UI state synchronization.
-- [`src/incus/mod.rs`](src/incus/mod.rs): Module exports for the Incus client, models, infra, packages, and remote image fetcher.
+- [`src/incus/mod.rs`](src/incus/mod.rs): Module exports for the Incus client, models, infra, packages, community scripts, and remote image fetcher.
 - [`src/incus/client.rs`](src/incus/client.rs): `IncusClient` (`hyper` + `hyperlocal` over `/var/lib/incus/unix.socket`), instance lifecycle, CoW clone, limits, disk/proxy devices, snapshots, images, profiles, exec, and mock-socket unit tests.
+- [`src/incus/community.rs`](src/incus/community.rs): `community-scripts/Incus` catalog fetcher, `ct/` metadata parser, and REST-API container runner builder.
 - [`src/incus/infra.rs`](src/incus/infra.rs): Storage pools, custom volumes, networks & DHCP leases, profile CRUD, instance log listing/reading, and file push/pull over `/1.0/instances/{name}/files`.
 - [`src/incus/models.rs`](src/incus/models.rs): Incus 1.0 REST API request/response structs, `null_to_default` deserialization helper, and UI summary mapping (`InstanceSummary`, `ImageSummary`, `ProfileSummary`).
 - [`src/incus/packages.rs`](src/incus/packages.rs): OS-aware upgrade/install argv builders (`apt-get`, `apk`, `pacman`, `dnf`, `zypper`) with strict package token validation.
 - [`src/incus/remote_images.rs`](src/incus/remote_images.rs): Preset aliases and `reqwest` simplestreams index parser for `https://images.linuxcontainers.org/streams/v1/images.json`.
-- [`src/settings.rs`](src/settings.rs): XDG JSON preferences (`$XDG_CONFIG_HOME/incus-cubby/settings.json` or `~/.config/incus-cubby/settings.json`) and `PATH` discovery for terminals and IDEs.
-- [`src/launcher.rs`](src/launcher.rs): External terminal (`incus exec <name> -- su -l root`) and IDE (`codium`/`code`, `zed`/`zeditor`) process launchers.
+- [`src/logos.rs`](src/logos.rs): Async distro and community-app logo fetcher, `$XDG_CACHE_HOME/incus-cubby/logos/` cache, image decoder, and badge accent extractor.
+- [`src/settings.rs`](src/settings.rs): XDG JSON preferences (`preferred_terminal`, `preferred_ide`, `simple_mode`, `light_theme`) in `$XDG_CONFIG_HOME/incus-cubby/settings.json` (or `~/.config/incus-cubby/settings.json`) and `PATH` discovery.
+- [`src/launcher.rs`](src/launcher.rs): External terminal (`incus exec <name> -- su -l root`) and brand-agnostic IDE launcher (auto-detected editors or user-configured command).
 - [`packaging/linux/`](packaging/linux): `.desktop` entry, 512x512 PNG icon, AppImage/`.deb`/`.rpm` builders (`build-appimage.sh`, `build-deb.sh`, `build-rpm.sh`), and local Arch/CachyOS `PKGBUILD`.
+- [`.github/scripts/release-notes.py`](.github/scripts/release-notes.py): Commit-categorized GitHub release notes generator.
 - [`deny.toml`](deny.toml): `cargo-deny` GPLv3-compatible dependency license, ban, and source policy.
 
 ## Checks
@@ -54,6 +57,8 @@ desktop-file-validate packaging/linux/io.github.nandazahran.incuscubby.desktop
 bash -n packaging/linux/build-appimage.sh
 bash -n packaging/linux/build-deb.sh
 bash -n packaging/linux/build-rpm.sh
+python3 .github/scripts/release-notes.py --self-test
+python3 .github/scripts/release-notes.py --tag HEAD --repo nandazahran/IncusCubby >/dev/null
 ```
 
 `Cargo.toml` enables `clippy::all` and `clippy::pedantic` as warnings and sets `unsafe_code = "warn"`, so `-D warnings` treats any lint regression as a hard failure.
