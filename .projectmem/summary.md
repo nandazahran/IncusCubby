@@ -13,6 +13,7 @@ Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC develope
 - Use Linux-only GitHub Actions CI (with non-code paths-ignore and cargo-deny) and x86_64/aarch64 AppImage+tarball release workflow modeled on KineAnchor [.github/workflows/]
 - Standardize UI iconography on single-pack Lucide monochrome SVGs (CubbyIcon, CubbyIconButton, CubbyActionButton) across Doop design system and future Slint UI to replace wordy utility and row-action buttons [ui/components.slint]
 - Fetch community-scripts app logos dynamically from community-scripts.org logo URLs with lazy ListView loading and XDG disk cache instead of bundling third-party app SVGs [src/logos.rs]
+- Unify CubbyMark and app icon on clean isometric cubby SVG (shell, orange sandbox cell, > _ prompt) without inner bezel ring or top-right dot across Doop, Slint UI, and Linux packaging [ui/components.slint]
 
 ## Notes
 - gotcha: community-scripts/Incus only mirrors stable ProxmoxVE scripts; dev/new apps like surfsense and t3code live in community-scripts/DevScripts and are listed on community-scripts.org [src/incus/community.rs:1]

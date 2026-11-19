@@ -9,38 +9,19 @@ export component CubbyMark inherits Rectangle {
     width: size == "lg" ? 44px : (size == "md" ? 28px : 22px);
     height: self.width;
     border-radius: size == "lg" ? CubbyTheme.radius_lg : (size == "md" ? 5px : CubbyTheme.radius_sm);
-    background: CubbyTheme.surface;
+    background: CubbyTheme.bg;
     border-width: 1px;
     border-color: CubbyTheme.border;
 
-    property <length> svg-size: size == "lg" ? 28px : (size == "md" ? 19px : 15px);
-
-    Rectangle {
-        width: root.svg-size;
-        height: root.svg-size;
+    Image {
+        width: root.size == "lg" ? 34px : (root.size == "md" ? 22px : 17px);
+        height: self.width;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-
-        Path {
-            width: 100%;
-            height: 100%;
-            viewbox-width: 32;
-            viewbox-height: 32;
-            commands: "M11 7.5H8.5A2.5 2.5 0 0 0 6 10V23.5A2.5 2.5 0 0 0 8.5 26H23.5A2.5 2.5 0 0 0 26 23.5V10A2.5 2.5 0 0 0 23.5 7.5H21";
-            stroke: CubbyTheme.ink;
-            stroke-width: root.size == "lg" ? 2.2px : (root.size == "md" ? 1.6px : 1.35px);
-            stroke-line-cap: round;
-            fill: transparent;
-        }
-
-        Rectangle {
-            x: parent.width * (11.5 / 32.0);
-            y: parent.height * (12.0 / 32.0);
-            width: parent.width * (9.0 / 32.0);
-            height: parent.height * (9.0 / 32.0);
-            border-radius: root.size == "lg" ? 2px : 1.5px;
-            background: CubbyTheme.accent;
-        }
+        source: CubbyTheme.is_light
+            ? @image-url("icons/cubbymark-light.svg")
+            : @image-url("icons/cubbymark-dark.svg");
+        image-fit: contain;
     }
 }
 
