@@ -23,7 +23,9 @@ use crate::incus::community::{
     curated_community_apps, fetch_community_app_spec, fetch_community_catalog, fetch_install_func,
 };
 use crate::incus::packages::{install_command, package_manager_label, upgrade_command};
-use crate::incus::remote_images::{RemoteImage, default_preset_images, fetch_remote_images};
+use crate::incus::remote_images::{
+    RemoteImage, fetch_remote_images, load_cached_images, save_cached_images,
+};
 use crate::incus::{
     BridgeNat, CreateInstanceParams, ExecOutput, ImageSummary, IncusClient, IncusError,
     InstanceSummary, NestingMode, NetworkSummary, ProfileSummary, StoragePoolSummary,
@@ -538,7 +540,7 @@ fn main() -> anyhow::Result<()> {
     let app_settings = AppSettings::load();
     let catalogs = Arc::new(CatalogCaches {
         community_apps: Mutex::new(curated_community_apps()),
-        remote_images: Mutex::new(default_preset_images()),
+        remote_images: Mutex::new(load_cached_images().unwrap_or_default()),
         instances: Mutex::new(Vec::new()),
         local_images: Mutex::new(Vec::new()),
     });
@@ -696,6 +698,30 @@ fn spawn_backend_worker(
                             let repo_filter = ui.get_community_repo_filter().to_string();
                             apply_community_apps(&apps, &query, &repo_filter);
                             sync_instance_logos(&ui, &apps);
+                        });
+                    }
+                });
+            }
+            {
+                let weak_startup = ui_weak.clone();
+                let catalog_startup = Arc::clone(&catalogs);
+                tokio::spawn(async move {
+                    if let Ok(imgs) = fetch_remote_images().await
+                        && !imgs.is_empty()
+                    {
+                        save_cached_images(&imgs).await;
+                        catalog_startup
+                            .remote_images
+                            .lock()
+                            .expect("remote images mutex poisoned")
+                            .clone_from(&imgs);
+                        let local_imgs = catalog_startup
+                            .local_images
+                            .lock()
+                            .expect("local images mutex poisoned")
+                            .clone();
+                        let _ = weak_startup.upgrade_in_event_loop(move |ui| {
+                            apply_fetched_remote_aliases(&ui, &imgs, &local_imgs);
                         });
                     }
                 });
@@ -970,9 +996,10 @@ async fn handle_command(
                 .lock()
                 .expect("local images mutex poisoned")
                 .clone();
-            if let Ok(ref imgs) = res
+            if let Ok(imgs) = &res
                 && !imgs.is_empty()
             {
+                save_cached_images(imgs).await;
                 catalogs
                     .remote_images
                     .lock()
@@ -984,18 +1011,7 @@ async fn handle_command(
                 ui.set_busy(false);
                 match res {
                     Ok(imgs) if !imgs.is_empty() => {
-                        let count = imgs.len();
-                        let query = ui.get_remote_search_query().to_string();
-                        UI_LOGO_STORE.with(|store| {
-                            store
-                                .borrow_mut()
-                                .requested
-                                .retain(|k, _| !k.starts_with("os-"));
-                        });
-                        apply_remote_aliases(&ui, &imgs, &local_imgs, &query);
-                        ui.set_status_message(
-                            format!("Loaded {count} remote image aliases").into(),
-                        );
+                        apply_fetched_remote_aliases(&ui, &imgs, &local_imgs);
                     }
                     Ok(_) => ui.set_status_message("No matching remote images found".into()),
                     Err(err) => ui.set_status_message(format!("Remote fetch failed: {err}").into()),
@@ -2526,6 +2542,18 @@ fn apply_instances(
     ui.set_status_is_idle(true);
     ui.set_status_message(format!("{total_count} sandbox(es)").into());
     select_row(ui, next_idx);
+}
+
+fn apply_fetched_remote_aliases(ui: &AppWindow, imgs: &[RemoteImage], local_imgs: &[ImageSummary]) {
+    let query = ui.get_remote_search_query().to_string();
+    UI_LOGO_STORE.with(|store| {
+        store
+            .borrow_mut()
+            .requested
+            .retain(|key, _| !key.starts_with("os-"));
+    });
+    apply_remote_aliases(ui, imgs, local_imgs, &query);
+    ui.set_status_message(format!("Loaded {} remote image aliases", imgs.len()).into());
 }
 
 fn apply_remote_aliases(

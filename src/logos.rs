@@ -172,17 +172,17 @@ pub fn extract_accent_rgb(rgba: &[u8]) -> Option<[u8; 3]> {
 }
 
 #[must_use]
-pub fn cache_dir() -> Option<PathBuf> {
+pub fn app_cache_dir() -> Option<PathBuf> {
     if let Some(xdg) = env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(xdg).join("incus-cubby").join("logos"));
+        return Some(PathBuf::from(xdg).join("incus-cubby"));
     }
     let home = env::var_os("HOME").filter(|v| !v.is_empty())?;
-    Some(
-        PathBuf::from(home)
-            .join(".cache")
-            .join("incus-cubby")
-            .join("logos"),
-    )
+    Some(PathBuf::from(home).join(".cache").join("incus-cubby"))
+}
+
+#[must_use]
+pub fn cache_dir() -> Option<PathBuf> {
+    app_cache_dir().map(|dir| dir.join("logos"))
 }
 
 fn cache_path(dir: &Path, slug: &str) -> Option<PathBuf> {

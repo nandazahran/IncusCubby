@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const SIMPLESTREAMS_URL: &str = "https://images.linuxcontainers.org/streams/v1/images.json";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteImage {
     pub alias: String,
     pub os: String,
@@ -33,71 +34,55 @@ struct SimplestreamsProduct {
     variant: Option<String>,
 }
 
-#[cfg(test)]
-fn default_preset_aliases() -> Vec<String> {
-    vec![
-        "debian/12".to_string(),
-        "debian/13".to_string(),
-        "ubuntu/24.04".to_string(),
-        "ubuntu/26.04".to_string(),
-        "alpine/3.24".to_string(),
-        "archlinux".to_string(),
-        "fedora/44".to_string(),
-    ]
+fn cache_file() -> Option<PathBuf> {
+    crate::logos::app_cache_dir().map(|dir| {
+        dir.join(format!("remote-images-{}.json", std::env::consts::ARCH))
+    })
+}
+
+fn load_cached_images_from(path: &std::path::Path) -> Option<Vec<RemoteImage>> {
+    let images = std::fs::read_to_string(path).ok()?;
+    let images = serde_json::from_str::<Vec<RemoteImage>>(&images).ok()?;
+    (!images.is_empty()).then_some(images)
 }
 
 #[must_use]
-pub fn default_preset_images() -> Vec<RemoteImage> {
-    vec![
-        RemoteImage {
-            alias: "debian/12".to_string(),
-            os: "Debian".to_string(),
-            release: "bookworm, LTS default".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "debian/13".to_string(),
-            os: "Debian".to_string(),
-            release: "trixie, testing".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "ubuntu/24.04".to_string(),
-            os: "Ubuntu".to_string(),
-            release: "noble, LTS".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "ubuntu/26.04".to_string(),
-            os: "Ubuntu".to_string(),
-            release: "resolute".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "alpine/3.24".to_string(),
-            os: "Alpine".to_string(),
-            release: "3.24, minimal musl".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "archlinux".to_string(),
-            os: "Archlinux".to_string(),
-            release: "rolling, pacman".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "fedora/44".to_string(),
-            os: "Fedora".to_string(),
-            release: "44, dnf5".to_string(),
-            variant: "default".to_string(),
-        },
-        RemoteImage {
-            alias: "opensuse/tumbleweed".to_string(),
-            os: "openSUSE".to_string(),
-            release: "rolling, zypper".to_string(),
-            variant: "default".to_string(),
-        },
-    ]
+pub fn load_cached_images() -> Option<Vec<RemoteImage>> {
+    load_cached_images_from(&cache_file()?)
+}
+
+pub async fn save_cached_images(images: &[RemoteImage]) {
+    if images.is_empty() {
+        return;
+    }
+    let Some(path) = cache_file() else {
+        return;
+    };
+    save_cached_images_to(images, &path).await;
+}
+
+async fn save_cached_images_to(images: &[RemoteImage], path: &std::path::Path) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if tokio::fs::create_dir_all(parent).await.is_err() {
+        return;
+    }
+    let Ok(bytes) = serde_json::to_vec(images) else {
+        return;
+    };
+    let tmp_name = path.file_name().and_then(|name| name.to_str()).map_or_else(
+        || format!("remote-images.{}.tmp", std::process::id()),
+        |name| format!("{name}.{}.tmp", std::process::id()),
+    );
+    let tmp_path = parent.join(tmp_name);
+    if tokio::fs::write(&tmp_path, bytes).await.is_err() {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return;
+    }
+    if tokio::fs::rename(&tmp_path, path).await.is_err() {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+    }
 }
 
 fn map_host_arch(host_arch: &str) -> &str {
@@ -197,20 +182,36 @@ pub async fn fetch_remote_images() -> anyhow::Result<Vec<RemoteImage>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn default_presets_match_expected_list() {
-        assert_eq!(
-            default_preset_aliases(),
-            vec![
-                "debian/12",
-                "debian/13",
-                "ubuntu/24.04",
-                "ubuntu/26.04",
-                "alpine/3.24",
-                "archlinux",
-                "fedora/44",
-            ]
-        );
+    #[tokio::test]
+    async fn cache_round_trip_and_corrupt_fallback() {
+        let cache_root =
+            std::env::temp_dir().join(format!("incus-cubby-test-{}", std::process::id()));
+        let cache_dir = cache_root.join("incus-cubby");
+        let path = cache_dir.join(format!(
+            "remote-images-{}.json",
+            std::env::consts::ARCH
+        ));
+
+        let sample = vec![
+            RemoteImage {
+                alias: "debian/12".to_string(),
+                os: "Debian".to_string(),
+                release: "bookworm".to_string(),
+                variant: "default".to_string(),
+            },
+            RemoteImage {
+                alias: "archlinux".to_string(),
+                os: "Archlinux".to_string(),
+                release: "current".to_string(),
+                variant: "default".to_string(),
+            },
+        ];
+        save_cached_images_to(&sample, &path).await;
+        assert_eq!(load_cached_images_from(&path), Some(sample));
+
+        std::fs::write(&path, b"not json").expect("write corrupt cache");
+        assert!(load_cached_images_from(&path).is_none());
+        let _ = std::fs::remove_dir_all(&cache_root);
     }
 
     #[test]
