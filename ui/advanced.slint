@@ -1,6 +1,7 @@
 import { ListView, ScrollView } from "std-widgets.slint";
 import {
     CubbyTheme,
+    CubbyOsLogos,
     UiCommunityApp,
     UiImage,
     UiInstance,
@@ -30,16 +31,23 @@ import {
     CubbyStatusDot,
     CubbyTag,
     CubbyTextArea,
+    CubbyNavItem,
+    CubbyResourceBar,
+    CubbySearchField,
 } from "components.slint";
 
 component CubbyTopBar inherits Rectangle {
-    in-out property <string> active_tab: "sandboxes";
-    in property <bool> socket_connected: false;
+    in-out property <bool> sidebar_collapsed: false;
+    in property <string> active_tab: "sandboxes";
+    in property <bool> create_use_community: false;
+    in-out property <string> search_text: "";
     in property <bool> busy: false;
     in property <bool> simple_mode: false;
 
     callback refresh();
     callback toggle_simple_mode(bool);
+    callback toggle_sidebar_collapsed(bool);
+    callback search_edited(string);
 
     height: 48px;
     background: CubbyTheme.surface;
@@ -48,92 +56,63 @@ component CubbyTopBar inherits Rectangle {
         padding-left: 16px;
         padding-right: 16px;
         spacing: 12px;
-        alignment: space-between;
 
-        HorizontalLayout {
-            spacing: 10px;
-            alignment: start;
-
-            CubbyMark {
-                y: (parent.height - self.height) / 2;
-                size: "sm";
-            }
-
-            Text {
-                text: "IncusCubby";
-                font-family: CubbyTheme.font_sans;
-                font-size: 14.5px;
-                font-weight: 600;
-                color: CubbyTheme.ink;
-                vertical-alignment: center;
-            }
-
-            CubbyStatusDot {
-                y: (parent.height - self.height) / 2;
-                tone: root.socket_connected ? "live" : "err";
-                label: root.socket_connected ? "unix.socket" : "unix.socket denied";
-            }
-        }
-
-        CubbySegmentTrack {
+        CubbyIconButton {
             y: (parent.height - self.height) / 2;
-
-            CubbySegmentOption {
-                label: "Sandboxes";
-                active: root.active_tab == "sandboxes";
-                clicked => { root.active_tab = "sandboxes"; }
-            }
-            CubbySegmentOption {
-                label: "Create";
-                active: root.active_tab == "create";
-                clicked => { root.active_tab = "create"; }
-            }
-            CubbySegmentOption {
-                label: "Storage & Net";
-                active: root.active_tab == "infra";
-                clicked => { root.active_tab = "infra"; }
-            }
-            CubbySegmentOption {
-                label: "Profiles";
-                active: root.active_tab == "profiles";
-                clicked => { root.active_tab = "profiles"; }
-            }
-            CubbySegmentOption {
-                label: "Images";
-                active: root.active_tab == "images";
-                clicked => { root.active_tab = "images"; }
-            }
+            icon: "panel-left";
+            tone: "ghost";
+            size: "sm";
+            tooltip: "Toggle sidebar";
+            clicked => { root.toggle_sidebar_collapsed(!root.sidebar_collapsed); }
         }
 
-        HorizontalLayout {
-            spacing: 8px;
-            alignment: end;
+        CubbyMark {
+            y: (parent.height - self.height) / 2;
+            size: "sm";
+        }
 
-            CubbyIconButton {
-                y: (parent.height - self.height) / 2;
-                icon: "refresh";
-                tone: "outline";
-                size: "sm";
-                tooltip: root.busy ? "Working..." : "Refresh";
-                enabled: !root.busy;
-                clicked => { root.refresh(); }
-            }
+        Text {
+            text: "IncusCubby";
+            font-family: CubbyTheme.font_sans;
+            font-size: 14.5px;
+            font-weight: 600;
+            color: CubbyTheme.ink;
+            vertical-alignment: center;
+        }
 
-            CubbyIconButton {
-                y: (parent.height - self.height) / 2;
-                icon: "settings";
-                tone: "outline";
-                size: "sm";
-                tooltip: "Settings";
-                active: root.active_tab == "settings" || root.active_tab == "about" || root.active_tab == "legal";
-                clicked => { root.active_tab = "settings"; }
-            }
+        if root.active_tab == "sandboxes" || root.active_tab == "create" || root.active_tab == "images": CubbySearchField {
+            y: (parent.height - self.height) / 2;
+            horizontal-stretch: 1;
+            max-width: 420px;
+            text <=> root.search_text;
+            placeholder: root.active_tab == "sandboxes"
+                ? "Filter sandboxes"
+                : (root.active_tab == "images"
+                    ? "Filter cached images"
+                    : (root.create_use_community
+                        ? "Search apps (docker, ollama...)"
+                        : "Filter aliases (ubuntu, alpine...)"));
+            edited(q) => { root.search_edited(q); }
+        }
 
-            CubbyModeSwitch {
-                y: (parent.height - self.height) / 2;
-                is_simple: root.simple_mode;
-                select_mode(simple) => { root.toggle_simple_mode(simple); }
-            }
+        if root.active_tab != "sandboxes" && root.active_tab != "create" && root.active_tab != "images": Rectangle {
+            horizontal-stretch: 1;
+        }
+
+        CubbyIconButton {
+            y: (parent.height - self.height) / 2;
+            icon: "refresh";
+            tone: "outline";
+            size: "sm";
+            tooltip: root.busy ? "Working..." : "Refresh";
+            enabled: !root.busy;
+            clicked => { root.refresh(); }
+        }
+
+        CubbyModeSwitch {
+            y: (parent.height - self.height) / 2;
+            is_simple: root.simple_mode;
+            select_mode(simple) => { root.toggle_simple_mode(simple); }
         }
     }
 
@@ -149,7 +128,6 @@ component SandboxesView inherits HorizontalLayout {
     in property <bool> socket_connected: false;
     in property <[UiInstance]> instances: [];
     in property <int> total_instance_count: 0;
-    in property <string> running_count_summary: "";
     in property <bool> has_selection: false;
     in property <UiInstance> selected_instance;
     in-out property <string> sandbox_search_query: "";
@@ -245,26 +223,6 @@ component SandboxesView inherits HorizontalLayout {
                 }
             }
 
-            // Search
-            Rectangle {
-                height: 52px;
-
-                CubbyInput {
-                    x: 14px;
-                    y: 10px;
-                    width: parent.width - 28px;
-                    text <=> root.sandbox_search_query;
-                    placeholder: "Filter sandboxes";
-                    edited(q) => { root.filter_sandboxes(q); }
-                }
-
-                Rectangle {
-                    y: parent.height - 1px;
-                    width: parent.width;
-                    height: 1px;
-                    background: CubbyTheme.border;
-                }
-            }
 
             // List
             Rectangle {
@@ -383,31 +341,6 @@ component SandboxesView inherits HorizontalLayout {
                 }
             }
 
-            // Sidebar footer
-            Rectangle {
-                height: 36px;
-
-                Rectangle {
-                    y: 0px;
-                    width: parent.width;
-                    height: 1px;
-                    background: CubbyTheme.border;
-                }
-
-                HorizontalLayout {
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    alignment: space-between;
-
-                    Text {
-                        text: root.running_count_summary;
-                        font-family: CubbyTheme.font_mono;
-                        font-size: 10.5px;
-                        color: CubbyTheme.ink_muted;
-                        vertical-alignment: center;
-                    }
-                }
-            }
         }
 
         Rectangle {
@@ -1415,7 +1348,7 @@ component CreateView inherits HorizontalLayout {
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
-    in-out property <string> create_image_alias: "debian/12";
+    in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
     in-out property <string> create_profiles: "default";
@@ -1443,6 +1376,9 @@ component CreateView inherits HorizontalLayout {
     in property <bool> busy: false;
 
     property <int> community_view_tab: 0; // 0: script preview, 1: deploy output
+    property <bool> has-selection: root.create_use_community
+        ? root.community_selected_slug != ""
+        : root.create_image_alias != "";
 
     callback filter_remote_aliases(string);
     callback fetch_remote_images();
@@ -1454,10 +1390,11 @@ component CreateView inherits HorizontalLayout {
     callback deploy_community_app(string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
     callback cancel_to_sandboxes();
+    callback clear_community_selection();
 
     // Left Source & Catalog Sidebar
     Rectangle {
-        width: 304px;
+        width: root.has-selection ? 304px : parent.width;
         background: CubbyTheme.bg;
 
         VerticalLayout {
@@ -1490,7 +1427,7 @@ component CreateView inherits HorizontalLayout {
                 }
             }
 
-            Rectangle {
+            if root.has-selection: Rectangle {
                 height: 40px;
 
                 CubbySegmentTrack {
@@ -1516,40 +1453,93 @@ component CreateView inherits HorizontalLayout {
                 }
             }
 
-            if !root.create_use_community: VerticalLayout {
-                vertical-stretch: 1;
+            if !root.has-selection: Rectangle {
+                height: 48px;
 
-                Rectangle {
-                    height: 44px;
-                    HorizontalLayout {
-                        padding-left: 14px;
-                        padding-right: 14px;
-                        spacing: 6px;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 10px;
 
-                        CubbyInput {
-                            y: 2px;
-                            horizontal-stretch: 1;
-                            text <=> root.remote_search_query;
-                            placeholder: "Filter aliases (ubuntu, alpine...)";
-                            edited(q) => { root.filter_remote_aliases(q); }
+                    CubbySegmentTrack {
+                        y: (parent.height - self.height) / 2;
+
+                        CubbySegmentOption {
+                            label: "Official Images";
+                            active: !root.create_use_community;
+                            clicked => { root.create_use_community = false; }
                         }
-
-                        CubbyIconButton {
-                            y: 2px;
-                            icon: "cloud-download";
-                            tone: "outline";
-                            size: "md";
-                            tooltip: "Fetch remote aliases";
-                            enabled: !root.busy;
-                            clicked => { root.fetch_remote_images(); }
+                        CubbySegmentOption {
+                            label: "Community Scripts";
+                            active: root.create_use_community;
+                            clicked => {
+                                root.create_use_community = true;
+                                root.create_type = "container";
+                            }
                         }
                     }
+
+                    if root.create_use_community: CubbySegmentTrack {
+                        y: (parent.height - self.height) / 2;
+
+                        CubbySegmentOption {
+                            label: "All";
+                            active: root.community_repo_filter == "all";
+                            clicked => {
+                                root.community_repo_filter = "all";
+                                root.filter_community_apps(root.community_search_query);
+                            }
+                        }
+                        CubbySegmentOption {
+                            label: "Incus";
+                            active: root.community_repo_filter == "incus";
+                            clicked => {
+                                root.community_repo_filter = "incus";
+                                root.filter_community_apps(root.community_search_query);
+                            }
+                        }
+                        CubbySegmentOption {
+                            label: "DevScripts";
+                            active: root.community_repo_filter == "devscripts";
+                            clicked => {
+                                root.community_repo_filter = "devscripts";
+                                root.filter_community_apps(root.community_search_query);
+                            }
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    if !root.create_use_community: CubbyIconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: "cloud-download";
+                        tone: "outline";
+                        size: "md";
+                        tooltip: "Fetch remote aliases";
+                        enabled: !root.busy;
+                        clicked => { root.fetch_remote_images(); }
+                    }
+
+                    if root.create_use_community: CubbyIconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: "refresh";
+                        tone: "outline";
+                        size: "md";
+                        tooltip: "Reload catalog";
+                        enabled: !root.busy;
+                        clicked => { root.fetch_community_catalog(); }
+                    }
                 }
+            }
+
+            if !root.create_use_community: VerticalLayout {
+                vertical-stretch: 1;
 
                 Rectangle {
                     height: 1px;
                     background: CubbyTheme.border;
                 }
+
 
                 Rectangle {
                     vertical-stretch: 1;
@@ -1677,72 +1667,10 @@ component CreateView inherits HorizontalLayout {
                 vertical-stretch: 1;
 
                 Rectangle {
-                    height: 44px;
-                    HorizontalLayout {
-                        padding-left: 14px;
-                        padding-right: 14px;
-                        spacing: 6px;
-
-                        CubbyInput {
-                            y: 2px;
-                            horizontal-stretch: 1;
-                            text <=> root.community_search_query;
-                            placeholder: "Search apps (docker, ollama...)";
-                            edited(q) => { root.filter_community_apps(q); }
-                        }
-
-                        CubbyIconButton {
-                            y: 2px;
-                            icon: "refresh";
-                            tone: "outline";
-                            size: "md";
-                            tooltip: "Reload catalog";
-                            enabled: !root.busy;
-                            clicked => { root.fetch_community_catalog(); }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    height: 38px;
-                    CubbySegmentTrack {
-                        x: 14px;
-                        width: parent.width - 28px;
-
-                        CubbySegmentOption {
-                            horizontal-stretch: 1;
-                            label: "All";
-                            active: root.community_repo_filter == "all";
-                            clicked => {
-                                root.community_repo_filter = "all";
-                                root.filter_community_apps(root.community_search_query);
-                            }
-                        }
-                        CubbySegmentOption {
-                            horizontal-stretch: 1;
-                            label: "Incus";
-                            active: root.community_repo_filter == "incus";
-                            clicked => {
-                                root.community_repo_filter = "incus";
-                                root.filter_community_apps(root.community_search_query);
-                            }
-                        }
-                        CubbySegmentOption {
-                            horizontal-stretch: 1;
-                            label: "DevScripts";
-                            active: root.community_repo_filter == "devscripts";
-                            clicked => {
-                                root.community_repo_filter = "devscripts";
-                                root.filter_community_apps(root.community_search_query);
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
                     height: 1px;
                     background: CubbyTheme.border;
                 }
+
 
                 Rectangle {
                     vertical-stretch: 1;
@@ -1758,7 +1686,7 @@ component CreateView inherits HorizontalLayout {
                         color: CubbyTheme.ink_muted;
                     }
 
-                    if root.community_apps.length > 0: ListView {
+                    if root.community_apps.length > 0 && root.has-selection: ListView {
                         width: 100%;
                         height: 100%;
 
@@ -1843,6 +1771,74 @@ component CreateView inherits HorizontalLayout {
                             }
                         }
                     }
+
+                    if root.community_apps.length > 0 && !root.has-selection: ListView {
+                        width: 100%;
+                        height: 100%;
+
+                        for row in Math.ceil(root.community_apps.length / 3): Rectangle {
+                            height: 84px;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                padding-top: 6px;
+                                padding-bottom: 6px;
+                                spacing: 12px;
+
+                                for col in 3: card := Rectangle {
+                                    property <int> app-index: Math.min(row * 3 + col, Math.max(0, root.community_apps.length - 1));
+                                    property <bool> has-app: row * 3 + col < root.community_apps.length;
+                                    visible: has-app;
+                                    horizontal-stretch: 1;
+                                    border-radius: CubbyTheme.radius_md;
+                                    border-width: 1px;
+                                    border-color: root.community_apps[card.app-index].slug == root.community_selected_slug
+                                        ? CubbyTheme.accent
+                                        : CubbyTheme.border;
+                                    background: card-ta.has-hover ? CubbyTheme.hover_fill : CubbyTheme.surface;
+
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 10px;
+
+                                        CubbyDistroBadge {
+                                            y: (parent.height - self.height) / 2;
+                                            logo: root.community_apps[card.app-index].logo;
+                                            size: "md";
+                                        }
+
+                                        Text {
+                                            text: root.community_apps[card.app-index].name;
+                                            horizontal-stretch: 1;
+                                            font-family: CubbyTheme.font_sans;
+                                            font-size: 13px;
+                                            font-weight: 500;
+                                            color: CubbyTheme.ink;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+
+                                        if root.community_apps[card.app-index].is_dev: CubbyTag {
+                                            y: (parent.height - self.height) / 2;
+                                            tone: "warn";
+                                            text: "dev";
+                                        }
+                                    }
+
+                                    card-ta := TouchArea {
+                                        enabled: card.has-app && !root.busy;
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            root.community_view_tab = 0;
+                                            root.select_community_app(root.community_apps[card.app-index].slug);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -1888,6 +1884,7 @@ component CreateView inherits HorizontalLayout {
     // Right Builder Column
     VerticalLayout {
         horizontal-stretch: 1;
+        visible: root.has-selection;
 
         VerticalLayout {
             vertical-stretch: 1;
@@ -1897,10 +1894,192 @@ component CreateView inherits HorizontalLayout {
             padding-bottom: 14px;
             spacing: 12px;
 
+            CubbyActionButton {
+                icon: "back";
+                tone: "outline";
+                size: "sm";
+                label: root.create_use_community ? "All apps" : "All images";
+                clicked => {
+                    if root.create_use_community {
+                        root.clear_community_selection();
+                    } else {
+                        root.create_image_alias = "";
+                    }
+                }
+            }
+
             if root.create_use_community && root.community_selected_slug != "" && root.community_is_dev: CubbyBanner {
                 tone: "warn";
                 title: "Testing script (community-scripts/DevScripts)";
                 body: "DevScripts are community testing candidates. Review Install Script Preview before deploying.";
+            }
+
+
+            // Community Selected App Details
+            if root.create_use_community && root.community_selected_slug != "": CubbyPanel {
+                vertical-stretch: 1;
+                pad_body: true;
+
+                // App Header
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: space-between;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        horizontal-stretch: 1;
+
+                        CubbyDistroBadge {
+                            y: (parent.height - self.height) / 2;
+                            logo: root.community_app_logo;
+                            size: "md";
+                        }
+
+                        Text {
+                            text: root.community_app_name + " (" + root.community_selected_slug + ")";
+                            font-family: CubbyTheme.font_sans;
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: CubbyTheme.ink;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        if root.community_is_dev: CubbyTag {
+                            y: (parent.height - self.height) / 2;
+                            tone: "warn";
+                            text: "DevScripts";
+                        }
+
+                        if root.community_tags != "": CubbyTag {
+                            y: (parent.height - self.height) / 2;
+                            text: root.community_tags;
+                        }
+                    }
+
+                    CubbyStatusDot {
+                        y: (parent.height - self.height) / 2;
+                        tone: "live";
+                        label: root.community_source_repo != "" ? root.community_source_repo : "community-scripts";
+                    }
+                }
+
+                if root.community_description != "": Text {
+                    text: root.community_description;
+                    font-family: CubbyTheme.font_sans;
+                    font-size: 12px;
+                    color: CubbyTheme.ink_secondary;
+                    wrap: word-wrap;
+                }
+
+                // Run in existing sandbox bar
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: "Or run in running sandbox:";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 12px;
+                        color: CubbyTheme.ink_secondary;
+                        vertical-alignment: center;
+                    }
+
+                    CubbySelect {
+                        horizontal-stretch: 1;
+                        model: root.running_instance_names;
+                        current_value <=> root.community_target_instance;
+                        placeholder: "No running sandboxes";
+                        enabled: !root.busy;
+                    }
+
+                    CubbyIconButton {
+                        icon: "play";
+                        tone: "outline";
+                        size: "md";
+                        tooltip: "Run in selected sandbox";
+                        enabled: !root.busy && root.community_target_instance != "";
+                        clicked => {
+                            root.community_view_tab = 1;
+                            root.request_run_community_in_instance(
+                                root.community_selected_slug,
+                                root.community_target_instance
+                            );
+                        }
+                    }
+                }
+
+                // Preview / Deploy Output switcher
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    CubbySegmentTrack {
+                        CubbySegmentOption {
+                            label: "Install Script Preview";
+                            active: root.community_view_tab == 0 && root.community_output == "";
+                            clicked => { root.community_view_tab = 0; }
+                        }
+                        CubbySegmentOption {
+                            label: "Deploy Output";
+                            active: root.community_view_tab == 1 || root.community_output != "";
+                            clicked => { root.community_view_tab = 1; }
+                        }
+                    }
+
+                    Text {
+                        text: "ct/" + root.community_selected_slug + ".sh + install/" + root.community_selected_slug + "-install.sh";
+                        font-family: CubbyTheme.font_mono;
+                        font-size: 10.5px;
+                        color: CubbyTheme.ink_muted;
+                        vertical-alignment: center;
+                    }
+                }
+
+                CubbyTextArea {
+                    vertical-stretch: 1;
+                    read_only: true;
+                    mono: true;
+                    text: (root.community_view_tab == 1 || root.community_output != "")
+                        ? (root.community_output != "" ? root.community_output : "Deploy output will appear here after clicking Deploy.")
+                        : root.community_install_script;
+                }
+            }
+
+            if !root.create_use_community && root.create_image_alias != "": CubbyPanel {
+                title: "Selected image";
+                meta: root.create_image_alias;
+
+                for item in root.remote_aliases: HorizontalLayout {
+                    visible: item.alias == root.create_image_alias;
+                    spacing: 10px;
+
+                    CubbyDistroBadge {
+                        y: (parent.height - self.height) / 2;
+                        logo: item.logo;
+                        size: "md";
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+
+                        Text {
+                            text: item.alias;
+                            font-family: CubbyTheme.font_mono;
+                            font-size: 13px;
+                            font-weight: 500;
+                            color: CubbyTheme.ink;
+                            overflow: elide;
+                        }
+
+                        if item.subtitle != "": Text {
+                            text: item.subtitle;
+                            font-family: CubbyTheme.font_sans;
+                            font-size: 11.5px;
+                            color: CubbyTheme.ink_muted;
+                            overflow: elide;
+                        }
+                    }
+                }
             }
 
             CubbyPanel {
@@ -2112,150 +2291,6 @@ component CreateView inherits HorizontalLayout {
                     text <=> root.create_cloud_init;
                     placeholder: "#cloud-config\npackages:\n  - git\n  - curl";
                     enabled: !root.busy;
-                }
-            }
-
-            // Community Empty State
-            if root.create_use_community && root.community_selected_slug == "": CubbyPanel {
-                vertical-stretch: 1;
-                title: "Community Script";
-                meta: "community-scripts.org";
-
-                Text {
-                    text: "Select an app from Community Scripts on the left to fill OS defaults, inspect its install script, or deploy into a new or existing sandbox.";
-                    font-family: CubbyTheme.font_sans;
-                    font-size: 12.5px;
-                    color: CubbyTheme.ink_secondary;
-                    wrap: word-wrap;
-                }
-            }
-
-            // Community Selected App Details
-            if root.create_use_community && root.community_selected_slug != "": CubbyPanel {
-                vertical-stretch: 1;
-                pad_body: true;
-
-                // App Header
-                HorizontalLayout {
-                    spacing: 10px;
-                    alignment: space-between;
-
-                    HorizontalLayout {
-                        spacing: 10px;
-                        horizontal-stretch: 1;
-
-                        CubbyDistroBadge {
-                            y: (parent.height - self.height) / 2;
-                            logo: root.community_app_logo;
-                            size: "md";
-                        }
-
-                        Text {
-                            text: root.community_app_name + " (" + root.community_selected_slug + ")";
-                            font-family: CubbyTheme.font_sans;
-                            font-size: 15px;
-                            font-weight: 600;
-                            color: CubbyTheme.ink;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-
-                        if root.community_is_dev: CubbyTag {
-                            y: (parent.height - self.height) / 2;
-                            tone: "warn";
-                            text: "DevScripts";
-                        }
-
-                        if root.community_tags != "": CubbyTag {
-                            y: (parent.height - self.height) / 2;
-                            text: root.community_tags;
-                        }
-                    }
-
-                    CubbyStatusDot {
-                        y: (parent.height - self.height) / 2;
-                        tone: "live";
-                        label: root.community_source_repo != "" ? root.community_source_repo : "community-scripts";
-                    }
-                }
-
-                if root.community_description != "": Text {
-                    text: root.community_description;
-                    font-family: CubbyTheme.font_sans;
-                    font-size: 12px;
-                    color: CubbyTheme.ink_secondary;
-                    wrap: word-wrap;
-                }
-
-                // Run in existing sandbox bar
-                HorizontalLayout {
-                    spacing: 8px;
-
-                    Text {
-                        text: "Or run in running sandbox:";
-                        font-family: CubbyTheme.font_sans;
-                        font-size: 12px;
-                        color: CubbyTheme.ink_secondary;
-                        vertical-alignment: center;
-                    }
-
-                    CubbySelect {
-                        horizontal-stretch: 1;
-                        model: root.running_instance_names;
-                        current_value <=> root.community_target_instance;
-                        placeholder: "No running sandboxes";
-                        enabled: !root.busy;
-                    }
-
-                    CubbyIconButton {
-                        icon: "play";
-                        tone: "outline";
-                        size: "md";
-                        tooltip: "Run in selected sandbox";
-                        enabled: !root.busy && root.community_target_instance != "";
-                        clicked => {
-                            root.community_view_tab = 1;
-                            root.request_run_community_in_instance(
-                                root.community_selected_slug,
-                                root.community_target_instance
-                            );
-                        }
-                    }
-                }
-
-                // Preview / Deploy Output switcher
-                HorizontalLayout {
-                    alignment: space-between;
-
-                    CubbySegmentTrack {
-                        CubbySegmentOption {
-                            label: "Install Script Preview";
-                            active: root.community_view_tab == 0 && root.community_output == "";
-                            clicked => { root.community_view_tab = 0; }
-                        }
-                        CubbySegmentOption {
-                            label: "Deploy Output";
-                            active: root.community_view_tab == 1 || root.community_output != "";
-                            clicked => { root.community_view_tab = 1; }
-                        }
-                    }
-
-                    Text {
-                        text: "ct/" + root.community_selected_slug + ".sh + install/" + root.community_selected_slug + "-install.sh";
-                        font-family: CubbyTheme.font_mono;
-                        font-size: 10.5px;
-                        color: CubbyTheme.ink_muted;
-                        vertical-alignment: center;
-                    }
-                }
-
-                CubbyTextArea {
-                    vertical-stretch: 1;
-                    read_only: true;
-                    mono: true;
-                    text: (root.community_view_tab == 1 || root.community_output != "")
-                        ? (root.community_output != "" ? root.community_output : "Deploy output will appear here after clicking Deploy.")
-                        : root.community_install_script;
                 }
             }
         }
@@ -2868,11 +2903,6 @@ component ImagesView inherits VerticalLayout {
             title: "Locally cached base images (" + root.local_images.length + ")";
             meta: "Incus image store";
 
-            CubbyInput {
-                text <=> root.image_search_query;
-                placeholder: "Filter cached images by alias or fingerprint...";
-                edited(q) => { root.filter_local_images(q); }
-            }
 
             Rectangle {
                 vertical-stretch: 1;
@@ -3678,10 +3708,19 @@ export component AdvancedShell inherits VerticalLayout {
     in property <string> status_message: "";
     in property <bool> busy: false;
     in property <bool> simple_mode: false;
+    in-out property <bool> sidebar_collapsed: false;
+    in property <string> host_cpu_summary: "";
+    in property <string> host_mem_summary: "";
+    in property <string> host_detail_cpu: "";
+    in property <string> host_detail_mem: "";
+    in property <string> host_detail_system: "";
+    in property <string> host_load_detail: "";
+
+    property <string> page_search: "";
 
     in property <[UiInstance]> instances: [];
     in property <int> total_instance_count: 0;
-    in property <string> running_count_summary: "";
+    in property <int> running_instance_count: 0;
     in property <bool> has_selection: false;
     in property <UiInstance> selected_instance;
     in-out property <string> sandbox_search_query: "";
@@ -3707,7 +3746,7 @@ export component AdvancedShell inherits VerticalLayout {
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
-    in-out property <string> create_image_alias: "debian/12";
+    in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
     in-out property <string> create_profiles: "default";
@@ -3745,6 +3784,8 @@ export component AdvancedShell inherits VerticalLayout {
     callback refresh();
     callback toggle_simple_mode(bool);
     callback toggle_theme(bool);
+    callback toggle_sidebar_collapsed(bool);
+    callback clear_community_selection();
     callback confirm_action();
     callback cancel_confirm();
     callback filter_sandboxes(string);
@@ -3791,13 +3832,65 @@ export component AdvancedShell inherits VerticalLayout {
     callback request_reset_settings();
     callback open_url(string);
 
+    changed active_tab => {
+        if root.active_tab == "sandboxes" {
+            root.page_search = root.sandbox_search_query;
+            root.filter_sandboxes(root.sandbox_search_query);
+        } else if root.active_tab == "create" {
+            if root.create_use_community {
+                root.page_search = root.community_search_query;
+                root.filter_community_apps(root.community_search_query);
+            } else {
+                root.page_search = root.remote_search_query;
+                root.filter_remote_aliases(root.remote_search_query);
+            }
+        } else if root.active_tab == "images" {
+            root.page_search = root.image_search_query;
+            root.filter_local_images(root.image_search_query);
+        } else {
+            root.page_search = "";
+        }
+    }
+
+    changed create_use_community => {
+        if root.active_tab == "create" {
+            if root.create_use_community {
+                root.page_search = root.community_search_query;
+                root.filter_community_apps(root.community_search_query);
+            } else {
+                root.page_search = root.remote_search_query;
+                root.filter_remote_aliases(root.remote_search_query);
+            }
+        }
+    }
+
     CubbyTopBar {
+        sidebar_collapsed <=> root.sidebar_collapsed;
         active_tab <=> root.active_tab;
-        socket_connected: root.socket_connected;
+        create_use_community: root.create_use_community;
+        search_text <=> root.page_search;
         busy: root.busy;
         simple_mode: root.simple_mode;
         refresh => { root.refresh(); }
         toggle_simple_mode(simple) => { root.toggle_simple_mode(simple); }
+        toggle_sidebar_collapsed(c) => { root.toggle_sidebar_collapsed(c); }
+        search_edited(q) => {
+            if root.active_tab == "sandboxes" {
+                root.sandbox_search_query = q;
+                root.filter_sandboxes(q);
+            } else if root.active_tab == "create" {
+                if root.create_use_community {
+                    root.community_search_query = q;
+                    root.filter_community_apps(q);
+                } else {
+                    root.remote_search_query = q;
+                    root.filter_remote_aliases(q);
+                }
+            } else if root.active_tab == "images" {
+                root.image_search_query = q;
+                root.filter_local_images(q);
+            }
+        }
     }
 
     if root.confirm_message != "": CubbyBanner {
@@ -3840,9 +3933,78 @@ export component AdvancedShell inherits VerticalLayout {
         }
     }
 
-    Rectangle {
+    HorizontalLayout {
         vertical-stretch: 1;
-        background: CubbyTheme.bg;
+
+        Rectangle {
+            width: root.sidebar_collapsed ? 56px : 208px;
+            background: CubbyTheme.surface;
+            clip: true;
+            animate width { duration: 120ms; easing: ease-out; }
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+
+                CubbyNavItem {
+                    icon: "box";
+                    label: "Sandboxes";
+                    collapsed: root.sidebar_collapsed;
+                    active: root.active_tab == "sandboxes";
+                    clicked => { root.active_tab = "sandboxes"; }
+                }
+                CubbyNavItem {
+                    icon: "plus";
+                    label: "Create";
+                    collapsed: root.sidebar_collapsed;
+                    active: root.active_tab == "create";
+                    clicked => { root.active_tab = "create"; }
+                }
+                CubbyNavItem {
+                    icon: "server";
+                    label: "Resources";
+                    collapsed: root.sidebar_collapsed;
+                    active: root.active_tab == "infra";
+                    clicked => { root.active_tab = "infra"; }
+                }
+                CubbyNavItem {
+                    icon: "layers";
+                    label: "Profiles";
+                    collapsed: root.sidebar_collapsed;
+                    active: root.active_tab == "profiles";
+                    clicked => { root.active_tab = "profiles"; }
+                }
+                CubbyNavItem {
+                    icon: "hard-drive";
+                    label: "Images";
+                    collapsed: root.sidebar_collapsed;
+                    active: root.active_tab == "images";
+                    clicked => { root.active_tab = "images"; }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                CubbyNavItem {
+                    icon: "settings";
+                    label: "Settings";
+                    collapsed: root.sidebar_collapsed;
+                    active: root.active_tab == "settings" || root.active_tab == "about" || root.active_tab == "legal";
+                    clicked => { root.active_tab = "settings"; }
+                }
+            }
+
+            Rectangle {
+                x: parent.width - 1px;
+                y: 0px;
+                width: 1px;
+                height: parent.height;
+                background: CubbyTheme.border;
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: CubbyTheme.bg;
 
         if root.active_tab == "sandboxes": SandboxesView {
             width: 100%;
@@ -3850,7 +4012,6 @@ export component AdvancedShell inherits VerticalLayout {
             socket_connected: root.socket_connected;
             instances: root.instances;
             total_instance_count: root.total_instance_count;
-            running_count_summary: root.running_count_summary;
             has_selection: root.has_selection;
             selected_instance: root.selected_instance;
             sandbox_search_query <=> root.sandbox_search_query;
@@ -3864,7 +4025,10 @@ export component AdvancedShell inherits VerticalLayout {
             resolved_ide_name: root.resolved_ide_name;
             busy: root.busy;
             refresh => { root.refresh(); }
-            filter_sandboxes(q) => { root.filter_sandboxes(q); }
+            filter_sandboxes(q) => {
+                root.page_search = q;
+                root.filter_sandboxes(q);
+            }
             select_instance_by_name(n) => { root.select_instance_by_name(n); }
             go_create => { root.active_tab = "create"; }
             go_community => { root.create_use_community = true; root.active_tab = "create"; }
@@ -3921,11 +4085,18 @@ export component AdvancedShell inherits VerticalLayout {
             community_output: root.community_output;
             profile_names: root.profile_names;
             busy: root.busy;
-            filter_remote_aliases(q) => { root.filter_remote_aliases(q); }
+            filter_remote_aliases(q) => {
+                root.page_search = q;
+                root.filter_remote_aliases(q);
+            }
             fetch_remote_images => { root.fetch_remote_images(); }
-            filter_community_apps(q) => { root.filter_community_apps(q); }
+            filter_community_apps(q) => {
+                root.page_search = q;
+                root.filter_community_apps(q);
+            }
             fetch_community_catalog => { root.fetch_community_catalog(); }
             select_community_app(s) => { root.select_community_app(s); }
+            clear_community_selection => { root.clear_community_selection(); }
             browse_workspace_folder => { root.browse_workspace_folder(); }
             create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
             deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
@@ -3964,7 +4135,10 @@ export component AdvancedShell inherits VerticalLayout {
             remote_aliases: root.remote_aliases;
             image_search_query <=> root.image_search_query;
             busy: root.busy;
-            filter_local_images(q) => { root.filter_local_images(q); }
+            filter_local_images(q) => {
+                root.page_search = q;
+                root.filter_local_images(q);
+            }
             refresh_local_images => { root.refresh_local_images(); }
             fetch_remote_images => { root.fetch_remote_images(); }
             request_delete_image(f, l) => { root.request_delete_image(f, l); }
@@ -4015,41 +4189,24 @@ export component AdvancedShell inherits VerticalLayout {
             open_about => { root.active_tab = "about"; }
         }
     }
+    }
 
-    // Bottom status bar
-    if root.status_message != "": Rectangle {
-        height: 26px;
-        background: CubbyTheme.surface;
-
-        Rectangle {
-            y: 0px;
-            width: parent.width;
-            height: 1px;
-            background: CubbyTheme.border;
-        }
-
-        HorizontalLayout {
-            padding-left: 16px;
-            padding-right: 16px;
-            alignment: space-between;
-
-            Text {
-                text: root.status_message;
-                font-family: CubbyTheme.font_mono;
-                font-size: 11px;
-                color: CubbyTheme.ink_secondary;
-                vertical-alignment: center;
-                overflow: elide;
-                horizontal-stretch: 1;
-            }
-
-            if root.busy: Text {
-                text: "working";
-                font-family: CubbyTheme.font_mono;
-                font-size: 10.5px;
-                color: CubbyTheme.accent;
-                vertical-alignment: center;
-            }
+    CubbyResourceBar {
+        socket_connected: root.socket_connected;
+        host_cpu_summary: root.host_cpu_summary;
+        host_mem_summary: root.host_mem_summary;
+        host_detail_cpu: root.host_detail_cpu;
+        host_detail_mem: root.host_detail_mem;
+        host_detail_system: root.host_detail_system;
+        host_load_detail: root.host_load_detail;
+        running_count: root.running_instance_count;
+        instances: root.instances;
+        storage_pools: root.storage_pools;
+        status_message: root.status_message;
+        busy: root.busy;
+        select_instance(n) => {
+            root.active_tab = "sandboxes";
+            root.select_instance_by_name(n);
         }
     }
 }

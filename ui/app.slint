@@ -41,9 +41,9 @@ export component AppWindow inherits Window {
     title: "IncusCubby";
     icon: @image-url("icons/incuscubby.svg");
     preferred-width: root.simple_mode ? 520px : 1120px;
-    preferred-height: root.simple_mode ? 580px : 760px;
+    preferred-height: root.simple_mode ? 608px : 760px;
     min-width: root.simple_mode ? 480px : 960px;
-    min-height: root.simple_mode ? 520px : 640px;
+    min-height: root.simple_mode ? 548px : 640px;
     background: CubbyTheme.bg;
     default-font-family: CubbyTheme.font_sans;
 
@@ -51,6 +51,7 @@ export component AppWindow inherits Window {
     in-out property <bool> light_theme <=> CubbyTheme.is_light;
     in-out property <string> active_tab: "sandboxes";
     in-out property <string> simple_view: "hub";
+    in-out property <bool> sidebar_collapsed: false;
 
     in property <[UiInstance]> instances: [];
     in property <int> total_instance_count: 0;
@@ -76,7 +77,7 @@ export component AppWindow inherits Window {
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
-    in-out property <string> create_image_alias: "debian/12";
+    in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
     in-out property <string> create_profiles: "default";
@@ -123,10 +124,17 @@ export component AppWindow inherits Window {
     in property <string> about_description: "";
     in property <string> about_notices: "";
     in property <string> about_license_text: "";
+    in property <string> host_cpu_summary: "";
+    in property <string> host_mem_summary: "";
+    in property <string> host_detail_cpu: "";
+    in property <string> host_detail_mem: "";
+    in property <string> host_detail_system: "";
+    in property <string> host_load_detail: "";
 
     callback refresh();
     callback toggle_simple_mode(bool);
     callback toggle_theme(bool);
+    callback toggle_sidebar_collapsed(bool);
     callback filter_sandboxes(string);
     callback select_instance(int);
     callback select_instance_by_name(string);
@@ -167,6 +175,7 @@ export component AppWindow inherits Window {
     callback fetch_community_catalog();
     callback filter_community_apps(string);
     callback select_community_app(string);
+    callback clear_community_selection();
     callback deploy_community_app(string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
     callback browse_workspace_folder();
@@ -194,7 +203,14 @@ export component AppWindow inherits Window {
         simple_mode: root.simple_mode;
         instances: root.instances;
         total_instance_count: root.total_instance_count;
-        running_count_summary: root.running_count_summary;
+        running_instance_count: root.running_instance_count;
+        sidebar_collapsed <=> root.sidebar_collapsed;
+        host_cpu_summary: root.host_cpu_summary;
+        host_mem_summary: root.host_mem_summary;
+        host_detail_cpu: root.host_detail_cpu;
+        host_detail_mem: root.host_detail_mem;
+        host_detail_system: root.host_detail_system;
+        host_load_detail: root.host_load_detail;
         has_selection: root.has_selection;
         selected_instance: root.selected_instance;
         sandbox_search_query <=> root.sandbox_search_query;
@@ -252,6 +268,7 @@ export component AppWindow inherits Window {
         refresh => { root.refresh(); }
         toggle_simple_mode(s) => { root.toggle_simple_mode(s); }
         toggle_theme(l) => { root.toggle_theme(l); }
+        toggle_sidebar_collapsed(c) => { root.toggle_sidebar_collapsed(c); }
         confirm_action => { root.confirm_action(); }
         cancel_confirm => { root.cancel_confirm(); }
         filter_sandboxes(q) => { root.filter_sandboxes(q); }
@@ -280,6 +297,7 @@ export component AppWindow inherits Window {
         filter_community_apps(q) => { root.filter_community_apps(q); }
         fetch_community_catalog => { root.fetch_community_catalog(); }
         select_community_app(s) => { root.select_community_app(s); }
+        clear_community_selection => { root.clear_community_selection(); }
         browse_workspace_folder => { root.browse_workspace_folder(); }
         create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
         deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
@@ -313,6 +331,13 @@ export component AppWindow inherits Window {
         instances: root.instances;
         total_instance_count: root.total_instance_count;
         running_instance_count: root.running_instance_count;
+        storage_pools: root.storage_pools;
+        host_cpu_summary: root.host_cpu_summary;
+        host_mem_summary: root.host_mem_summary;
+        host_detail_cpu: root.host_detail_cpu;
+        host_detail_mem: root.host_detail_mem;
+        host_detail_system: root.host_detail_system;
+        host_load_detail: root.host_load_detail;
         has_selection: root.has_selection;
         selected_instance: root.selected_instance;
         exec_output: root.exec_output;

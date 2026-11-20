@@ -62,6 +62,12 @@ Go nil slices and maps arrive as JSON `null` (`config`, `devices`, `profiles`, `
 | `POST /1.0/networks` | Async | Create `bridge` network with `ipv4.nat` and `ipv6.nat` (`"true"`/`"false"`). |
 | `DELETE /1.0/networks/{name}` | Async | Delete network. |
 
+### Host Resources (`src/incus/resources.rs`)
+
+| Method & Path | Sync/Async | Purpose |
+|---|---|---|
+| `GET /1.0/resources` | Sync | Host CPU (sockets, total threads), load averages (`Average1Min`/`5Min`/`10Min`, capitalized keys), memory used/total, and system vendor/product for the persistent resource bar and popup (`HostResources`). Polled every 10 s alongside `list_storage_pools`. |
+
 ---
 
 ## 3. Remote Simplestreams Index (`src/incus/remote_images.rs`)

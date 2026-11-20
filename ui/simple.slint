@@ -5,6 +5,7 @@ import {
     UiCommunityApp,
     UiInstance,
     UiLogo,
+    UiStoragePool,
 } from "theme.slint";
 import {
     CubbyActionButton,
@@ -15,6 +16,7 @@ import {
     CubbyInput,
     CubbyMark,
     CubbyModeSwitch,
+    CubbyResourceBar,
     CubbyRow,
     CubbySegmentOption,
     CubbySegmentTrack,
@@ -172,9 +174,16 @@ export component SimpleShell inherits VerticalLayout {
     in property <bool> has_selection: false;
     in property <UiInstance> selected_instance;
     in property <string> exec_output: "";
+    in property <[UiStoragePool]> storage_pools: [];
+    in property <string> host_cpu_summary: "";
+    in property <string> host_mem_summary: "";
+    in property <string> host_detail_cpu: "";
+    in property <string> host_detail_mem: "";
+    in property <string> host_detail_system: "";
+    in property <string> host_load_detail: "";
 
     in-out property <string> create_name: "";
-    in-out property <string> create_image_alias: "debian/12";
+    in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
     in-out property <string> create_workspace: "";
@@ -232,6 +241,12 @@ export component SimpleShell inherits VerticalLayout {
     callback save_settings(string, string);
     callback request_reset_settings();
     callback open_url(string);
+
+    changed simple_view => {
+        if root.simple_view == "new" && root.create_image_alias == "" {
+            root.create_image_alias = "debian/12";
+        }
+    }
 
     CubbySimpleTopBar {
         simple_view: root.simple_view;
@@ -596,8 +611,8 @@ export component SimpleShell inherits VerticalLayout {
             }
         }
 
-        // Hub Footer
-        Rectangle {
+        // Hub Footer: Manage shortcut (status lives in the resource bar)
+        if root.has_selection: Rectangle {
             height: 48px;
             background: CubbyTheme.surface;
 
@@ -611,31 +626,15 @@ export component SimpleShell inherits VerticalLayout {
             HorizontalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
-                spacing: 8px;
-                alignment: space-between;
+                alignment: end;
 
-                Text {
-                    text: (!root.status_is_idle && root.status_message != "")
-                        ? root.status_message
-                        : (root.resolved_terminal_name + ", " + root.resolved_ide_name);
-                    font-family: CubbyTheme.font_sans;
-                    font-size: 11.5px;
-                    color: CubbyTheme.ink_muted;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-
-                HorizontalLayout {
-                    spacing: 6px;
-                    if root.has_selection: CubbyActionButton {
-                        y: (parent.height - self.height) / 2;
-                        icon: "sliders";
-                        tone: "outline";
-                        size: "sm";
-                        label: "Manage";
-                        clicked => { root.simple_view = "manage"; }
-                    }
+                CubbyActionButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: "sliders";
+                    tone: "outline";
+                    size: "sm";
+                    label: "Manage";
+                    clicked => { root.simple_view = "manage"; }
                 }
             }
         }
@@ -1825,6 +1824,25 @@ export component SimpleShell inherits VerticalLayout {
                 CubbyRow { mono_title: true; title: "Lucide Icons"; meta: "ISC"; subtitle: "Unified monochrome UI vector glyphs."; }
                 CubbyRow { last: true; mono_title: true; title: "Geist & Geist Mono"; meta: "SIL OFL-1.1"; subtitle: "Precision sans-serif and monospace typography."; }
             }
+        }
+    }
+
+    CubbyResourceBar {
+        socket_connected: root.socket_connected;
+        host_cpu_summary: root.host_cpu_summary;
+        host_mem_summary: root.host_mem_summary;
+        host_detail_cpu: root.host_detail_cpu;
+        host_detail_mem: root.host_detail_mem;
+        host_detail_system: root.host_detail_system;
+        host_load_detail: root.host_load_detail;
+        running_count: root.running_instance_count;
+        instances: root.instances;
+        storage_pools: root.storage_pools;
+        status_message: root.status_message;
+        busy: root.busy;
+        select_instance(n) => {
+            root.select_instance_by_name(n);
+            root.simple_view = "manage";
         }
     }
 }

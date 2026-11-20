@@ -43,6 +43,7 @@ flowchart LR
   subgraph Worker["Background Thread (Tokio Runtime)"]
     MPSC["unbounded_channel<BackendCommand>"]
     POLL["3 s Interval Poll (list_instances)"]
+    RPOLL["10 s Interval Poll (host_resources + storage pools)"]
     CMD["handle_command"]
     C["IncusClient (hyperlocal)"]
     RI["remote_images (reqwest)"]
@@ -50,6 +51,7 @@ flowchart LR
     LG["logos (reqwest + XDG cache)"]
     MPSC --> CMD
     POLL --> C
+    RPOLL --> C
     CMD --> C
     CMD --> RI
     CMD --> CS
@@ -58,6 +60,7 @@ flowchart LR
   CB -->|send BackendCommand| MPSC
   CMD -->|upgrade_in_event_loop| W
   POLL -->|upgrade_in_event_loop when !busy| W
+  RPOLL -->|upgrade_in_event_loop when !busy| W
   LG -->|upgrade_in_event_loop| W
   C <-->|HTTP/1.1 Unix Socket| SOCK["/var/lib/incus/unix.socket"]
   RI -->|HTTPS GET| SS["images.linuxcontainers.org"]
@@ -80,14 +83,14 @@ ui/
   theme.slint                 # CubbyTheme tokens, Dark/Light palettes, fonts & icon helpers
   components.slint            # shared Precision Instrument widgets
   simple.slint                # Simple mode hub & quick-create flow
-  advanced.slint              # Advanced mode views (sandboxes, create, infra, profiles, images, settings/about/legal)
+  advanced.slint              # Advanced mode: left nav sidebar + slim top bar, views (sandboxes, create, infra, profiles, images, settings/about/legal), resource bar
   fonts/                      # bundled Geist & Geist Mono TTFs + OFL.txt
   icons/                      # CubbyMark, app icon, fallback SVGs, and lucide/ SVG set
 src/
   main.rs                     # entrypoint, Tokio worker, polling loop, command dispatch, UI state sync
   launcher.rs                 # terminal emulator detection (incus exec) & brand-agnostic IDE launch
   logos.rs                    # async logo worker, XDG disk cache, SVG/raster decode, accent extraction
-  settings.rs                 # XDG JSON config (terminal, IDE, simple_mode, light_theme) & PATH scanning
+  settings.rs                 # XDG JSON config (terminal, IDE, simple_mode, light_theme, sidebar_collapsed) & PATH scanning
   incus/
     mod.rs                    # re-exports
     client.rs                 # IncusClient, HTTP/Unix transport, instances, devices, snapshots, exec
@@ -96,6 +99,7 @@ src/
     models.rs                 # Incus 1.0 REST serde types + InstanceSummary/ImageSummary mappings
     packages.rs               # distro package upgrade/install argv builders + token validation
     remote_images.rs          # preset aliases + simplestreams JSON index fetcher/parser
+    resources.rs              # GET /1.0/resources host CPU/load/memory/system summaries
 ```
 
 ### 2.2 Incus 1.0 REST client & gotchas
@@ -110,7 +114,7 @@ Endpoints that return `type: "async"` with an `operation` path are awaited throu
 
 ### 2.3 UI & background worker model
 
-`spawn_backend_worker` runs `tokio::select!` between `rx.recv()` (`BackendCommand`) and a three-second `tokio::time::interval` with `MissedTickBehavior::Delay`.
+`spawn_backend_worker` runs `tokio::select!` between `rx.recv()` (`BackendCommand`), a three-second `tokio::time::interval` polling `list_instances`, and a ten-second interval polling `host_resources` (`GET /1.0/resources`) plus `list_storage_pools` for the persistent resource bar, all with `MissedTickBehavior::Delay`.
 
 Poll results are compared against `last_instances` and `last_socket_err`, and reach the UI through `upgrade_in_event_loop` only when `!ui.get_busy()`, so a poll cannot clobber an in-flight action.
 
@@ -140,7 +144,7 @@ All endpoints, headers, and simplestreams parsing rules are documented in [INCUS
 
 The Incus socket path is hardcoded to `/var/lib/incus/unix.socket` (`DEFAULT_INCUS_SOCKET`). It requires `incusd` running and your user in `incus-admin` or root.
 
-Preferences are stored as pretty JSON in `$XDG_CONFIG_HOME/incus-cubby/settings.json` (fallback `$HOME/.config/incus-cubby/settings.json`) with `preferred_terminal`, `preferred_ide`, `simple_mode`, and `light_theme`. Dynamic OS and app logos are cached in `$XDG_CACHE_HOME/incus-cubby/logos/` (fallback `$HOME/.cache/incus-cubby/logos/`).
+Preferences are stored as pretty JSON in `$XDG_CONFIG_HOME/incus-cubby/settings.json` (fallback `$HOME/.config/incus-cubby/settings.json`) with `preferred_terminal`, `preferred_ide`, `simple_mode`, `light_theme`, and `sidebar_collapsed`. Dynamic OS and app logos are cached in `$XDG_CACHE_HOME/incus-cubby/logos/` (fallback `$HOME/.cache/incus-cubby/logos/`).
 
 Terminal resolution tries `preferred_terminal` unless it is `"auto"`, then `$TERMINAL`, then the first of `x-terminal-emulator`, `gnome-terminal`, `konsole`, `ghostty`, `alacritty`, `kitty`, `foot`, `wezterm`, `xfce4-terminal`, and `xterm` found in `PATH`. Argument flags adapt per binary: `gnome-terminal --`, `wezterm start --`, `foot` with a bare command, and `-e` for the rest.
 

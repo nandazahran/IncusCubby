@@ -589,8 +589,9 @@ fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings, catalogs: &Arc<C
     ui.set_settings_file_path(AppSettings::display_config_path().into());
     ui.set_simple_mode(app_settings.simple_mode);
     ui.set_light_theme(app_settings.light_theme);
+    ui.set_sidebar_collapsed(app_settings.sidebar_collapsed);
     if app_settings.simple_mode {
-        ui.window().set_size(LogicalSize::new(520.0, 580.0));
+        ui.window().set_size(LogicalSize::new(520.0, 608.0));
     }
 
     for &distro in QUICK_CREATE_DISTROS {
@@ -671,6 +672,10 @@ fn spawn_backend_worker(
             let mut poll_tick = tokio::time::interval(Duration::from_secs(3));
             poll_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
             poll_tick.tick().await;
+
+            let mut resources_tick = tokio::time::interval(Duration::from_secs(10));
+            resources_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            resources_tick.tick().await;
 
             let mut last_instances: Option<Vec<InstanceSummary>> = None;
             let mut last_socket_err = false;
@@ -756,6 +761,31 @@ fn spawn_backend_worker(
                                     });
                                 }
                             }
+                        }
+                    }
+                    _ = resources_tick.tick() => {
+                        if let Ok(res) = client.host_resources().await {
+                            let weak_res = ui_weak.clone();
+                            let _ = weak_res.upgrade_in_event_loop(move |ui| {
+                                if !ui.get_busy() {
+                                    ui.set_host_cpu_summary(res.cpu_summary.into());
+                                    ui.set_host_mem_summary(res.mem_summary.into());
+                                    ui.set_host_detail_cpu(res.detail_cpu.into());
+                                    ui.set_host_detail_mem(res.detail_mem.into());
+                                    ui.set_host_detail_system(res.detail_system.into());
+                                    ui.set_host_load_detail(res.load_detail.into());
+                                }
+                            });
+                        }
+                        if let Ok(pools) = client.list_storage_pools().await {
+                            let weak_pools = ui_weak.clone();
+                            let _ = weak_pools.upgrade_in_event_loop(move |ui| {
+                                if !ui.get_busy() {
+                                    ui.set_storage_pools(ModelRc::from(Rc::new(VecModel::from(
+                                        to_ui_pools(pools),
+                                    ))));
+                                }
+                            });
                         }
                     }
                 }
@@ -1598,7 +1628,7 @@ fn wire_ui_callbacks(
                 ui.set_simple_mode(simple);
                 if simple {
                     ui.set_simple_view("hub".into());
-                    ui.window().set_size(LogicalSize::new(520.0, 580.0));
+                    ui.window().set_size(LogicalSize::new(520.0, 608.0));
                 } else {
                     ui.window().set_size(LogicalSize::new(1120.0, 760.0));
                 }
@@ -1616,6 +1646,20 @@ fn wire_ui_callbacks(
             *settings.borrow_mut() = updated;
             if let Some(ui) = weak.upgrade() {
                 ui.set_light_theme(light);
+            }
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let settings = Rc::clone(&settings_state);
+        ui.on_toggle_sidebar_collapsed(move |collapsed| {
+            let mut updated = settings.borrow().clone();
+            updated.sidebar_collapsed = collapsed;
+            let _ = updated.save();
+            *settings.borrow_mut() = updated;
+            if let Some(ui) = weak.upgrade() {
+                ui.set_sidebar_collapsed(collapsed);
             }
         });
     }
@@ -2287,6 +2331,21 @@ fn wire_ui_callbacks(
     }
 
     {
+        let weak = ui.as_weak();
+        ui.on_clear_community_selection(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_community_selected_slug("".into());
+                ui.set_community_app_name("".into());
+                ui.set_community_description("".into());
+                ui.set_community_tags("".into());
+                ui.set_community_install_script("".into());
+                ui.set_community_output("".into());
+                ui.set_create_image_alias("".into());
+            }
+        });
+    }
+
+    {
         let tx = tx.clone();
         ui.on_deploy_community_app(
             move |slug, name, image, cpu, memory, workspace, profiles_raw, nesting| {
@@ -2579,13 +2638,8 @@ fn apply_profiles(ui: &AppWindow, profiles: Vec<ProfileSummary>) {
     ui.set_profile_names(to_shared_string_model(names));
 }
 
-fn apply_infra(ui: &AppWindow, infra: InfraSnapshot) {
-    let mut pool_names: Vec<String> = infra.pools.iter().map(|p| p.name.clone()).collect();
-    if pool_names.is_empty() {
-        pool_names.push("default".to_string());
-    }
-    let ui_pools: Vec<UiStoragePool> = infra
-        .pools
+fn to_ui_pools(pools: Vec<StoragePoolSummary>) -> Vec<UiStoragePool> {
+    pools
         .into_iter()
         .map(|p| UiStoragePool {
             name: p.name.into(),
@@ -2595,7 +2649,15 @@ fn apply_infra(ui: &AppWindow, infra: InfraSnapshot) {
             total_display: p.total_display.into(),
             used_ratio: f32::from(p.used_per_mille) / 1000.0,
         })
-        .collect();
+        .collect()
+}
+
+fn apply_infra(ui: &AppWindow, infra: InfraSnapshot) {
+    let mut pool_names: Vec<String> = infra.pools.iter().map(|p| p.name.clone()).collect();
+    if pool_names.is_empty() {
+        pool_names.push("default".to_string());
+    }
+    let ui_pools = to_ui_pools(infra.pools);
     let ui_volumes: Vec<UiStorageVolume> = infra
         .volumes
         .into_iter()

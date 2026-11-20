@@ -12,6 +12,7 @@ pub struct AppSettings {
     pub preferred_ide: String,
     pub simple_mode: bool,
     pub light_theme: bool,
+    pub sidebar_collapsed: bool,
 }
 
 impl AppSettings {
@@ -212,6 +213,7 @@ mod tests {
             preferred_ide: "zeditor".to_string(),
             simple_mode: true,
             light_theme: true,
+            sidebar_collapsed: true,
         };
 
         settings.save_to(&path).expect("save_to should succeed");
@@ -243,6 +245,7 @@ mod tests {
         assert_eq!(loaded.preferred_ide, "codium");
         assert!(!loaded.simple_mode);
         assert!(!loaded.light_theme);
+        assert!(!loaded.sidebar_collapsed);
 
         if let Some(dir) = path.parent() {
             let _ = fs::remove_dir_all(dir);

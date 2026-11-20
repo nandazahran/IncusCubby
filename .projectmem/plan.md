@@ -24,6 +24,7 @@ _Loose thoughts, not yet committed to._
 - [x] Add GitHub Actions CI/CD, cargo-deny gate, and Linux release packaging (.desktop, AppImage, tarball, PKGBUILD)
 
 - [x] Tag `v0.1.0` and publish GitHub release with x86_64/aarch64 AppImage, tarball, and SHA256SUMS.txt
+- [x] Layout v2 redesign: collapsible left nav sidebar (persisted), single top-bar search routed per page, persistent host resource bar + upward popup (both modes), catalog-first Create with select-then-configure, Doop "Layout v2" frames
 
 ## Next
 - Configurable Incus socket path / remote contexts beyond `/var/lib/incus/unix.socket` (deferred)
