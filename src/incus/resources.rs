@@ -153,7 +153,7 @@ mod tests {
                 .contains("AMD Ryzen 7 7735HS with Radeon Graphics")
         );
         assert!(summary.detail_cpu.contains("16 threads"));
-        assert!(!summary.mem_summary.is_empty());
+        assert_ne!(summary.mem_summary, "");
         assert!(summary.mem_summary.contains('/'));
         assert!(summary.detail_mem.contains("(84%)"));
         assert_eq!(summary.detail_system, "LENOVO 83S0");
