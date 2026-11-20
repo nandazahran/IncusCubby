@@ -52,19 +52,19 @@ pub fn default_preset_images() -> Vec<RemoteImage> {
         RemoteImage {
             alias: "debian/12".to_string(),
             os: "Debian".to_string(),
-            release: "bookworm · LTS default".to_string(),
+            release: "bookworm, LTS default".to_string(),
             variant: "default".to_string(),
         },
         RemoteImage {
             alias: "debian/13".to_string(),
             os: "Debian".to_string(),
-            release: "trixie · testing".to_string(),
+            release: "trixie, testing".to_string(),
             variant: "default".to_string(),
         },
         RemoteImage {
             alias: "ubuntu/24.04".to_string(),
             os: "Ubuntu".to_string(),
-            release: "noble · LTS".to_string(),
+            release: "noble, LTS".to_string(),
             variant: "default".to_string(),
         },
         RemoteImage {
@@ -76,25 +76,25 @@ pub fn default_preset_images() -> Vec<RemoteImage> {
         RemoteImage {
             alias: "alpine/3.24".to_string(),
             os: "Alpine".to_string(),
-            release: "3.24 · minimal musl".to_string(),
+            release: "3.24, minimal musl".to_string(),
             variant: "default".to_string(),
         },
         RemoteImage {
             alias: "archlinux".to_string(),
             os: "Archlinux".to_string(),
-            release: "rolling · pacman".to_string(),
+            release: "rolling, pacman".to_string(),
             variant: "default".to_string(),
         },
         RemoteImage {
             alias: "fedora/44".to_string(),
             os: "Fedora".to_string(),
-            release: "44 · dnf5".to_string(),
+            release: "44, dnf5".to_string(),
             variant: "default".to_string(),
         },
         RemoteImage {
             alias: "opensuse/tumbleweed".to_string(),
             os: "openSUSE".to_string(),
-            release: "rolling · zypper".to_string(),
+            release: "rolling, zypper".to_string(),
             variant: "default".to_string(),
         },
     ]

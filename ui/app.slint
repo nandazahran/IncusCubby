@@ -54,6 +54,7 @@ export component AppWindow inherits Window {
 
     in property <[UiInstance]> instances: [];
     in property <int> total_instance_count: 0;
+    in property <int> running_instance_count: 0;
     in property <string> running_count_summary: "0 running";
     in-out property <int> selected_index: -1;
     in property <bool> has_selection: false;
@@ -310,6 +311,8 @@ export component AppWindow inherits Window {
         busy: root.busy;
         simple_mode: root.simple_mode;
         instances: root.instances;
+        total_instance_count: root.total_instance_count;
+        running_instance_count: root.running_instance_count;
         has_selection: root.has_selection;
         selected_instance: root.selected_instance;
         exec_output: root.exec_output;

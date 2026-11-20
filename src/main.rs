@@ -2416,7 +2416,7 @@ fn apply_instances(
     let running_count = instances.iter().filter(|i| i.is_running).count();
     let frozen_count = instances.iter().filter(|i| i.is_frozen).count();
     let running_summary = if frozen_count > 0 {
-        format!("{running_count} running · {frozen_count} frozen")
+        format!("{running_count} running, {frozen_count} frozen")
     } else {
         format!("{running_count} running")
     };
@@ -2458,6 +2458,7 @@ fn apply_instances(
     let model = ModelRc::from(Rc::new(VecModel::from(ui_rows)));
     ui.set_instances(model);
     ui.set_total_instance_count(total_count as i32);
+    ui.set_running_instance_count(running_count as i32);
     ui.set_running_count_summary(running_summary.into());
     ui.set_running_instance_names(to_shared_string_model(running_names));
     ui.set_community_target_instance(next_target.into());
@@ -2494,7 +2495,7 @@ fn apply_remote_aliases(
             } else if img.os.is_empty() {
                 img.release.clone()
             } else {
-                format!("{} · {}", img.os, img.release)
+                format!("{}, {}", img.os, img.release)
             };
             let distro_id = detect_distro_id(&img.os, &img.alias);
             UiRemoteAlias {

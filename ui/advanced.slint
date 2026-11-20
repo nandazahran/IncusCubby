@@ -71,7 +71,7 @@ component CubbyTopBar inherits Rectangle {
             CubbyStatusDot {
                 y: (parent.height - self.height) / 2;
                 tone: root.socket_connected ? "live" : "err";
-                label: root.socket_connected ? "unix.socket" : "unix.socket · Denied";
+                label: root.socket_connected ? "unix.socket" : "unix.socket denied";
             }
         }
 
@@ -146,6 +146,7 @@ component CubbyTopBar inherits Rectangle {
 }
 
 component SandboxesView inherits HorizontalLayout {
+    in property <bool> socket_connected: false;
     in property <[UiInstance]> instances: [];
     in property <int> total_instance_count: 0;
     in property <string> running_count_summary: "";
@@ -165,9 +166,12 @@ component SandboxesView inherits HorizontalLayout {
     property <int> detail_subtab: 0; // 0: overview, 1: mounts, 2: snapshots, 3: logs
     property <string> mount_pool: "default";
 
+    callback refresh();
     callback filter_sandboxes(string);
     callback select_instance_by_name(string);
     callback go_create();
+    callback go_community();
+    callback open_settings();
     callback open_shell(string);
     callback open_ide(string);
     callback set_instance_state(string, string);
@@ -250,7 +254,7 @@ component SandboxesView inherits HorizontalLayout {
                     y: 10px;
                     width: parent.width - 28px;
                     text <=> root.sandbox_search_query;
-                    placeholder: "Filter sandboxes...";
+                    placeholder: "Filter sandboxes";
                     edited(q) => { root.filter_sandboxes(q); }
                 }
 
@@ -271,9 +275,11 @@ component SandboxesView inherits HorizontalLayout {
                     x: 14px;
                     y: 18px;
                     width: parent.width - 28px;
-                    text: root.total_instance_count == 0
-                        ? "No sandboxes found. Click + New to launch one."
-                        : "No sandboxes match filter.";
+                    text: !root.socket_connected
+                        ? "Socket permission denied."
+                        : (root.total_instance_count == 0
+                            ? "No sandboxes found. Click + to create one."
+                            : "No sandboxes match filter.");
                     font-family: CubbyTheme.font_sans;
                     font-size: 12px;
                     color: CubbyTheme.ink_muted;
@@ -352,7 +358,7 @@ component SandboxesView inherits HorizontalLayout {
 
                                 Text {
                                     text: (inst.app_slug != "" ? "app: " + inst.app_slug : inst.image)
-                                        + " · "
+                                        + ", "
                                         + (inst.ip != "-" ? inst.ip : inst.status);
                                     font-family: CubbyTheme.font_mono;
                                     font-size: 11px;
@@ -394,14 +400,6 @@ component SandboxesView inherits HorizontalLayout {
                     alignment: space-between;
 
                     Text {
-                        text: "poll 3.0s";
-                        font-family: CubbyTheme.font_mono;
-                        font-size: 10.5px;
-                        color: CubbyTheme.ink_muted;
-                        vertical-alignment: center;
-                    }
-
-                    Text {
                         text: root.running_count_summary;
                         font-family: CubbyTheme.font_mono;
                         font-size: 10.5px;
@@ -426,7 +424,149 @@ component SandboxesView inherits HorizontalLayout {
         horizontal-stretch: 1;
         background: CubbyTheme.bg;
 
-        if !root.has_selection: VerticalLayout {
+        if !root.has_selection && !root.socket_connected: VerticalLayout {
+            padding: 36px;
+            alignment: center;
+            spacing: 14px;
+
+            HorizontalLayout {
+                alignment: center;
+                CubbyStatusDot { tone: "err"; label: "PermissionDenied"; }
+            }
+
+            Text {
+                text: "Socket permission denied";
+                font-family: CubbyTheme.font_sans;
+                font-size: 16px;
+                font-weight: 600;
+                color: CubbyTheme.ink;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "IncusCubby needs read/write access to /var/lib/incus/unix.socket. Add your user to incus-admin, then refresh.";
+                font-family: CubbyTheme.font_sans;
+                font-size: 12.5px;
+                color: CubbyTheme.ink_secondary;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            CubbyCodeBox { uri: "sudo usermod -aG incus-admin $USER && newgrp incus-admin"; }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                CubbyActionButton {
+                    icon: "refresh";
+                    tone: "primary";
+                    size: "md";
+                    label: "Retry connection";
+                    enabled: !root.busy;
+                    clicked => { root.refresh(); }
+                }
+                CubbyActionButton {
+                    icon: "settings";
+                    tone: "outline";
+                    size: "md";
+                    label: "Open settings";
+                    clicked => { root.open_settings(); }
+                }
+            }
+        }
+
+        if !root.has_selection && root.socket_connected && root.total_instance_count == 0: VerticalLayout {
+            padding: 36px;
+            alignment: center;
+            spacing: 14px;
+
+            HorizontalLayout {
+                alignment: center;
+                CubbyStatusDot { tone: "live"; label: "unix.socket connected"; }
+            }
+
+            Text {
+                text: "No local sandboxes yet";
+                font-family: CubbyTheme.font_sans;
+                font-size: 16px;
+                font-weight: 600;
+                color: CubbyTheme.ink;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "Launch a Debian, Ubuntu, Alpine, Arch, Fedora, or openSUSE sandbox, or install one from community scripts.";
+                font-family: CubbyTheme.font_sans;
+                font-size: 12.5px;
+                color: CubbyTheme.ink_secondary;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                CubbyActionButton {
+                    icon: "plus";
+                    tone: "primary";
+                    size: "md";
+                    label: "Create sandbox";
+                    clicked => { root.go_create(); }
+                }
+                CubbyActionButton {
+                    icon: "apps";
+                    tone: "outline";
+                    size: "md";
+                    label: "Community scripts";
+                    clicked => { root.go_community(); }
+                }
+            }
+        }
+
+        if !root.has_selection && root.socket_connected && root.total_instance_count > 0 && root.instances.length == 0: VerticalLayout {
+            padding: 36px;
+            alignment: center;
+            spacing: 14px;
+
+            HorizontalLayout {
+                alignment: center;
+                CubbyStatusDot { tone: "warn"; label: "Filtered to 0 results"; }
+            }
+
+            Text {
+                text: "No sandboxes match \"" + root.sandbox_search_query + "\"";
+                font-family: CubbyTheme.font_sans;
+                font-size: 16px;
+                font-weight: 600;
+                color: CubbyTheme.ink;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "No containers or virtual machines matched that name, image, or IP filter.";
+                font-family: CubbyTheme.font_sans;
+                font-size: 12.5px;
+                color: CubbyTheme.ink_secondary;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                CubbyActionButton {
+                    icon: "close";
+                    tone: "outline";
+                    size: "md";
+                    label: "Clear filter";
+                    clicked => {
+                        root.sandbox_search_query = "";
+                        root.filter_sandboxes("");
+                    }
+                }
+            }
+        }
+
+        if !root.has_selection && root.socket_connected && root.instances.length > 0: VerticalLayout {
             padding: 36px;
             alignment: center;
             spacing: 12px;
@@ -519,8 +659,8 @@ component SandboxesView inherits HorizontalLayout {
 
                         Text {
                             text: "Image: " + root.selected_instance.image
-                                + "  ·  IP: " + root.selected_instance.ip
-                                + "  ·  Profiles: " + root.selected_instance.profiles;
+                                + ", IP: " + root.selected_instance.ip
+                                + ", Profiles: " + root.selected_instance.profiles;
                             font-family: CubbyTheme.font_mono;
                             font-size: 11.5px;
                             color: CubbyTheme.ink_secondary;
@@ -632,20 +772,19 @@ component SandboxesView inherits HorizontalLayout {
 
                 telemetry-row := HorizontalLayout {
                     CubbyMetricCell {
-                        accent: root.selected_instance.is_running;
-                        label: "CPU TIME";
+                        label: "CPU time";
                         value: root.selected_instance.cpu_usage_display;
-                        sub: "limit " + root.selected_instance.cpu + " vCPU · " + root.selected_instance.processes_display + " procs";
+                        sub: "limit " + root.selected_instance.cpu + " vCPU, " + root.selected_instance.processes_display + " procs";
                     }
 
                     CubbyMetricCell {
-                        label: "MEMORY";
+                        label: "Memory";
                         value: root.selected_instance.memory_usage_display;
                         sub: root.selected_instance.memory_limit_display;
                     }
 
                     CubbyMetricCell {
-                        label: "ROOT DISK";
+                        label: "Root disk";
                         value: root.selected_instance.disk_usage_display;
                         sub: root.selected_instance.root_pool != ""
                             ? "pool: " + root.selected_instance.root_pool
@@ -654,10 +793,10 @@ component SandboxesView inherits HorizontalLayout {
 
                     CubbyMetricCell {
                         last: true;
-                        label: "NETWORK RX / TX";
+                        label: "Network RX / TX";
                         value: root.selected_instance.net_rx_display + " / " + root.selected_instance.net_tx_display;
                         sub: root.selected_instance.net_iface != ""
-                            ? root.selected_instance.net_iface + " · " + root.selected_instance.ip
+                            ? root.selected_instance.net_iface + ", " + root.selected_instance.ip
                             : "no active ipv4";
                     }
                 }
@@ -707,8 +846,8 @@ component SandboxesView inherits HorizontalLayout {
 
                     Text {
                         text: root.selected_instance.pkg_manager != ""
-                            ? "OS: " + root.selected_instance.image_os + " · " + root.selected_instance.pkg_manager
-                            : "OS: " + root.selected_instance.image;
+                            ? root.selected_instance.image_os + ", " + root.selected_instance.pkg_manager
+                            : root.selected_instance.image;
                         font-family: CubbyTheme.font_mono;
                         font-size: 10.5px;
                         color: CubbyTheme.ink_muted;
@@ -739,8 +878,8 @@ component SandboxesView inherits HorizontalLayout {
 
                     CubbyPanel {
                         horizontal-stretch: 1;
-                        title: "Clone Sandbox (CoW)";
-                        meta: "instant copy";
+                        title: "Clone sandbox";
+                        meta: "copy-on-write";
 
                         HorizontalLayout {
                             spacing: 8px;
@@ -767,8 +906,8 @@ component SandboxesView inherits HorizontalLayout {
 
                     CubbyPanel {
                         horizontal-stretch: 1;
-                        title: "Live Limits";
-                        meta: "PUT /1.0/instances/" + root.selected_instance.name;
+                        title: "Live limits";
+                        meta: "CPU & memory";
 
                         HorizontalLayout {
                             spacing: 8px;
@@ -825,9 +964,9 @@ component SandboxesView inherits HorizontalLayout {
 
                 CubbyPanel {
                     vertical-stretch: 1;
-                    title: "Packages · " + (root.selected_instance.image_os != "" ? root.selected_instance.image_os : "unknown OS")
-                        + (root.selected_instance.pkg_manager != "" ? " (" + root.selected_instance.pkg_manager + ")" : "");
-                    meta: "REST exec";
+                    title: "Packages (" + (root.selected_instance.image_os != "" ? root.selected_instance.image_os : "unknown OS") + ")"
+                        + (root.selected_instance.pkg_manager != "" ? ", " + root.selected_instance.pkg_manager : "");
+                    meta: "";
 
                     HorizontalLayout {
                         spacing: 8px;
@@ -869,6 +1008,29 @@ component SandboxesView inherits HorizontalLayout {
                         }
                     }
 
+                    if root.busy: VerticalLayout {
+                        spacing: 4px;
+                        Rectangle {
+                            height: 3px;
+                            border-radius: 2px;
+                            background: CubbyTheme.border;
+                            Rectangle {
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width * 0.45;
+                                height: parent.height;
+                                border-radius: 2px;
+                                background: CubbyTheme.accent;
+                            }
+                        }
+                        Text {
+                            text: "3s polling pauses while package operation runs.";
+                            font-family: CubbyTheme.font_sans;
+                            font-size: 11px;
+                            color: CubbyTheme.ink_muted;
+                        }
+                    }
+
                     CubbyTextArea {
                         vertical-stretch: 1;
                         read_only: true;
@@ -892,8 +1054,8 @@ component SandboxesView inherits HorizontalLayout {
                     spacing: 14px;
 
                     CubbyPanel {
-                        title: "Disk Mounts · Host Bind (shift: true) or Custom Volume";
-                        meta: "PUT InstancePut.devices";
+                        title: "Disk mounts";
+                        meta: "uid/gid shifted";
 
                         HorizontalLayout {
                             spacing: 8px;
@@ -988,8 +1150,8 @@ component SandboxesView inherits HorizontalLayout {
                     }
 
                     CubbyPanel {
-                        title: "Port Forwarding · Proxy Devices";
-                        meta: "tcp:127.0.0.1 -> 127.0.0.1";
+                        title: "Port forwarding";
+                        meta: "tcp proxy";
 
                         HorizontalLayout {
                             spacing: 8px;
@@ -1046,7 +1208,7 @@ component SandboxesView inherits HorizontalLayout {
                             mono_title: true;
                             last: idx == root.selected_instance.proxies.length - 1;
                             title: p.name;
-                            meta: "proxy · tcp";
+                            meta: "tcp proxy";
                             subtitle: p.listen + " -> " + p.connect;
 
                             CubbyIconButton {
@@ -1075,8 +1237,8 @@ component SandboxesView inherits HorizontalLayout {
                     spacing: 14px;
 
                     CubbyPanel {
-                        title: "Create Snapshot";
-                        meta: "POST /1.0/instances/" + root.selected_instance.name + "/snapshots";
+                        title: "Create snapshot";
+                        meta: "";
 
                         HorizontalLayout {
                             spacing: 8px;
@@ -1109,8 +1271,8 @@ component SandboxesView inherits HorizontalLayout {
                     }
 
                     CubbyPanel {
-                        title: "Saved Snapshots · " + root.selected_instance.snapshots.length;
-                        meta: "restore & delete require inline confirmation";
+                        title: "Saved snapshots (" + root.selected_instance.snapshots.length + ")";
+                        meta: "restore and delete ask confirmation";
 
                         if root.selected_instance.snapshots.length == 0: Text {
                             text: "No snapshots taken yet.";
@@ -1157,8 +1319,8 @@ component SandboxesView inherits HorizontalLayout {
                 spacing: 14px;
 
                 CubbyPanel {
-                    title: "File Transfer · Host ↔ Sandbox";
-                    meta: "raw octet-stream";
+                    title: "File transfer";
+                    meta: "host and sandbox";
 
                     HorizontalLayout {
                         spacing: 8px;
@@ -1203,8 +1365,8 @@ component SandboxesView inherits HorizontalLayout {
 
                 CubbyPanel {
                     vertical-stretch: 1;
-                    title: "Instance Logs";
-                    meta: "GET /1.0/instances/" + root.selected_instance.name + "/logs";
+                    title: "Instance logs";
+                    meta: "/var/log/incus/" + root.selected_instance.name;
 
                     HorizontalLayout {
                         spacing: 8px;
@@ -1308,7 +1470,7 @@ component CreateView inherits HorizontalLayout {
                     alignment: space-between;
 
                     Text {
-                        text: "Source & Catalog";
+                        text: "Source & catalog";
                         font-family: CubbyTheme.font_sans;
                         font-size: 12.5px;
                         font-weight: 600;
@@ -1319,7 +1481,7 @@ component CreateView inherits HorizontalLayout {
                     Text {
                         text: root.create_use_community
                             ? root.community_apps.length + " apps"
-                            : "images: · 10s timeout";
+                            : "images.linuxcontainers.org";
                         font-family: CubbyTheme.font_mono;
                         font-size: 10.5px;
                         color: CubbyTheme.ink_muted;
@@ -1737,15 +1899,15 @@ component CreateView inherits HorizontalLayout {
 
             if root.create_use_community && root.community_selected_slug != "" && root.community_is_dev: CubbyBanner {
                 tone: "warn";
-                title: "Testing Script · community-scripts/DevScripts";
+                title: "Testing script (community-scripts/DevScripts)";
                 body: "DevScripts are community testing candidates. Review Install Script Preview before deploying.";
             }
 
             CubbyPanel {
-                title: "Sandbox Configuration";
+                title: "Sandbox configuration";
                 meta: root.create_use_community
-                    ? (root.community_selected_slug != "" ? "App defaults · container only" : "Community script mode")
-                    : "Official image mode";
+                    ? (root.community_selected_slug != "" ? "App defaults, container only" : "Community script")
+                    : "Official image";
 
                 // Row 1: Name, Type, Image Alias
                 HorizontalLayout {
@@ -1754,11 +1916,7 @@ component CreateView inherits HorizontalLayout {
                     VerticalLayout {
                         horizontal-stretch: 2;
                         spacing: 4px;
-                        HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: "Sandbox Name"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: "hostname"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
-                        }
+                        Text { text: "Sandbox name"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         CubbyInput {
                             mono: true;
                             text <=> root.create_name;
@@ -1774,8 +1932,8 @@ component CreateView inherits HorizontalLayout {
                         spacing: 4px;
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Instance Type"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: root.create_use_community ? "locked" : "Incus type"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                            Text { text: "Instance type"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                            if root.create_use_community: Text { text: "locked"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
                         }
                         CubbySegmentTrack {
                             height: 32px;
@@ -1799,11 +1957,7 @@ component CreateView inherits HorizontalLayout {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
-                        HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: "Image Alias"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: "from catalog"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
-                        }
+                        Text { text: "Image alias"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         CubbyInput {
                             mono: true;
                             text <=> root.create_image_alias;
@@ -1820,11 +1974,7 @@ component CreateView inherits HorizontalLayout {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
-                        HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: "Memory Limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: "limits.memory"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
-                        }
+                        Text { text: "Memory limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         HorizontalLayout {
                             spacing: 6px;
                             CubbySegmentTrack {
@@ -1848,11 +1998,7 @@ component CreateView inherits HorizontalLayout {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
-                        HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: "CPU Limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: "limits.cpu"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
-                        }
+                        Text { text: "CPU limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         HorizontalLayout {
                             spacing: 6px;
                             CubbySegmentTrack {
@@ -1881,11 +2027,7 @@ component CreateView inherits HorizontalLayout {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
-                        HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: "Profiles"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: "comma-sep"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
-                        }
+                        Text { text: "Profiles"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         HorizontalLayout {
                             spacing: 6px;
                             CubbyInput {
@@ -1910,8 +2052,8 @@ component CreateView inherits HorizontalLayout {
                         spacing: 4px;
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Host Workspace Bind Mount"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
-                            Text { text: "-> /workspace · shift: true"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                            Text { text: "Host workspace bind mount"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                            Text { text: "mounted at /workspace"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
                         }
                         HorizontalLayout {
                             spacing: 6px;
@@ -2139,8 +2281,8 @@ component CreateView inherits HorizontalLayout {
                     y: (parent.height - self.height) / 2;
                     horizontal-stretch: 1;
                     uri: root.create_use_community
-                        ? "deploy_community_app(slug: \"" + root.community_selected_slug + "\", name: \"" + (root.create_name != "" ? root.create_name : root.community_selected_slug) + "\", nesting: " + (root.create_nesting ? "true" : "false") + ")"
-                        : "POST /1.0/instances { name: \"" + (root.create_name != "" ? root.create_name : "...") + "\", alias: \"" + root.create_image_alias + "\" }";
+                        ? "App: " + root.community_selected_slug + " -> " + (root.create_name != "" ? root.create_name : root.community_selected_slug) + " (" + root.create_cpu + " CPU, " + root.create_memory + ")"
+                        : (root.create_name != "" ? root.create_name : "new-sandbox") + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + ")";
                 }
 
                 CubbyIconButton {
@@ -2260,8 +2402,8 @@ component InfraView inherits ScrollView {
                 spacing: 14px;
 
                 CubbyPanel {
-                    title: "Storage Pools";
-                    meta: "GET /1.0/storage-pools";
+                    title: "Storage pools";
+                    meta: root.storage_pools.length + " detected";
 
                     if root.storage_pools.length == 0: Text {
                         text: "No storage pools detected.";
@@ -2288,7 +2430,7 @@ component InfraView inherits ScrollView {
                                 CubbyStatusDot {
                                     y: (parent.height - self.height) / 2;
                                     tone: "live";
-                                    label: pool.driver + " · " + pool.status;
+                                    label: pool.driver + ", " + pool.status;
                                 }
                             }
                             Text {
@@ -2388,8 +2530,8 @@ component InfraView inherits ScrollView {
                 alignment: start;
 
                 CubbyPanel {
-                    title: "Networks & DHCP Leases";
-                    meta: "GET /1.0/networks";
+                    title: "Networks & DHCP leases";
+                    meta: root.networks.length + " interfaces";
 
                 HorizontalLayout {
                     spacing: 8px;
@@ -2461,7 +2603,7 @@ component InfraView inherits ScrollView {
                                     horizontal-stretch: 1;
                                 }
                                 Text {
-                                    text: n.net_type + " · " + (n.managed ? ("managed · NAT: " + (n.nat ? "on" : "off")) : "unmanaged");
+                                    text: n.net_type + ", " + (n.managed ? ("managed, NAT: " + (n.nat ? "on" : "off")) : "unmanaged");
                                     font-family: CubbyTheme.font_mono;
                                     font-size: 11px;
                                     color: CubbyTheme.ink_muted;
@@ -2525,7 +2667,7 @@ component ProfilesView inherits ScrollView {
                 horizontal-stretch: 1;
                 spacing: 3px;
                 Text {
-                    text: "Incus Profiles · Reusable Compute & Device Presets";
+                    text: "Incus profiles";
                     font-family: CubbyTheme.font_sans;
                     font-size: 16px;
                     font-weight: 600;
@@ -2539,16 +2681,18 @@ component ProfilesView inherits ScrollView {
                 }
             }
 
-            CubbyStatusDot {
-                y: (parent.height - self.height) / 2;
-                tone: "muted";
-                label: root.profiles.length + " profiles loaded";
+            Text {
+                text: root.profiles.length + " loaded";
+                font-family: CubbyTheme.font_mono;
+                font-size: 11px;
+                color: CubbyTheme.ink_muted;
+                vertical-alignment: center;
             }
         }
 
         CubbyPanel {
-            title: "Create or Update Profile";
-            meta: "POST /1.0/profiles · PUT ProfilePut";
+            title: "Create or update profile";
+            meta: "";
 
             HorizontalLayout {
                 spacing: 8px;
@@ -2605,8 +2749,8 @@ component ProfilesView inherits ScrollView {
         }
 
         CubbyPanel {
-            title: "Configured Profiles";
-            meta: "GET /1.0/profiles?recursion=1";
+            title: "Configured profiles";
+            meta: root.profiles.length + " total";
 
             if root.profiles.length == 0: Text {
                 text: "No profiles found.";
@@ -2619,9 +2763,9 @@ component ProfilesView inherits ScrollView {
                 mono_title: true;
                 last: idx == root.profiles.length - 1;
                 title: p.name;
-                meta: (p.name == "default" ? "protected · " : "")
+                meta: (p.name == "default" ? "protected, " : "")
                     + (p.cpu != "" ? p.cpu + " vCPU" : "")
-                    + (p.cpu != "" && p.memory != "" ? " · " : "")
+                    + (p.cpu != "" && p.memory != "" ? ", " : "")
                     + p.memory;
                 subtitle: p.description != "" ? p.description : "No description";
 
@@ -2675,7 +2819,7 @@ component ImagesView inherits VerticalLayout {
             horizontal-stretch: 1;
             spacing: 3px;
             Text {
-                text: "Images · Local Cache & LinuxContainers Simplestreams";
+                text: "Images";
                 font-family: CubbyTheme.font_sans;
                 font-size: 16px;
                 font-weight: 600;
@@ -2720,8 +2864,8 @@ component ImagesView inherits VerticalLayout {
         CubbyPanel {
             horizontal-stretch: 1;
             vertical-stretch: 1;
-            title: "Locally Cached Base Images (" + root.local_images.length + ")";
-            meta: "GET /1.0/images?recursion=1";
+            title: "Locally cached base images (" + root.local_images.length + ")";
+            meta: "Incus image store";
 
             CubbyInput {
                 text <=> root.image_search_query;
@@ -2777,7 +2921,7 @@ component ImagesView inherits VerticalLayout {
                                         overflow: elide;
                                     }
                                     Text {
-                                        text: img.architecture + " · " + img.size_display + " · " + img.short_fingerprint;
+                                        text: img.architecture + ", " + img.size_display + ", " + img.short_fingerprint;
                                         font-family: CubbyTheme.font_mono;
                                         font-size: 11px;
                                         color: CubbyTheme.ink_muted;
@@ -2829,8 +2973,8 @@ component ImagesView inherits VerticalLayout {
         CubbyPanel {
             horizontal-stretch: 1;
             vertical-stretch: 1;
-            title: "Remote Simplestreams";
-            meta: "10s reqwest";
+            title: "Remote catalog";
+            meta: "images.linuxcontainers.org";
 
             CubbyCodeBox {
                 uri: "https://images.linuxcontainers.org/streams/v1/images.json";
@@ -3052,14 +3196,12 @@ component SettingsView inherits ScrollView {
                 spacing: 14px;
 
                 CubbyPanel {
-                    title: "Socket Access & Group Membership";
-                    meta: root.socket_connected ? "Connected" : "Action Needed";
+                    title: "Socket access";
+                    meta: root.socket_connected ? "Connected" : "PermissionDenied";
 
-                    CubbyBanner {
-                        tone: root.socket_connected ? "warn" : "err";
-                        title: root.socket_connected
-                            ? "Local Incus Socket Healthy"
-                            : "Incus Socket Warning";
+                    if !root.socket_connected: CubbyBanner {
+                        tone: "err";
+                        title: "Permission denied";
                         body: root.socket_warning != ""
                             ? root.socket_warning
                             : "Ensure incusd is running and your Linux user belongs to the incus-admin group.";
@@ -3072,6 +3214,26 @@ component SettingsView inherits ScrollView {
                             tooltip: "Retry socket";
                             clicked => { root.refresh(); }
                         }
+                    }
+
+                    if root.socket_connected: HorizontalLayout {
+                        alignment: space-between;
+                        CubbyStatusDot { tone: "live"; label: "/var/lib/incus/unix.socket reachable"; }
+                        CubbyIconButton {
+                            icon: "refresh";
+                            tone: "outline";
+                            size: "sm";
+                            tooltip: "Recheck socket";
+                            clicked => { root.refresh(); }
+                        }
+                    }
+
+                    if root.socket_connected: Text {
+                        text: "If permission is denied later, add your user to incus-admin:";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 12px;
+                        color: CubbyTheme.ink_secondary;
+                        wrap: word-wrap;
                     }
 
                     CubbyCodeBox {
@@ -3102,34 +3264,19 @@ component SettingsView inherits ScrollView {
                                 color: CubbyTheme.ink;
                             }
                             Text {
-                                text: "Local-first native Linux sandbox manager over Incus REST 1.0";
+                                text: "Local-first Linux sandbox manager. Incus remains the single source of truth.";
                                 font-family: CubbyTheme.font_sans;
                                 font-size: 12px;
                                 color: CubbyTheme.ink_secondary;
                                 wrap: word-wrap;
                             }
                             Text {
-                                text: "Rust 2024 · Slint 1.18 · Tokio · hyperlocal";
+                                text: "Zero telemetry, no background daemon";
                                 font-family: CubbyTheme.font_mono;
                                 font-size: 11px;
                                 color: CubbyTheme.ink_muted;
                             }
                         }
-                    }
-
-                    CubbyRow {
-                        mono_title: true;
-                        title: "slint + tokio + hyperlocal";
-                        meta: "single binary";
-                        subtitle: "Zero background daemon of its own; Incus remains single source of truth.";
-                    }
-
-                    CubbyRow {
-                        last: true;
-                        mono_title: true;
-                        title: "GET + PUT InstancePut";
-                        meta: "no PATCH null";
-                        subtitle: "Safe read-modify-write preserves unrelated config and devices.";
                     }
 
                     HorizontalLayout {
@@ -3654,7 +3801,7 @@ export component AdvancedShell inherits VerticalLayout {
 
     if root.confirm_message != "": CubbyBanner {
         tone: "warn";
-        title: "Confirm Destructive Action";
+        title: "Confirm action";
         body: root.confirm_message;
 
         CubbyActionButton {
@@ -3676,9 +3823,9 @@ export component AdvancedShell inherits VerticalLayout {
         }
     }
 
-    if root.socket_warning != "": CubbyBanner {
+    if root.socket_warning != "" && root.active_tab != "settings" && (root.active_tab != "sandboxes" || root.has_selection || root.instances.length > 0): CubbyBanner {
         tone: "err";
-        title: "Incus Socket Warning";
+        title: "Socket unavailable";
         body: root.socket_warning;
 
         CubbyIconButton {
@@ -3699,6 +3846,7 @@ export component AdvancedShell inherits VerticalLayout {
         if root.active_tab == "sandboxes": SandboxesView {
             width: 100%;
             height: 100%;
+            socket_connected: root.socket_connected;
             instances: root.instances;
             total_instance_count: root.total_instance_count;
             running_count_summary: root.running_count_summary;
@@ -3714,9 +3862,12 @@ export component AdvancedShell inherits VerticalLayout {
             log_content: root.log_content;
             resolved_ide_name: root.resolved_ide_name;
             busy: root.busy;
+            refresh => { root.refresh(); }
             filter_sandboxes(q) => { root.filter_sandboxes(q); }
             select_instance_by_name(n) => { root.select_instance_by_name(n); }
             go_create => { root.active_tab = "create"; }
+            go_community => { root.create_use_community = true; root.active_tab = "create"; }
+            open_settings => { root.active_tab = "settings"; }
             open_shell(n) => { root.open_shell(n); }
             open_ide(w) => { root.open_ide(w); }
             set_instance_state(n, a) => { root.set_instance_state(n, a); }
