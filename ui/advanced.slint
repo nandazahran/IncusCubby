@@ -2254,7 +2254,7 @@ component CreateView inherits HorizontalLayout {
                     read_only: true;
                     mono: true;
                     text: (root.community_view_tab == 1 || root.community_output != "")
-                        ? (root.community_output != "" ? root.community_output : "Deploy output will stream here after clicking Create & Run Script.")
+                        ? (root.community_output != "" ? root.community_output : "Deploy output will appear here after clicking Deploy.")
                         : root.community_install_script;
                 }
             }
@@ -2301,15 +2301,16 @@ component CreateView inherits HorizontalLayout {
                     size: "md";
                     label: root.create_use_community ? "Deploy" : "Create";
                     enabled: !root.busy
-                        && root.create_name != ""
                         && root.create_image_alias != ""
-                        && (!root.create_use_community || root.community_selected_slug != "");
+                        && (root.create_use_community
+                            ? root.community_selected_slug != ""
+                            : root.create_name != "");
                     clicked => {
                         if root.create_use_community {
                             root.community_view_tab = 1;
                             root.deploy_community_app(
                                 root.community_selected_slug,
-                                root.create_name,
+                                root.create_name != "" ? root.create_name : root.community_selected_slug,
                                 root.create_image_alias,
                                 root.create_cpu,
                                 root.create_memory,
