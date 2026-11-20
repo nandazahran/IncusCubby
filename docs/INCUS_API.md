@@ -1,4 +1,4 @@
-# IncusCubby — Incus REST API & Simplestreams Reference
+# IncusCubby: Incus REST API & Simplestreams Reference
 
 IncusCubby communicates with the local Incus daemon over **HTTP/1.1 on Unix domain socket `/var/lib/incus/unix.socket`** (`DEFAULT_INCUS_SOCKET`) using `hyper` + `hyperlocal`. No TCP listener or TLS client certificate is used.
 
@@ -6,10 +6,13 @@ IncusCubby communicates with the local Incus daemon over **HTTP/1.1 on Unix doma
 
 ## 1. Transport & Operation Model
 
-- **Request envelope**: JSON payloads use `content-type: application/json`; responses deserialize into `ApiResponse<T>` (`type`, `status`, `operation`, `error_code`, `error`, `metadata`).
-- **Async operations**: When a mutating endpoint returns `type == "async"` with a non-empty `operation` path (e.g., `/1.0/operations/<uuid>`), `execute_async_with_metadata` issues `GET {operation}/wait` and inspects `OperationMetadata` (`status_code >= 400` or non-empty `err` maps to `IncusError::Api`).
-- **Null-safe deserialization**: Go nil slices and maps returned as JSON `null` (`config`, `devices`, `profiles`, `addresses`, `disk`) are decoded via `null_to_default` into empty Rust collections.
-- **Read-modify-write updates**: Because Incus `PATCH /1.0/instances/{name}` rejects `null` entries when removing devices, IncusCubby reads the full `InstancePut` or `ProfilePut` via `GET`, mutates it in memory, and sends `PUT`.
+JSON payloads use `content-type: application/json`, and responses deserialize into `ApiResponse<T>` (`type`, `status`, `operation`, `error_code`, `error`, `metadata`).
+
+When a mutating endpoint returns `type == "async"` with a non-empty `operation` path (for example `/1.0/operations/<uuid>`), `execute_async_with_metadata` issues `GET {operation}/wait` and maps `status_code >= 400` or a non-empty `err` to `IncusError::Api`.
+
+Go nil slices and maps arrive as JSON `null` (`config`, `devices`, `profiles`, `addresses`, `disk`) and decode through `null_to_default` into empty Rust collections.
+
+`PATCH /1.0/instances/{name}` rejects `null` entries when removing devices, so IncusCubby `GET`s the full `InstancePut` or `ProfilePut`, mutates it in memory, and `PUT`s it back.
 
 ---
 
@@ -63,14 +66,15 @@ IncusCubby communicates with the local Incus daemon over **HTTP/1.1 on Unix doma
 
 ## 3. Remote Simplestreams Index (`src/incus/remote_images.rs`)
 
-- **Default presets** (available offline without hitting the network): `debian/12`, `debian/13`, `ubuntu/24.04`, `ubuntu/26.04`, `alpine/3.24`, `archlinux`, `fedora/44`.
-- **Live alias refresh**: Triggered explicitly by the user via *Fetch Remote Aliases*. Issues an HTTPS `GET` (10-second timeout via `reqwest` + `rustls`) to:
-  ```
-  https://images.linuxcontainers.org/streams/v1/images.json
-  ```
-- **Architecture & alias filtering**:
-  - Maps `std::env::consts::ARCH`: `x86_64` to `amd64`, `aarch64` to `arm64`, `arm` to `armhf`, `riscv64` to `riscv64`.
-  - Picks the shortest alias from comma-separated `aliases` while preferring non-`tinycloud` aliases when available, and prefers `variant == "default"` on duplicate alias collisions.
+`default_preset_images()`, which seeds the Create tab at startup, carries eight presets: `debian/12`, `debian/13`, `ubuntu/24.04`, `ubuntu/26.04`, `alpine/3.24`, `archlinux`, `fedora/44`, and `opensuse/tumbleweed`. `default_preset_aliases()` returns the first seven, and the unit test `default_presets_match_expected_list` pins exactly that list. Either way the presets work offline, so the Create tab lists images without network access.
+
+The *Fetch remote aliases* control issues an HTTPS `GET` with a 10-second `reqwest` timeout over `rustls`:
+
+```
+https://images.linuxcontainers.org/streams/v1/images.json
+```
+
+Alias filtering maps `std::env::consts::ARCH`: `x86_64` to `amd64`, `aarch64` to `arm64`, `arm` to `armhf`, and `riscv64` to `riscv64`. It picks the shortest alias from the comma-separated `aliases` value, prefers non-`tinycloud` aliases, and prefers `variant == "default"` when aliases collide.
 
 ---
 

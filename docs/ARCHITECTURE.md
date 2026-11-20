@@ -1,4 +1,4 @@
-# IncusCubby — Architecture
+# IncusCubby: Architecture
 
 Native Linux desktop GUI for managing local Incus/LXC developer sandboxes over `/var/lib/incus/unix.socket`. License: GPL-3.0-or-later (`LICENSE`).
 
@@ -20,7 +20,7 @@ Decision:
 
 ### 1.2 UI toolkit: Custom Precision Instrument Slint UI
 
-- **Slint (`1.18`)** compiled ahead-of-time via `build.rs` (`slint_build::compile("ui/app.slint")`).
+- Slint `1.18` compiles ahead of time through `build.rs` (`slint_build::compile("ui/app.slint")`).
 - Uses custom Precision Instrument components (`ui/theme.slint`, `ui/components.slint`, `ui/simple.slint`, `ui/advanced.slint`, `ui/app.slint`) with bundled Geist/Geist Mono TTF fonts (`ui/fonts/`), unified Lucide SVG icon set (`ui/icons/lucide/`), Simple/Advanced modes, and Dark Graphite / Light Studio themes.
 - Slint runs its event loop on the main thread; all async Incus I/O runs on a dedicated OS thread hosting a multi-threaded Tokio runtime, pushing updates strictly through `slint::Weak<AppWindow>::upgrade_in_event_loop`.
 
@@ -100,24 +100,33 @@ src/
 
 ### 2.2 Incus 1.0 REST client & gotchas
 
-- **Go `nil` maps/slices serialize as JSON `null`**: Incus returns `"config": null`, `"devices": null`, `"profiles": null`, or `"addresses": null` in many responses. `models.rs` uses `null_to_default` with `#[serde(default, deserialize_with = "null_to_default")]` so `null` maps cleanly to empty `Vec` / `HashMap`. Memory usage fields use `i64` before clamping to `u64`.
-- **`PATCH` rejects `null` device removal**: Incus `PATCH /1.0/instances/{name}` rejects `null` entries in `devices` (`"type <nil> is not supported in *api.DevicesMap"`). `update_instance_put` and `infra.rs::update_profile` instead perform a `GET`, deserialize `InstancePut` / `ProfilePut` (preserving unrelated `config`, `devices`, `profiles`, `description`, `ephemeral`, `stateful`), mutate in memory, and `PUT` the full object.
-- **Async operations**: Endpoints returning `type: "async"` with an `operation` path are awaited via `GET {operation}/wait` (`execute_async_with_metadata`), surfacing `metadata.err` or `metadata.status_code >= 400` as `IncusError::Api`.
-- **Host workspace bind-mounts**: `build_disk_device` expands `~/...` against `$HOME`, verifies the host path is an existing absolute directory, and configures `"type": "disk"` with `"shift": "true"` so unprivileged containers map UIDs cleanly.
+Incus returns `"config": null`, `"devices": null`, `"profiles": null`, or `"addresses": null` for Go nil maps and slices. `models.rs` applies `null_to_default` through `#[serde(default, deserialize_with = "null_to_default")]` so `null` decodes to an empty `Vec` or `HashMap`. Memory fields use `i64` before clamping to `u64`.
+
+`PATCH /1.0/instances/{name}` rejects `null` entries in `devices` (`"type <nil> is not supported in *api.DevicesMap"`). `update_instance_put` and `infra.rs::update_profile` therefore `GET` the full `InstancePut` or `ProfilePut`, mutate it in memory while preserving unrelated `config`, `devices`, `profiles`, `description`, `ephemeral`, and `stateful`, then `PUT` the whole object.
+
+Endpoints that return `type: "async"` with an `operation` path are awaited through `GET {operation}/wait` in `execute_async_with_metadata`, which raises `IncusError::Api` when `metadata.err` is set or `metadata.status_code >= 400`.
+
+`build_disk_device` expands `~/...` against `$HOME`, checks that the host path is an existing absolute directory, and builds a `"type": "disk"` device with `"shift": "true"` so unprivileged containers map UIDs.
 
 ### 2.3 UI & background worker model
 
-- **3-second live polling**: `spawn_backend_worker` runs `tokio::select!` between `rx.recv()` (`BackendCommand`) and a 3-second `tokio::time::interval` (`MissedTickBehavior::Delay`).
-- **Change deduplication & busy guard**: Poll results are compared against `last_instances` and `last_socket_err`. UI updates run inside `upgrade_in_event_loop` only when `!ui.get_busy()`, preventing poll updates from clobbering in-flight actions.
-- **Destructive-action confirmation**: `DeleteInstance`, `RestoreSnapshot`, `DeleteSnapshot`, `DeleteStorageVolume`, `DeleteNetwork`, `DeleteProfile`, and `DeleteImage` store the pending `BackendCommand` in `Rc<RefCell<Option<BackendCommand>>>` and display an inline `Confirm Action` banner rather than modal OS dialogs.
-- **Socket health banner**: `classify_transport_error` walks the `StdError::source()` chain for `io::ErrorKind::PermissionDenied` or `NotFound`, converting it into `IncusError::SocketUnavailable` and displaying the inline `Incus Socket Warning` banner with the `sudo usermod -aG incus-admin $USER` hint.
+`spawn_backend_worker` runs `tokio::select!` between `rx.recv()` (`BackendCommand`) and a three-second `tokio::time::interval` with `MissedTickBehavior::Delay`.
+
+Poll results are compared against `last_instances` and `last_socket_err`, and reach the UI through `upgrade_in_event_loop` only when `!ui.get_busy()`, so a poll cannot clobber an in-flight action.
+
+`DeleteInstance`, `RestoreSnapshot`, `DeleteSnapshot`, `DeleteStorageVolume`, `DeleteNetwork`, `DeleteProfile`, and `DeleteImage` park the pending `BackendCommand` in `Rc<RefCell<Option<BackendCommand>>>` and show the inline `Confirm action` banner instead of a modal dialog.
+
+`classify_transport_error` walks the `StdError::source()` chain for `io::ErrorKind::PermissionDenied` or `NotFound`, maps the result to `IncusError::SocketUnavailable`, and shows the `Socket unavailable` banner with the `sudo usermod -aG incus-admin $USER` hint.
 
 ### 2.4 Security & validation boundaries
 
-- **Identifier validation**: `validate_name` restricts instance, snapshot, device, profile, pool, volume, and network names to non-empty ASCII `[A-Za-z0-9_-]`. `delete_image` requires a non-empty hex fingerprint, and `delete_profile` forbids deleting `"default"`.
-- **Log traversal guard**: `read_instance_log` rejects `.`, `..`, and any characters outside `[A-Za-z0-9._-]`.
-- **URI safety**: `send_request` rejects paths not starting with `/` or containing control/whitespace characters; file transfer paths are percent-encoded (`percent_encode`).
-- **Package token validation**: `packages::validate_package_token` rejects empty tokens, leading `-` flags, and any character outside `[A-Za-z0-9_.-+]`, passing package names as direct argv entries (or `"$@"` positional args in `sh -lc`) with zero shell interpolation.
+`validate_name` restricts instance, snapshot, device, profile, pool, volume, and network names to non-empty ASCII `[A-Za-z0-9_-]`. `delete_image` requires a non-empty hex fingerprint, and `delete_profile` refuses to delete `"default"`.
+
+`read_instance_log` rejects `.`, `..`, and any character outside `[A-Za-z0-9._-]`.
+
+`send_request` rejects paths that do not start with `/` or that contain control or whitespace characters. File transfer paths are percent-encoded by `percent_encode` in `infra.rs`.
+
+`packages::validate_package_token` rejects empty tokens, leading `-` flags, and any character outside `[A-Za-z0-9_.-+]`. Package names reach the process as direct argv entries, or as `"$@"` positional arguments in `sh -lc`, so no shell interpolation occurs.
 
 ---
 
@@ -129,13 +138,13 @@ All endpoints, headers, and simplestreams parsing rules are documented in [INCUS
 
 ## 4. Linux integration
 
-- **Incus socket**: Hardcoded default `/var/lib/incus/unix.socket` (`DEFAULT_INCUS_SOCKET`). Requires `incusd` running and the user in `incus-admin` (or root).
-- **XDG settings & logo cache**:
-  - Preferences stored as pretty JSON in `$XDG_CONFIG_HOME/incus-cubby/settings.json` (fallback `$HOME/.config/incus-cubby/settings.json`) with fields `preferred_terminal`, `preferred_ide`, `simple_mode`, and `light_theme`.
-  - Dynamic OS and app logos cached in `$XDG_CACHE_HOME/incus-cubby/logos/` (fallback `$HOME/.cache/incus-cubby/logos/`).
-- **Terminal & IDE resolution**:
-  - Terminal order: `preferred_terminal` (unless `"auto"`), `$TERMINAL`, then first found in `PATH` from `x-terminal-emulator`, `gnome-terminal`, `konsole`, `ghostty`, `alacritty`, `kitty`, `foot`, `wezterm`, `xfce4-terminal`, `xterm`. Argument flags adapt per binary (`gnome-terminal --`, `wezterm start --`, `foot` with bare command, others `-e`).
-  - IDE order: `preferred_ide` (unless `"auto"`, supporting any custom command in `PATH` or absolute path), else first found in `PATH` from `codium`, `code`, `zed`, `zeditor`, `kate`, `subl`, `hx`, `nvim`, `emacs`, passing the instance's `workspace` mount source path when present.
+The Incus socket path is hardcoded to `/var/lib/incus/unix.socket` (`DEFAULT_INCUS_SOCKET`). It requires `incusd` running and your user in `incus-admin` or root.
+
+Preferences are stored as pretty JSON in `$XDG_CONFIG_HOME/incus-cubby/settings.json` (fallback `$HOME/.config/incus-cubby/settings.json`) with `preferred_terminal`, `preferred_ide`, `simple_mode`, and `light_theme`. Dynamic OS and app logos are cached in `$XDG_CACHE_HOME/incus-cubby/logos/` (fallback `$HOME/.cache/incus-cubby/logos/`).
+
+Terminal resolution tries `preferred_terminal` unless it is `"auto"`, then `$TERMINAL`, then the first of `x-terminal-emulator`, `gnome-terminal`, `konsole`, `ghostty`, `alacritty`, `kitty`, `foot`, `wezterm`, `xfce4-terminal`, and `xterm` found in `PATH`. Argument flags adapt per binary: `gnome-terminal --`, `wezterm start --`, `foot` with a bare command, and `-e` for the rest.
+
+IDE resolution tries `preferred_ide` unless it is `"auto"` (any `PATH` command or absolute path), then the first of `codium`, `code`, `zed`, `zeditor`, `kate`, `subl`, `hx`, `nvim`, and `emacs` found in `PATH`. It passes the instance's `workspace` mount source path when one exists.
 
 ---
 

@@ -5,12 +5,9 @@ IncusCubby is a single-crate Rust + Slint desktop application for Linux. This fi
 ## Prerequisites
 
 - **Rust 1.91 or newer** (`edition = "2024"`), with `clippy` and `rustfmt`.
-- **Linux desktop build dependencies** (Debian/Ubuntu): `pkg-config`, `cmake`, `libfontconfig1-dev`, `libwayland-dev`, `libxkbcommon-dev`, `libx11-dev`, `libx11-xcb-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxi-dev`, `libgl1-mesa-dev`.
-- **AppImage packaging**: `appimagetool` (run with `APPIMAGE_EXTRACT_AND_RUN=1`), `desktop-file-utils`, `file`.
-- **Incus** (runtime and optional live integration test):
-  - `incusd` running with `/var/lib/incus/unix.socket`.
-  - User added to `incus-admin`: `sudo usermod -aG incus-admin "$USER"`.
-  - `incus` CLI in `PATH` if testing the interactive *Shell* launcher.
+- On Debian and Ubuntu the desktop build needs `pkg-config`, `cmake`, `libfontconfig1-dev`, `libwayland-dev`, `libxkbcommon-dev`, `libx11-dev`, `libx11-xcb-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxi-dev`, and `libgl1-mesa-dev`.
+- Building an AppImage needs `appimagetool` (run with `APPIMAGE_EXTRACT_AND_RUN=1`), `desktop-file-utils`, and `file`.
+- The live integration test needs `incusd` running with `/var/lib/incus/unix.socket`, your user in `incus-admin` (`sudo usermod -aG incus-admin "$USER"`), and the `incus` CLI in `PATH` when you test the *Shell* launcher.
 
 ## Build and run
 
@@ -91,5 +88,5 @@ Requires a working local `incusd` with internet access to pull the base image.
 
 - [Architecture Specification](docs/ARCHITECTURE.md)
 - [Incus REST API & Simplestreams Reference](docs/INCUS_API.md)
-- [Roadmap & Risk Matrix](docs/ROADMAP.md)
+- [Roadmap, risks, and decisions](docs/ROADMAP.md)
 - [Privacy Policy](docs/PRIVACY.md)

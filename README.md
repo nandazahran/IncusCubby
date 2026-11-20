@@ -4,18 +4,22 @@
   <p>Native Linux desktop GUI (Rust + Slint) for managing local <strong>Incus / LXC</strong> developer sandboxes over <code>/var/lib/incus/unix.socket</code> (<code>GPL-3.0-or-later</code>).</p>
 </div>
 
-IncusCubby talks directly to the local Incus 1.0 REST API over its Unix domain socket — managing containers, virtual machines, snapshots, workspace bind-mounts, port forwards, storage pools, bridge networks, profiles, and cached images without wrapping the CLI for state or lifecycle operations.
+IncusCubby talks to the local Incus 1.0 REST API over its Unix domain socket, and manages containers, virtual machines, snapshots, workspace bind-mounts, port forwards, storage pools, bridge networks, profiles, and cached images without wrapping the CLI for state or lifecycle operations.
 
 ## Features
 
-- **Direct Unix Socket Client**: Communicates with `incusd` over `/var/lib/incus/unix.socket` using `hyper` + `hyperlocal` with async `/1.0/operations/{id}/wait` handling and automatic `Incus Socket Warning` diagnostics if permissions or the daemon are missing.
-- **Live Telemetry & Lifecycle**: Polls `/1.0/instances?recursion=2` every 3 seconds when idle, showing status (`Running`, `Stopped`, `Frozen`), IPv4 address, memory usage/limits, CPU seconds, root disk usage, network RX/TX counters, and process counts. Supports `Start`, `Stop`, `Restart`, `Freeze`/`Unfreeze`, CoW `Clone`, live CPU/memory limit edits, and inline-confirmed `Delete`.
-- **Developer Workflow Integration**:
-  - **Shell & IDE Launchers**: Opens an interactive root shell (`incus exec <name> -- su -l root`) in your configured or auto-detected terminal emulator (`ghostty`, `alacritty`, `kitty`, `foot`, `wezterm`, `konsole`, `gnome-terminal`, `xfce4-terminal`, `xterm`, `x-terminal-emulator`), and opens mounted workspaces in your configured or auto-detected editor (`codium`, `code`, `zed`, `zeditor`, `kate`, `subl`, `hx`, `nvim`, `emacs`, or custom command).
-  - **Workspace & Custom Disk Mounts**: Attaches host directories with `shift: "true"` ID-mapped ownership (default `/workspace`) or custom Incus storage volumes, plus `proxy` port-forwarding devices (`127.0.0.1:<host_port>` to `127.0.0.1:<container_port>`).
-  - **OS-Aware Package Actions**: Runs non-interactive package upgrades and validated package installs via `/1.0/instances/{name}/exec` for Debian/Ubuntu (`apt-get`), Alpine (`apk`), Arch Linux (`pacman`), Fedora/RHEL-family (`dnf`), and openSUSE (`zypper`).
-- **Containers, VMs, Cloud-Init & Snapshots**: Create `container` or `virtual-machine` instances from local or `images.linuxcontainers.org` simplestreams aliases, pass `cloud-init.user-data`, apply profiles, and take/restore/delete snapshots.
-- **Local Infrastructure Tabs**: Inspect storage pools and create/delete/attach custom filesystem volumes, create/delete managed NAT bridge networks and inspect DHCP leases, manage profiles, inspect instance logs, transfer files (`push`/`pull`), and manage locally cached base images.
+IncusCubby talks to `incusd` over `/var/lib/incus/unix.socket` using `hyper` and `hyperlocal`, and awaits async operations through `/1.0/operations/{id}/wait`. When the socket is missing or your user lacks permission, the app shows the `Socket unavailable` banner.
+
+While idle, the app polls `/1.0/instances?recursion=2` every three seconds and shows status (`Running`, `Stopped`, `Frozen`), IPv4 address, memory usage and limit, CPU seconds, root disk usage, network RX/TX counters, and process count. It can start, stop, restart, freeze, unfreeze, CoW clone, edit live CPU and memory limits, and delete an instance behind an inline confirmation.
+
+Terminal and IDE launchers:
+
+- Shell opens `incus exec <name> -- su -l root` in your configured terminal emulator, or the first one found in `PATH` from `x-terminal-emulator`, `gnome-terminal`, `konsole`, `ghostty`, `alacritty`, `kitty`, `foot`, `wezterm`, `xfce4-terminal`, and `xterm`.
+- IDE opens your configured editor, or the first one found in `PATH` from `codium`, `code`, `zed`, `zeditor`, `kate`, `subl`, `hx`, `nvim`, and `emacs`.
+- Workspace mounts attach host directories with `shift: "true"` ID-mapped ownership at `/workspace`, or a custom Incus storage volume. `proxy` devices forward `127.0.0.1:<host_port>` to `127.0.0.1:<container_port>`.
+- Package actions run non-interactively through `/1.0/instances/{name}/exec` on Debian and Ubuntu (`apt-get`), Alpine (`apk`), Arch Linux (`pacman`), Fedora and the RHEL family (`dnf`), and openSUSE (`zypper`).
+
+Create accepts `container` or `virtual-machine` from a local or `images.linuxcontainers.org` simplestreams alias, with `cloud-init.user-data`, profiles, and snapshots you can take, restore, or delete. The Advanced views cover storage pools and custom volumes, managed NAT bridge networks and DHCP leases, profiles, instance logs, file push and pull, and locally cached base images.
 
 ## Prerequisites & Installation
 
@@ -63,7 +67,7 @@ Linux system dependencies, repository layout, test commands, and packaging steps
 3. Switch between **Simple** and **Advanced** UI modes (and **Dark** / **Light** themes) in the header, or navigate the Advanced views:
    - **Sandboxes**: Select an instance to inspect telemetry, start/stop/restart/freeze, open a shell or IDE, clone, edit CPU/RAM limits, upgrade/install packages, manage disk mounts and proxy ports, take/restore snapshots, view logs, or push/pull files.
    - **Create**: Switch between **Official Images (LinuxContainers)** (`container` or `virtual-machine`, presets or fetched `images.linuxcontainers.org` aliases, CPU/memory/profiles, `/workspace` bind-mount, `cloud-init.user-data`) and **Community Scripts (community-scripts/Incus)** (search/filter catalog, preview `ct`/`install` scripts, deploy new containers or run in existing ones).
-   - **Storage & Networks**: View pool capacity, create/delete custom volumes, create/delete managed bridge networks (with IPv4/IPv6 NAT toggle), and inspect DHCP leases.
+   - **Storage & Net**: View pool capacity, create/delete custom volumes, create/delete managed bridge networks (with IPv4/IPv6 NAT toggle), and inspect DHCP leases.
    - **Profiles**: Create, update, or delete non-`default` Incus profiles with CPU and memory limits.
    - **Images**: Inspect and delete locally cached Incus base images.
    - **Settings / About / Legal**: Persist preferred terminal emulator, preferred/custom IDE, UI mode (`simple_mode`), and theme (`light_theme`) to `$XDG_CONFIG_HOME/incus-cubby/settings.json` (or `~/.config/incus-cubby/settings.json`), and view license and attribution notices.
@@ -72,15 +76,15 @@ Linux system dependencies, repository layout, test commands, and packaging steps
 
 - [Architecture Specification](docs/ARCHITECTURE.md)
 - [Incus REST API & Simplestreams Reference](docs/INCUS_API.md)
-- [Roadmap & Risk Matrix](docs/ROADMAP.md)
-- [Privacy Policy](docs/PRIVACY.md) — local-first, zero telemetry.
+- [Roadmap, risks, and decisions](docs/ROADMAP.md)
+- [Privacy Policy](docs/PRIVACY.md): local-only operation, no telemetry.
 
 ## Prior Art & References
 
 IncusCubby is an independent Rust + Slint implementation under the GNU General Public License v3.0 or later (`LICENSE`). Inspiration and references consulted:
 
-- [Incus](https://linuxcontainers.org/incus/) — System container and virtual machine manager (`1.0` Unix socket REST API & Web UI workflows).
-- [DistroShelf](https://github.com/ranfdev/DistroShelf) & [BoxBuddyRS](https://github.com/Dvlv/BoxBuddyRS) — Linux desktop container manager UX workflows (clone, package upgrade/install, terminal/IDE integration).
+- [Incus](https://linuxcontainers.org/incus/): system container and virtual machine manager (`1.0` Unix socket REST API and Web UI workflows).
+- [DistroShelf](https://github.com/ranfdev/DistroShelf) and [BoxBuddyRS](https://github.com/Dvlv/BoxBuddyRS): Linux desktop container manager UX workflows (clone, package upgrade and install, terminal and IDE integration).
 
 ## Contributing
 
