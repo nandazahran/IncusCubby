@@ -52,6 +52,7 @@ export component AppWindow inherits Window {
     in-out property <string> active_tab: "sandboxes";
     in-out property <string> simple_view: "hub";
     in-out property <bool> sidebar_collapsed: false;
+    in-out property <length> nav_width: 208px;
 
     in property <[UiInstance]> instances: [];
     in property <int> total_instance_count: 0;
@@ -135,6 +136,7 @@ export component AppWindow inherits Window {
     callback toggle_simple_mode(bool);
     callback toggle_theme(bool);
     callback toggle_sidebar_collapsed(bool);
+    callback set_nav_width(int);
     callback filter_sandboxes(string);
     callback select_instance(int);
     callback select_instance_by_name(string);
@@ -205,6 +207,7 @@ export component AppWindow inherits Window {
         total_instance_count: root.total_instance_count;
         running_instance_count: root.running_instance_count;
         sidebar_collapsed <=> root.sidebar_collapsed;
+        nav_width <=> root.nav_width;
         host_cpu_summary: root.host_cpu_summary;
         host_mem_summary: root.host_mem_summary;
         host_detail_cpu: root.host_detail_cpu;
@@ -269,6 +272,7 @@ export component AppWindow inherits Window {
         toggle_simple_mode(s) => { root.toggle_simple_mode(s); }
         toggle_theme(l) => { root.toggle_theme(l); }
         toggle_sidebar_collapsed(c) => { root.toggle_sidebar_collapsed(c); }
+        set_nav_width(w) => { root.set_nav_width(w); }
         confirm_action => { root.confirm_action(); }
         cancel_confirm => { root.cancel_confirm(); }
         filter_sandboxes(q) => { root.filter_sandboxes(q); }

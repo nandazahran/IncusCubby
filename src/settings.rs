@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     pub preferred_terminal: String,
@@ -13,6 +13,20 @@ pub struct AppSettings {
     pub simple_mode: bool,
     pub light_theme: bool,
     pub sidebar_collapsed: bool,
+    pub nav_width: i32,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            preferred_terminal: String::new(),
+            preferred_ide: String::new(),
+            simple_mode: false,
+            light_theme: false,
+            sidebar_collapsed: false,
+            nav_width: 208,
+        }
+    }
 }
 
 impl AppSettings {
@@ -214,6 +228,7 @@ mod tests {
             simple_mode: true,
             light_theme: true,
             sidebar_collapsed: true,
+            nav_width: 208,
         };
 
         settings.save_to(&path).expect("save_to should succeed");
@@ -245,7 +260,7 @@ mod tests {
         assert_eq!(loaded.preferred_ide, "codium");
         assert!(!loaded.simple_mode);
         assert!(!loaded.light_theme);
-        assert!(!loaded.sidebar_collapsed);
+        assert_eq!(loaded.nav_width, 208);
 
         if let Some(dir) = path.parent() {
             let _ = fs::remove_dir_all(dir);
