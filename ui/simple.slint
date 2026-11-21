@@ -233,11 +233,11 @@ export component SimpleShell inherits VerticalLayout {
     callback create_snapshot(string, string);
     callback request_restore_snapshot(string, string);
     callback browse_workspace_folder();
-    callback create_instance(string, string, string, string, string, string, string, string, bool);
+    callback create_instance(string, string, string, string, string, string, string, string, string, bool);
     callback filter_community_apps(string);
     callback fetch_community_catalog();
     callback select_community_app(string);
-    callback deploy_community_app(string, string, string, string, string, string, string, bool);
+    callback deploy_community_app(string, string, string, string, string, string, string, string, bool);
     callback save_settings(string, string);
     callback request_reset_settings();
     callback open_url(string);
@@ -818,6 +818,7 @@ export component SimpleShell inherits VerticalLayout {
                             root.create_image_alias,
                             root.create_memory,
                             root.create_cpu,
+                            "",
                             root.create_workspace,
                             "default",
                             "",
@@ -1266,19 +1267,19 @@ export component SimpleShell inherits VerticalLayout {
                 CubbySegmentTrack {
                     CubbySegmentOption {
                         horizontal-stretch: 1;
-                        label: "All Apps";
+                        label: "All";
                         active: root.community_repo_filter == "all";
                         clicked => { root.community_repo_filter = "all"; root.filter_community_apps(root.community_search_query); }
                     }
                     CubbySegmentOption {
                         horizontal-stretch: 1;
-                        label: "Incus Stable";
+                        label: "Stable";
                         active: root.community_repo_filter == "incus";
                         clicked => { root.community_repo_filter = "incus"; root.filter_community_apps(root.community_search_query); }
                     }
                     CubbySegmentOption {
                         horizontal-stretch: 1;
-                        label: "Testing (DevScripts)";
+                        label: "Development";
                         active: root.community_repo_filter == "devscripts";
                         clicked => { root.community_repo_filter = "devscripts"; root.filter_community_apps(root.community_search_query); }
                     }
@@ -1457,6 +1458,7 @@ export component SimpleShell inherits VerticalLayout {
                             root.create_image_alias,
                             root.create_cpu,
                             root.create_memory,
+                            "",
                             "",
                             "default",
                             true

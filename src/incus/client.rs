@@ -74,6 +74,7 @@ pub struct CreateInstanceParams<'a> {
     pub image_alias: &'a str,
     pub memory_limit: &'a str,
     pub cpu_limit: &'a str,
+    pub disk_limit: &'a str,
     pub workspace_path: &'a str,
     pub profiles: Vec<String>,
     pub cloud_init_user_data: &'a str,
@@ -167,6 +168,16 @@ impl IncusClient {
         };
 
         let mut devices = HashMap::new();
+        let disk = params.disk_limit.trim();
+        if !disk.is_empty() {
+            let pool = self.resolve_root_pool(&profiles).await;
+            let mut root_dev = HashMap::new();
+            root_dev.insert("type".to_string(), "disk".to_string());
+            root_dev.insert("path".to_string(), "/".to_string());
+            root_dev.insert("pool".to_string(), pool);
+            root_dev.insert("size".to_string(), disk.to_string());
+            devices.insert("root".to_string(), root_dev);
+        }
         if let Some(ws_device) = build_workspace_device(params.workspace_path)? {
             devices.insert("workspace".to_string(), ws_device);
         }
@@ -189,6 +200,31 @@ impl IncusClient {
 
         self.execute_async(Method::POST, "/1.0/instances", Some(&payload))
             .await
+    }
+
+    async fn resolve_root_pool(&self, profile_names: &[String]) -> String {
+        if let Ok(resp) = self
+            .send_json::<(), Vec<ApiProfile>>(Method::GET, "/1.0/profiles?recursion=1", None::<&()>)
+            .await
+            && let Some(profiles) = resp.metadata
+        {
+            for name in profile_names.iter().rev() {
+                if let Some(prof) = profiles.iter().find(|p| p.name == *name)
+                    && let Some(root_dev) = prof.devices.get("root")
+                    && let Some(pool) = root_dev.get("pool").map(|s| s.trim())
+                    && !pool.is_empty()
+                {
+                    return pool.to_string();
+                }
+            }
+        }
+        if let Ok(pools) = self.list_storage_pools().await
+            && let Some(first) = pools.first()
+            && !first.name.trim().is_empty()
+        {
+            return first.name.trim().to_string();
+        }
+        "default".to_string()
     }
 
     pub async fn clone_instance(
@@ -941,6 +977,7 @@ pub(super) mod tests {
                 image_alias: "debian/12",
                 memory_limit: "4GiB",
                 cpu_limit: "2",
+                disk_limit: "",
                 workspace_path: &ws_str,
                 profiles: vec!["default".to_string(), "dev".to_string()],
                 cloud_init_user_data: "#cloud-config\npackages:\n  - git\n",
@@ -1203,6 +1240,7 @@ pub(super) mod tests {
                 image_alias: "alpine/3.24",
                 memory_limit: "512MiB",
                 cpu_limit: "1",
+                disk_limit: "",
                 workspace_path: &ws_str,
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
@@ -1720,6 +1758,7 @@ pub(super) mod tests {
                 image_alias: "ubuntu/24.04",
                 memory_limit: "4GiB",
                 cpu_limit: "2",
+                disk_limit: "",
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
@@ -1735,6 +1774,7 @@ pub(super) mod tests {
                 image_alias: "ubuntu/24.04",
                 memory_limit: "",
                 cpu_limit: "",
+                disk_limit: "",
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
@@ -1866,6 +1906,7 @@ pub(super) mod tests {
                 image_alias: "debian/12",
                 memory_limit: "",
                 cpu_limit: "",
+                disk_limit: "",
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",
@@ -1878,6 +1919,82 @@ pub(super) mod tests {
         assert_eq!(bodies.len(), 1);
         let sent: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
         assert_eq!(sent["config"]["security.nesting"], "true");
+
+        handle.abort();
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_instance_sets_root_disk_size_with_resolved_pool() {
+        let seen = Arc::new(Mutex::new(Vec::<(String, String, String)>::new()));
+        let seen_clone = Arc::clone(&seen);
+
+        let (sock, handle) = spawn_mock_incus(move |method, uri, body| {
+            seen_clone
+                .lock()
+                .unwrap()
+                .push((method.clone(), uri.clone(), body));
+            if method == "GET" && uri == "/1.0/profiles?recursion=1" {
+                let resp = r#"{
+                    "type": "sync",
+                    "status": "Success",
+                    "status_code": 200,
+                    "metadata": [
+                        {
+                            "name": "default",
+                            "description": "Default profile",
+                            "config": {},
+                            "devices": {
+                                "root": { "type": "disk", "path": "/", "pool": "nvme-pool" }
+                            }
+                        }
+                    ]
+                }"#;
+                (StatusCode::OK, resp.to_string())
+            } else if method == "POST" && uri == "/1.0/instances" {
+                let resp = r#"{
+                    "type": "sync",
+                    "status": "Success",
+                    "status_code": 200,
+                    "metadata": {}
+                }"#;
+                (StatusCode::OK, resp.to_string())
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    r#"{"type":"error","error":"unexpected"}"#.to_string(),
+                )
+            }
+        })
+        .await;
+
+        let client = IncusClient::new(&sock);
+        client
+            .create_instance(CreateInstanceParams {
+                name: "sized-box",
+                instance_type: "container",
+                image_alias: "debian/13",
+                memory_limit: "2GiB",
+                cpu_limit: "2",
+                disk_limit: "8GiB",
+                workspace_path: "",
+                profiles: vec!["default".to_string()],
+                cloud_init_user_data: "",
+                nesting: NestingMode::Disabled,
+            })
+            .await
+            .unwrap();
+
+        let calls = seen.lock().unwrap();
+        let create_call = calls
+            .iter()
+            .find(|(m, u, _)| m == "POST" && u == "/1.0/instances")
+            .expect("POST /1.0/instances");
+        let sent: serde_json::Value = serde_json::from_str(&create_call.2).unwrap();
+        assert_eq!(sent["devices"]["root"]["type"], "disk");
+        assert_eq!(sent["devices"]["root"]["path"], "/");
+        assert_eq!(sent["devices"]["root"]["pool"], "nvme-pool");
+        assert_eq!(sent["devices"]["root"]["size"], "8GiB");
 
         handle.abort();
         let _ = std::fs::remove_dir_all(sock.parent().unwrap());

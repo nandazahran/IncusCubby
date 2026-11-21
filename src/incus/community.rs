@@ -6,6 +6,7 @@ use anyhow::Context as _;
 use serde::Deserialize;
 
 const COMMUNITY_ORG_URL: &str = "https://community-scripts.org/";
+const COMMUNITY_SCRIPT_DETAIL_BASE_URL: &str = "https://community-scripts.org/scripts";
 const GITHUB_INCUS_TREE_URL: &str =
     "https://api.github.com/repos/community-scripts/Incus/git/trees/main?recursive=1";
 const GITHUB_DEVSCRIPTS_TREE_URL: &str =
@@ -16,6 +17,10 @@ const COMMUNITY_DEVSCRIPTS_RAW_URL: &str =
     "https://raw.githubusercontent.com/community-scripts/DevScripts/main";
 const COMMUNITY_PROXMOX_RAW_URL: &str =
     "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main";
+const COMMUNITY_INCUS_BLOB_URL: &str = "https://github.com/community-scripts/Incus/blob/main";
+const COMMUNITY_DEVSCRIPTS_BLOB_URL: &str =
+    "https://github.com/community-scripts/DevScripts/blob/main";
+const COMMUNITY_PROXMOX_BLOB_URL: &str = "https://github.com/community-scripts/ProxmoxVE/blob/main";
 const COMMUNITY_SCRIPTS_CORE_URL: &str =
     "https://raw.githubusercontent.com/community-scripts/core/main";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -37,6 +42,23 @@ impl CommunityRepo {
             Self::ProxmoxVe => COMMUNITY_PROXMOX_RAW_URL,
         }
     }
+
+    #[must_use]
+    pub const fn github_blob_base_url(self) -> &'static str {
+        match self {
+            Self::Incus => COMMUNITY_INCUS_BLOB_URL,
+            Self::DevScripts => COMMUNITY_DEVSCRIPTS_BLOB_URL,
+            Self::ProxmoxVe => COMMUNITY_PROXMOX_BLOB_URL,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunityCategory {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,8 +67,54 @@ pub struct CommunityApp {
     pub name: String,
     pub description: String,
     pub logo_url: String,
+    pub categories: Vec<String>,
     pub repo: CommunityRepo,
     pub is_dev: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunityCatalog {
+    pub categories: Vec<CommunityCategory>,
+    pub apps: Vec<CommunityApp>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunityNote {
+    pub tone: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunityInstallProfile {
+    pub name: String,
+    pub short_os: String,
+    pub os_label: String,
+    pub image_alias: String,
+    pub cpu: String,
+    pub ram: String,
+    pub memory_limit: String,
+    pub hdd: String,
+    pub disk_limit: String,
+    pub config_path: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CommunityScriptDetails {
+    pub notes: Vec<CommunityNote>,
+    pub website: String,
+    pub documentation: String,
+    pub repository: String,
+    pub category_names: String,
+    pub date_created: String,
+    pub last_updated: String,
+    pub last_update_url: String,
+    pub last_update_label: String,
+    pub runs_in: String,
+    pub updateable: bool,
+    pub port: u16,
+    pub default_user: String,
+    pub default_passwd: String,
+    pub install_profiles: Vec<CommunityInstallProfile>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,10 +126,14 @@ pub struct CommunityAppSpec {
     pub image_alias: String,
     pub cpu_limit: String,
     pub memory_limit: String,
+    pub disk_limit: String,
     pub nesting: bool,
     pub repo: CommunityRepo,
     pub ct_script: String,
     pub install_script: String,
+    pub install_source_url: String,
+    pub ct_source_url: String,
+    pub details: CommunityScriptDetails,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +145,11 @@ pub struct ParsedCtMetadata {
     pub image_alias: String,
     pub cpu_limit: String,
     pub memory_limit: String,
+    pub disk_gb: String,
+    pub alpine_version: String,
+    pub alpine_cpu: String,
+    pub alpine_ram: String,
+    pub alpine_disk: String,
     pub nesting: bool,
 }
 
@@ -118,6 +195,7 @@ pub fn curated_community_apps() -> Vec<CommunityApp> {
         name: name.to_string(),
         description: String::new(),
         logo_url: String::new(),
+        categories: Vec::new(),
         repo: CommunityRepo::Incus,
         is_dev: false,
     })
@@ -193,6 +271,7 @@ pub fn parse_github_tree_json(
             slug,
             description: String::new(),
             logo_url: String::new(),
+            categories: Vec::new(),
             repo,
             is_dev: repo == CommunityRepo::DevScripts,
         })
@@ -208,6 +287,406 @@ fn sanitize_logo_url(raw: &str) -> String {
     }
 }
 
+fn sanitize_http_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("https://") || trimmed.starts_with("http://") {
+        trimmed.to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn is_valid_os_token(val: &str) -> bool {
+    !val.is_empty()
+        && val
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn is_valid_version_token(val: &str) -> bool {
+    !val.is_empty()
+        && val
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+}
+
+fn format_ram_limit(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else if let Ok(mb) = trimmed.parse::<u64>() {
+        if mb >= 1024 && mb.is_multiple_of(1024) {
+            format!("{}GiB", mb / 1024)
+        } else {
+            format!("{mb}MiB")
+        }
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn format_disk_limit(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else if trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        format!("{trimmed}GiB")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn short_os_label(os: &str) -> String {
+    let trimmed = os.trim();
+    match trimmed.to_ascii_lowercase().as_str() {
+        "" => String::new(),
+        "arch linux" | "archlinux" => "Arch".to_string(),
+        "alpine linux" | "alpine" => "Alpine".to_string(),
+        "debian" => "Debian".to_string(),
+        "ubuntu" => "Ubuntu".to_string(),
+        "fedora" => "Fedora".to_string(),
+        "rocky linux" | "rockylinux" => "Rocky".to_string(),
+        "alma linux" | "almalinux" => "Alma".to_string(),
+        "centos" => "CentOS".to_string(),
+        "opensuse" | "opensuse leap" | "opensuse-leap" => "openSUSE".to_string(),
+        _ => slug_to_display_name(trimmed.split_whitespace().next().unwrap_or(trimmed)),
+    }
+}
+
+#[must_use]
+pub fn normalize_image_alias(os: &str, version: &str) -> String {
+    let os_lower = os.trim().to_ascii_lowercase();
+    let os_id = match os_lower.as_str() {
+        "" => return String::new(),
+        "arch linux" | "archlinux" => "archlinux",
+        "alpine linux" | "alpine" => "alpine",
+        "rocky linux" | "rockylinux" => "rockylinux",
+        "alma linux" | "almalinux" => "almalinux",
+        "debian" => "debian",
+        "ubuntu" => "ubuntu",
+        "fedora" => "fedora",
+        "centos" => "centos",
+        "opensuse" | "opensuse leap" | "opensuse-leap" => "opensuse",
+        other => other,
+    };
+    if os_id.contains(char::is_whitespace) {
+        return String::new();
+    }
+    if os_id == "archlinux" {
+        return "archlinux".to_string();
+    }
+    let ver = version.trim();
+    if ver.is_empty() || ver.eq_ignore_ascii_case("base") {
+        os_id.to_string()
+    } else {
+        format!("{os_id}/{ver}")
+    }
+}
+
+#[must_use]
+pub fn format_iso_date(raw: &str) -> String {
+    let date_part = raw.trim().get(..10).unwrap_or("");
+    let mut parts = date_part.split('-');
+    let (Some(year_s), Some(month_s), Some(day_s)) = (parts.next(), parts.next(), parts.next())
+    else {
+        return String::new();
+    };
+    let (Ok(year), Ok(month), Ok(day)) = (
+        year_s.parse::<u32>(),
+        month_s.parse::<u32>(),
+        day_s.parse::<u32>(),
+    ) else {
+        return String::new();
+    };
+    let month_name = match month {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => return String::new(),
+    };
+    format!("{month_name} {day}, {year}")
+}
+
+fn format_update_label(url: &str) -> String {
+    if url.is_empty() {
+        return String::new();
+    }
+    if let Some((_, tail)) = url.rsplit_once("/pull/") {
+        let num: String = tail.chars().take_while(char::is_ascii_digit).collect();
+        if !num.is_empty() {
+            return format!("PR #{num}");
+        }
+    }
+    if let Some((_, tail)) = url.rsplit_once("/commit/") {
+        let sha: String = tail
+            .chars()
+            .take_while(char::is_ascii_hexdigit)
+            .take(7)
+            .collect();
+        if !sha.is_empty() {
+            return sha;
+        }
+    }
+    "View".to_string()
+}
+
+fn de_opt_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn de_opt_num_or_str<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match val {
+        Some(serde_json::Value::String(s)) => s.trim().to_string(),
+        Some(serde_json::Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    })
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteNoteEntry {
+    #[serde(default, rename = "type", deserialize_with = "de_opt_string")]
+    note_type: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    text: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteInstallResources {
+    #[serde(default, deserialize_with = "de_opt_num_or_str")]
+    cpu: String,
+    #[serde(default, deserialize_with = "de_opt_num_or_str")]
+    ram: String,
+    #[serde(default, deserialize_with = "de_opt_num_or_str")]
+    hdd: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    os: String,
+    #[serde(default, deserialize_with = "de_opt_num_or_str")]
+    version: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteInstallMethod {
+    #[serde(default, rename = "type", deserialize_with = "de_opt_string")]
+    method_type: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    config_path: String,
+    #[serde(default)]
+    resources: Option<SiteInstallResources>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteDetailCategory {
+    #[serde(default, deserialize_with = "de_opt_string")]
+    name: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteDetailType {
+    #[serde(default, rename = "type", deserialize_with = "de_opt_string")]
+    type_name: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteDetailExpand {
+    #[serde(default)]
+    categories: Option<Vec<SiteDetailCategory>>,
+    #[serde(default, rename = "type")]
+    script_type: Option<SiteDetailType>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SiteScriptDetail {
+    #[serde(default)]
+    notes: Option<Vec<SiteNoteEntry>>,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    website: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    documentation: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    repository: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    script_created: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    script_updated: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    last_update_commit: String,
+    #[serde(default)]
+    updateable: Option<bool>,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    default_user: String,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    default_passwd: String,
+    #[serde(default)]
+    install_methods: Option<Vec<SiteInstallMethod>>,
+    #[serde(default)]
+    expand: Option<SiteDetailExpand>,
+}
+
+#[must_use]
+pub fn parse_community_script_detail_html(html: &str) -> Option<CommunityScriptDetails> {
+    const PREFIX: &str = "self.__next_f.push([1,";
+    const SCRIPT_KEY: &str = "\"script\":{";
+    let mut search_from = 0usize;
+
+    while let Some(rel_start) = html[search_from..].find(PREFIX) {
+        let lit_start = search_from + rel_start + PREFIX.len();
+        let Some(lit_end) = find_json_string_end(&html[lit_start..]) else {
+            search_from = lit_start;
+            continue;
+        };
+        let literal = &html[lit_start..lit_start + lit_end];
+        search_from = lit_start + lit_end;
+
+        let Ok(payload) = serde_json::from_str::<String>(literal) else {
+            continue;
+        };
+        let Some(key_pos) = payload.find(SCRIPT_KEY) else {
+            continue;
+        };
+        let obj_start = key_pos + "\"script\":".len();
+        let mut de = serde_json::Deserializer::from_str(&payload[obj_start..]);
+        let Ok(raw) = SiteScriptDetail::deserialize(&mut de) else {
+            continue;
+        };
+
+        let notes = raw
+            .notes
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|entry| {
+                let text = entry.text.trim().to_string();
+                if text.is_empty() {
+                    return None;
+                }
+                let tone = match entry.note_type.trim().to_ascii_lowercase().as_str() {
+                    "warning" | "warn" | "caution" => "warn",
+                    "error" | "danger" | "critical" => "err",
+                    _ => "info",
+                }
+                .to_string();
+                Some(CommunityNote { tone, text })
+            })
+            .collect();
+
+        let expand = raw.expand.unwrap_or_default();
+        let category_names = expand
+            .categories
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| c.name.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let runs_in_raw = expand
+            .script_type
+            .map_or_default(|t| t.type_name.trim().to_ascii_lowercase());
+        let runs_in = match runs_in_raw.as_str() {
+            "" => String::new(),
+            "lxc" => "Container".to_string(),
+            "vm" => "VM".to_string(),
+            "pve" => "Host".to_string(),
+            other => slug_to_display_name(other),
+        };
+
+        let last_update_url = sanitize_http_url(&raw.last_update_commit);
+        let last_update_label = format_update_label(&last_update_url);
+
+        let mut install_profiles: Vec<CommunityInstallProfile> = raw
+            .install_methods
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|method| {
+                let name = if method.method_type.trim().is_empty() {
+                    "default".to_string()
+                } else {
+                    method.method_type.trim().to_string()
+                };
+                let res = method.resources.unwrap_or_default();
+                let os_label = [res.os.trim(), res.version.trim()]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let short_os = short_os_label(&res.os);
+                let image_alias = normalize_image_alias(&res.os, &res.version);
+                let memory_limit = format_ram_limit(&res.ram);
+                let disk_limit = format_disk_limit(&res.hdd);
+                if res.cpu.is_empty()
+                    && res.ram.is_empty()
+                    && res.hdd.is_empty()
+                    && os_label.is_empty()
+                    && method.config_path.trim().is_empty()
+                {
+                    return None;
+                }
+                Some(CommunityInstallProfile {
+                    name,
+                    short_os,
+                    os_label,
+                    image_alias,
+                    cpu: res.cpu,
+                    ram: res.ram,
+                    memory_limit,
+                    hdd: res.hdd,
+                    disk_limit,
+                    config_path: method.config_path.trim().to_string(),
+                })
+            })
+            .collect();
+        install_profiles.sort_by_key(|p| p.name != "default");
+
+        return Some(CommunityScriptDetails {
+            notes,
+            website: sanitize_http_url(&raw.website),
+            documentation: sanitize_http_url(&raw.documentation),
+            repository: sanitize_http_url(&raw.repository),
+            category_names,
+            date_created: format_iso_date(&raw.script_created),
+            last_updated: format_iso_date(&raw.script_updated),
+            last_update_url,
+            last_update_label,
+            runs_in,
+            updateable: raw.updateable.unwrap_or(false),
+            port: raw.port.unwrap_or(0),
+            default_user: raw.default_user.trim().to_string(),
+            default_passwd: raw.default_passwd.trim().to_string(),
+            install_profiles,
+        });
+    }
+    None
+}
+
+#[derive(Debug, Deserialize)]
+struct SiteCategoryEntry {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    sort_order: i32,
+}
+
 #[derive(Debug, Deserialize)]
 struct SiteScriptEntry {
     #[serde(default)]
@@ -219,6 +698,8 @@ struct SiteScriptEntry {
     #[serde(default)]
     logo: String,
     #[serde(default)]
+    categories: Vec<String>,
+    #[serde(default)]
     is_dev: bool,
     #[serde(default)]
     is_deleted: bool,
@@ -228,8 +709,45 @@ struct SiteScriptEntry {
     install_command: String,
 }
 
+fn parse_categories_from_payload(payload: &str) -> Vec<CommunityCategory> {
+    let Some(cat_pos) = payload.find("\"categories\":[") else {
+        return Vec::new();
+    };
+    let cat_slice = &payload[cat_pos + "\"categories\":".len()..];
+    let Some(cat_end) = find_json_array_end(cat_slice) else {
+        return Vec::new();
+    };
+    let Ok(items) = serde_json::from_str::<Vec<SiteCategoryEntry>>(&cat_slice[..cat_end]) else {
+        return Vec::new();
+    };
+    let mut categories: Vec<CommunityCategory> = items
+        .into_iter()
+        .filter_map(|c| {
+            let id = c.id.trim().to_string();
+            let name = c.name.trim().to_string();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some(CommunityCategory {
+                id,
+                name,
+                description: c.description.trim().to_string(),
+                sort_order: c.sort_order,
+            })
+        })
+        .collect();
+    categories.sort_by(|a, b| {
+        a.sort_order.cmp(&b.sort_order).then_with(|| {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+        })
+    });
+    categories
+}
+
 #[must_use]
-pub fn parse_community_org_html(html: &str) -> Option<Vec<CommunityApp>> {
+pub fn parse_community_org_html(html: &str) -> Option<CommunityCatalog> {
     const PREFIX: &str = "self.__next_f.push([1,";
     let mut search_from = 0usize;
 
@@ -255,6 +773,7 @@ pub fn parse_community_org_html(html: &str) -> Option<Vec<CommunityApp>> {
         let Ok(items) = serde_json::from_str::<Vec<SiteScriptEntry>>(&arr_slice[..arr_end]) else {
             continue;
         };
+        let categories = parse_categories_from_payload(&payload);
 
         let mut by_slug: BTreeMap<String, CommunityApp> = BTreeMap::new();
         for item in items {
@@ -286,13 +805,17 @@ pub fn parse_community_org_html(html: &str) -> Option<Vec<CommunityApp>> {
                     name: display_name,
                     description: item.description.trim().to_string(),
                     logo_url: sanitize_logo_url(&item.logo),
+                    categories: item.categories,
                     repo,
                     is_dev: item.is_dev || repo == CommunityRepo::DevScripts,
                 },
             );
         }
         if !by_slug.is_empty() {
-            return Some(by_slug.into_values().collect());
+            return Some(CommunityCatalog {
+                categories,
+                apps: by_slug.into_values().collect(),
+            });
         }
     }
     None
@@ -393,6 +916,11 @@ pub fn parse_ct_metadata(ct_source: &str, slug: &str) -> ParsedCtMetadata {
     let mut version: Option<String> = None;
     let mut cpu: Option<String> = None;
     let mut ram: Option<String> = None;
+    let mut disk: Option<String> = None;
+    let mut alpine_version: Option<String> = None;
+    let mut alpine_cpu: Option<String> = None;
+    let mut alpine_ram: Option<String> = None;
+    let mut alpine_disk: Option<String> = None;
     let mut nesting = true;
     let mut if_stack: Vec<IfBranch> = Vec::new();
 
@@ -450,13 +978,34 @@ pub fn parse_ct_metadata(ct_source: &str, slug: &str) -> ParsedCtMetadata {
             tags = Some(val);
         }
         if let Some(val) = extract_shell_var(trimmed, "var_os")
-            && !val.is_empty()
+            && is_valid_os_token(&val)
         {
             os = Some(val);
         }
-        if !in_alpine_then {
+        if in_alpine_then {
             if let Some(val) = extract_shell_var(trimmed, "var_version")
+                && is_valid_version_token(&val)
+            {
+                alpine_version = Some(val);
+            }
+            if let Some(val) = extract_shell_var(trimmed, "var_cpu")
                 && !val.is_empty()
+            {
+                alpine_cpu = Some(val);
+            }
+            if let Some(val) = extract_shell_var(trimmed, "var_ram")
+                && !val.is_empty()
+            {
+                alpine_ram = Some(val);
+            }
+            if let Some(val) = extract_shell_var(trimmed, "var_disk")
+                && !val.is_empty()
+            {
+                alpine_disk = Some(val);
+            }
+        } else {
+            if let Some(val) = extract_shell_var(trimmed, "var_version")
+                && is_valid_version_token(&val)
             {
                 version = Some(val);
             }
@@ -469,6 +1018,11 @@ pub fn parse_ct_metadata(ct_source: &str, slug: &str) -> ParsedCtMetadata {
                 && !val.is_empty()
             {
                 ram = Some(val);
+            }
+            if let Some(val) = extract_shell_var(trimmed, "var_disk")
+                && !val.is_empty()
+            {
+                disk = Some(val);
             }
         }
         if let Some(val) = extract_shell_var(trimmed, "var_nesting")
@@ -490,18 +1044,10 @@ pub fn parse_ct_metadata(ct_source: &str, slug: &str) -> ParsedCtMetadata {
         }
         .to_string()
     });
-    let image_alias = if os == "archlinux" {
-        "archlinux".to_string()
-    } else {
-        format!("{os}/{version}")
-    };
+    let image_alias = normalize_image_alias(&os, &version);
     let cpu_limit = cpu.unwrap_or_else(|| "2".to_string());
     let ram_raw = ram.unwrap_or_else(|| "1024".to_string());
-    let memory_limit = if !ram_raw.is_empty() && ram_raw.bytes().all(|b| b.is_ascii_digit()) {
-        format!("{ram_raw}MiB")
-    } else {
-        ram_raw
-    };
+    let memory_limit = format_ram_limit(&ram_raw);
 
     ParsedCtMetadata {
         app_name,
@@ -511,6 +1057,11 @@ pub fn parse_ct_metadata(ct_source: &str, slug: &str) -> ParsedCtMetadata {
         image_alias,
         cpu_limit,
         memory_limit,
+        disk_gb: disk.unwrap_or_default(),
+        alpine_version: alpine_version.unwrap_or_default(),
+        alpine_cpu: alpine_cpu.unwrap_or_default(),
+        alpine_ram: alpine_ram.unwrap_or_default(),
+        alpine_disk: alpine_disk.unwrap_or_default(),
         nesting,
     }
 }
@@ -523,12 +1074,12 @@ fn http_client() -> anyhow::Result<reqwest::Client> {
         .context("failed to construct HTTP client")
 }
 
-pub async fn fetch_community_catalog() -> anyhow::Result<Vec<CommunityApp>> {
+pub async fn fetch_community_catalog() -> anyhow::Result<CommunityCatalog> {
     let client = http_client()?;
     if let Ok(html) = fetch_text(&client, COMMUNITY_ORG_URL, "community-scripts.org").await
-        && let Some(apps) = parse_community_org_html(&html)
+        && let Some(catalog) = parse_community_org_html(&html)
     {
-        return Ok(apps);
+        return Ok(catalog);
     }
 
     let (incus_res, dev_res) = tokio::join!(
@@ -553,7 +1104,10 @@ pub async fn fetch_community_catalog() -> anyhow::Result<Vec<CommunityApp>> {
     if merged.is_empty() {
         anyhow::bail!("failed to load catalog from community-scripts.org and GitHub API");
     }
-    Ok(merged.into_values().collect())
+    Ok(CommunityCatalog {
+        categories: Vec::new(),
+        apps: merged.into_values().collect(),
+    })
 }
 
 async fn fetch_github_tree_apps(
@@ -578,14 +1132,22 @@ async fn fetch_text(client: &reqwest::Client, url: &str, label: &str) -> anyhow:
         .with_context(|| format!("failed to read {label} body"))
 }
 
-pub async fn fetch_community_app_spec(
+async fn fetch_script_detail_optional(
+    client: &reqwest::Client,
+    slug: &str,
+) -> Option<CommunityScriptDetails> {
+    let url = format!("{COMMUNITY_SCRIPT_DETAIL_BASE_URL}/{slug}");
+    let html = fetch_text(client, &url, "community-scripts detail")
+        .await
+        .ok()?;
+    parse_community_script_detail_html(&html)
+}
+
+async fn fetch_repo_scripts(
+    client: &reqwest::Client,
     slug: &str,
     preferred_repo: CommunityRepo,
-    description: &str,
-) -> anyhow::Result<CommunityAppSpec> {
-    let slug = validate_slug(slug)?;
-    let client = http_client()?;
-
+) -> anyhow::Result<(CommunityRepo, String, String)> {
     let mut repos_to_try = vec![preferred_repo];
     for fallback in [
         CommunityRepo::Incus,
@@ -603,32 +1165,147 @@ pub async fn fetch_community_app_spec(
         let ct_url = format!("{base}/ct/{slug}.sh");
         let install_url = format!("{base}/install/{slug}-install.sh");
         match tokio::try_join!(
-            fetch_text(&client, &ct_url, "ct script"),
-            fetch_text(&client, &install_url, "install script"),
+            fetch_text(client, &ct_url, "ct script"),
+            fetch_text(client, &install_url, "install script"),
         ) {
-            Ok((ct_script, install_script)) => {
-                let meta = parse_ct_metadata(&ct_script, slug);
-                return Ok(CommunityAppSpec {
-                    slug: slug.to_string(),
-                    app_name: meta.app_name,
-                    description: description.to_string(),
-                    tags: meta.tags,
-                    image_alias: meta.image_alias,
-                    cpu_limit: meta.cpu_limit,
-                    memory_limit: meta.memory_limit,
-                    nesting: meta.nesting,
-                    repo,
-                    ct_script,
-                    install_script,
-                });
-            }
-            Err(err) => {
-                last_err = Some(err);
-            }
+            Ok((ct_script, install_script)) => return Ok((repo, ct_script, install_script)),
+            Err(err) => last_err = Some(err),
         }
     }
 
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no script source found for '{slug}'")))
+}
+
+pub async fn fetch_community_app_spec(
+    slug: &str,
+    preferred_repo: CommunityRepo,
+    description: &str,
+) -> anyhow::Result<CommunityAppSpec> {
+    let slug = validate_slug(slug)?;
+    let client = http_client()?;
+
+    let (detail_opt, scripts_res) = tokio::join!(
+        fetch_script_detail_optional(&client, slug),
+        fetch_repo_scripts(&client, slug, preferred_repo),
+    );
+    let (repo, ct_script, install_script) = scripts_res?;
+    let meta = parse_ct_metadata(&ct_script, slug);
+
+    let mut details = detail_opt.unwrap_or_default();
+    if details.install_profiles.is_empty() {
+        let os_title = slug_to_display_name(&meta.os);
+        let os_label = [os_title.as_str(), meta.version.as_str()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ram = meta
+            .memory_limit
+            .strip_suffix("MiB")
+            .unwrap_or(&meta.memory_limit)
+            .to_string();
+        details.install_profiles.push(CommunityInstallProfile {
+            name: "default".to_string(),
+            short_os: short_os_label(&meta.os),
+            os_label,
+            image_alias: meta.image_alias.clone(),
+            cpu: meta.cpu_limit.clone(),
+            ram,
+            memory_limit: meta.memory_limit.clone(),
+            hdd: meta.disk_gb.clone(),
+            disk_limit: format_disk_limit(&meta.disk_gb),
+            config_path: String::new(),
+        });
+
+        if !meta.alpine_version.is_empty()
+            || !meta.alpine_cpu.is_empty()
+            || !meta.alpine_ram.is_empty()
+            || !meta.alpine_disk.is_empty()
+        {
+            let alp_ver = if meta.alpine_version.is_empty() {
+                "3.24".to_string()
+            } else {
+                meta.alpine_version.clone()
+            };
+            let alp_cpu = if meta.alpine_cpu.is_empty() {
+                meta.cpu_limit.clone()
+            } else {
+                meta.alpine_cpu.clone()
+            };
+            let alp_ram = if meta.alpine_ram.is_empty() {
+                "512".to_string()
+            } else {
+                meta.alpine_ram.clone()
+            };
+            details.install_profiles.push(CommunityInstallProfile {
+                name: "alpine".to_string(),
+                short_os: "Alpine".to_string(),
+                os_label: format!("Alpine {alp_ver}"),
+                image_alias: normalize_image_alias("alpine", &alp_ver),
+                cpu: alp_cpu,
+                memory_limit: format_ram_limit(&alp_ram),
+                ram: alp_ram,
+                disk_limit: format_disk_limit(&meta.alpine_disk),
+                hdd: meta.alpine_disk.clone(),
+                config_path: String::new(),
+            });
+        }
+    }
+    if details.runs_in.is_empty() {
+        details.runs_in = "Container".to_string();
+    }
+
+    let fallback_disk = format_disk_limit(&meta.disk_gb);
+    let (image_alias, cpu_limit, memory_limit, disk_limit) = if let Some(first) =
+        details.install_profiles.first()
+        && first.name == "default"
+        && !first.image_alias.is_empty()
+    {
+        (
+            first.image_alias.clone(),
+            if first.cpu.is_empty() {
+                meta.cpu_limit
+            } else {
+                first.cpu.clone()
+            },
+            if first.memory_limit.is_empty() {
+                meta.memory_limit
+            } else {
+                first.memory_limit.clone()
+            },
+            if first.disk_limit.is_empty() {
+                fallback_disk
+            } else {
+                first.disk_limit.clone()
+            },
+        )
+    } else {
+        (
+            meta.image_alias,
+            meta.cpu_limit,
+            meta.memory_limit,
+            fallback_disk,
+        )
+    };
+
+    let blob_base = repo.github_blob_base_url();
+    Ok(CommunityAppSpec {
+        slug: slug.to_string(),
+        app_name: meta.app_name,
+        description: description.to_string(),
+        tags: meta.tags,
+        image_alias,
+        cpu_limit,
+        memory_limit,
+        disk_limit,
+        nesting: meta.nesting,
+        repo,
+        ct_script,
+        install_script,
+        install_source_url: format!("{blob_base}/install/{slug}-install.sh"),
+        ct_source_url: format!("{blob_base}/ct/{slug}.sh"),
+        details,
+    })
 }
 
 pub async fn fetch_install_func() -> anyhow::Result<String> {
@@ -767,6 +1444,7 @@ mod tests {
                     name: "Caddy".to_string(),
                     description: String::new(),
                     logo_url: String::new(),
+                    categories: Vec::new(),
                     repo: CommunityRepo::Incus,
                     is_dev: false,
                 },
@@ -775,6 +1453,7 @@ mod tests {
                     name: "Code Server".to_string(),
                     description: String::new(),
                     logo_url: String::new(),
+                    categories: Vec::new(),
                     repo: CommunityRepo::Incus,
                     is_dev: false,
                 },
@@ -783,6 +1462,7 @@ mod tests {
                     name: "My App".to_string(),
                     description: String::new(),
                     logo_url: String::new(),
+                    categories: Vec::new(),
                     repo: CommunityRepo::Incus,
                     is_dev: false,
                 },
@@ -792,16 +1472,23 @@ mod tests {
 
     #[test]
     fn parse_community_org_html_extracts_stable_and_dev_apps() {
-        let inner_json = r#"34:["$","$c",null,{"initData":{"scripts":[{"slug":"surfsense","name":"SurfSense","description":"NotebookLM alternative","logo":"https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/surfsense.webp","is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/surfsense.sh)\""},{"slug":"t3code","name":"T3 Code","description":"Agent surface","logo":"https://cdn.jsdelivr.net/gh/example/t3code/icon.svg","is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/t3code.sh)\""},{"slug":"docker","name":"Docker","description":"Containers","logo":"http://insecure.example.com/docker.png","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"var_os='debian' bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/docker.sh)\""},{"slug":"old-vm","name":"Old VM","description":"Skip VM","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/old-vm.sh)\""},{"slug":"gone","name":"Gone","description":"Deleted","is_dev":false,"is_deleted":true,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/gone.sh)\""}]}}]"#;
+        let inner_json = r#"34:["$","$c",null,{"initData":{"categories":[{"id":"cat-ai","name":"AI & ML","description":"Models and tools","sort_order":2},{"id":"cat-ctr","name":"Containers & Docker","description":"Container tools","sort_order":1}],"scripts":[{"slug":"surfsense","name":"SurfSense","description":"NotebookLM alternative","logo":"https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/surfsense.webp","categories":["cat-ai"],"is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/surfsense.sh)\""},{"slug":"t3code","name":"T3 Code","description":"Agent surface","logo":"https://cdn.jsdelivr.net/gh/example/t3code/icon.svg","categories":["cat-ai"],"is_dev":true,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/DevScripts/main/ct/t3code.sh)\""},{"slug":"docker","name":"Docker","description":"Containers","logo":"http://insecure.example.com/docker.png","categories":["cat-ctr"],"is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"var_os='debian' bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/docker.sh)\""},{"slug":"old-vm","name":"Old VM","description":"Skip VM","is_dev":false,"is_deleted":false,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/old-vm.sh)\""},{"slug":"gone","name":"Gone","description":"Deleted","is_dev":false,"is_deleted":true,"is_disabled":false,"install_command":"bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/gone.sh)\""}]}}]"#;
         let escaped = serde_json::to_string(inner_json).unwrap();
         let html =
             format!("<html><body><script>self.__next_f.push([1,{escaped}])</script></body></html>");
 
-        let apps = parse_community_org_html(&html).expect("should parse scripts array");
+        let catalog = parse_community_org_html(&html).expect("should parse scripts array");
+        assert_eq!(catalog.categories.len(), 2);
+        assert_eq!(catalog.categories[0].id, "cat-ctr");
+        assert_eq!(catalog.categories[0].name, "Containers & Docker");
+        assert_eq!(catalog.categories[1].id, "cat-ai");
+
+        let apps = catalog.apps;
         assert_eq!(apps.len(), 3);
         assert_eq!(apps[0].slug, "docker");
         assert_eq!(apps[0].repo, CommunityRepo::Incus);
         assert_eq!(apps[0].logo_url, "");
+        assert_eq!(apps[0].categories, vec!["cat-ctr"]);
         assert!(!apps[0].is_dev);
         assert_eq!(apps[1].slug, "surfsense");
         assert_eq!(apps[1].name, "SurfSense");
@@ -809,6 +1496,7 @@ mod tests {
             apps[1].logo_url,
             "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/surfsense.webp"
         );
+        assert_eq!(apps[1].categories, vec!["cat-ai"]);
         assert_eq!(apps[1].repo, CommunityRepo::DevScripts);
         assert!(apps[1].is_dev);
         assert_eq!(apps[2].slug, "t3code");
@@ -823,9 +1511,11 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires internet access"]
     async fn live_community_org_catalog_includes_surfsense_and_t3code() {
-        let apps = fetch_community_catalog()
+        let catalog = fetch_community_catalog()
             .await
             .expect("fetch_community_catalog");
+        assert!(!catalog.categories.is_empty(), "expected categories");
+        let apps = catalog.apps;
         assert!(apps.len() > 700, "expected >700 apps, got {}", apps.len());
 
         let surf = apps
@@ -880,7 +1570,12 @@ var_nesting="${var_nesting:-0}"
                 version: "13".to_string(),
                 image_alias: "debian/13".to_string(),
                 cpu_limit: "2".to_string(),
-                memory_limit: "2048MiB".to_string(),
+                memory_limit: "2GiB".to_string(),
+                disk_gb: String::new(),
+                alpine_version: "3.24".to_string(),
+                alpine_cpu: "1".to_string(),
+                alpine_ram: "512".to_string(),
+                alpine_disk: String::new(),
                 nesting: false,
             }
         );
@@ -906,7 +1601,7 @@ fi
         assert_eq!(meta.version, "24.04");
         assert_eq!(meta.image_alias, "ubuntu/24.04");
         assert_eq!(meta.cpu_limit, "4");
-        assert_eq!(meta.memory_limit, "4096MiB");
+        assert_eq!(meta.memory_limit, "4GiB");
         assert!(meta.nesting);
     }
 
@@ -948,10 +1643,14 @@ ENABLE_NESTING="0"
             image_alias: "ubuntu/24.04".to_string(),
             cpu_limit: "2".to_string(),
             memory_limit: "2048MiB".to_string(),
+            disk_limit: String::new(),
             nesting: true,
             repo: CommunityRepo::Incus,
             ct_script: String::new(),
             install_script: String::new(),
+            install_source_url: String::new(),
+            ct_source_url: String::new(),
+            details: CommunityScriptDetails::default(),
         };
 
         let script = build_container_runner_script(&spec, "dev'box", "ubuntu/24.04");
@@ -985,16 +1684,154 @@ ENABLE_NESTING="0"
             image_alias: "archlinux".to_string(),
             cpu_limit: "2".to_string(),
             memory_limit: "1024MiB".to_string(),
+            disk_limit: String::new(),
             nesting: true,
             repo: CommunityRepo::DevScripts,
             ct_script: String::new(),
             install_script: String::new(),
+            install_source_url: String::new(),
+            ct_source_url: String::new(),
+            details: CommunityScriptDetails::default(),
         };
 
         let script = build_container_runner_script(&spec, "caddy-1", "archlinux");
         assert!(script.contains("export PCT_OSTYPE='debian'"));
         assert!(script.contains("export PCT_OSVERSION='13'"));
         assert!(script.contains("DevScripts/main"));
+    }
+
+    #[test]
+    fn format_iso_date_and_ct_disk_parsing() {
+        assert_eq!(format_iso_date("2026-08-24 00:00:00.000Z"), "Aug 24, 2026");
+        assert_eq!(format_iso_date("2025-12-03"), "Dec 3, 2025");
+        assert_eq!(format_iso_date(""), "");
+        assert_eq!(format_iso_date("not-a-date"), "");
+
+        let ct = r#"
+var_os="${var_os:-debian}"
+var_disk="${var_disk:-8}"
+if [[ "${var_os:-}" == "alpine" ]]; then
+  var_disk="${var_disk:-2}"
+fi
+"#;
+        let meta = parse_ct_metadata(ct, "sample");
+        assert_eq!(meta.disk_gb, "8");
+    }
+
+    #[test]
+    fn parse_community_script_detail_html_extracts_notes_links_and_profiles() {
+        let inner_json = r#"5:["$","$L1",null,{"script":{"slug":"2fauth","name":"2FAuth","notes":[{"type":"warning","text":"Check config first."},{"type":"danger","text":"Breaking change"},{"type":"info","text":"First user is admin"},{"type":"info","text":"   "}],"website":"https://2fauth.app/","documentation":"https://docs.2fauth.app/","repository":"javascript:alert(1)","script_created":"2024-12-20 00:00:00.000Z","script_updated":"2026-10-18 00:00:00.000Z","last_update_commit":"https://github.com/community-scripts/ProxmoxVE/pull/17996","updateable":true,"port":80,"default_user":"admin","default_passwd":"secret","install_methods":[{"type":"alpine","config_path":null,"resources":{"cpu":1,"ram":512,"hdd":2,"os":"Alpine","version":"3.24"}},{"type":"default","config_path":"/opt/2fauth/.env","resources":{"cpu":"2","ram":1024,"hdd":"4","os":"Debian","version":13}}],"expand":{"categories":[{"name":"Authentication & Security"}],"type":{"type":"lxc"}}}}]"#;
+        let escaped = serde_json::to_string(inner_json).unwrap();
+        let html =
+            format!("<html><body><script>self.__next_f.push([1,{escaped}])</script></body></html>");
+
+        let details = parse_community_script_detail_html(&html).expect("should parse detail HTML");
+        assert_eq!(
+            details.notes,
+            vec![
+                CommunityNote {
+                    tone: "warn".to_string(),
+                    text: "Check config first.".to_string(),
+                },
+                CommunityNote {
+                    tone: "err".to_string(),
+                    text: "Breaking change".to_string(),
+                },
+                CommunityNote {
+                    tone: "info".to_string(),
+                    text: "First user is admin".to_string(),
+                },
+            ]
+        );
+        assert_eq!(details.website, "https://2fauth.app/");
+        assert_eq!(details.documentation, "https://docs.2fauth.app/");
+        assert_eq!(details.repository, "");
+        assert_eq!(details.category_names, "Authentication & Security");
+        assert_eq!(details.date_created, "Dec 20, 2024");
+        assert_eq!(details.last_updated, "Oct 18, 2026");
+        assert_eq!(
+            details.last_update_url,
+            "https://github.com/community-scripts/ProxmoxVE/pull/17996"
+        );
+        assert_eq!(details.last_update_label, "PR #17996");
+        assert_eq!(details.runs_in, "Container");
+        assert!(details.updateable);
+        assert_eq!(details.port, 80);
+        assert_eq!(details.default_user, "admin");
+        assert_eq!(details.default_passwd, "secret");
+        assert_eq!(
+            details.install_profiles,
+            vec![
+                CommunityInstallProfile {
+                    name: "default".to_string(),
+                    short_os: "Debian".to_string(),
+                    os_label: "Debian 13".to_string(),
+                    image_alias: "debian/13".to_string(),
+                    cpu: "2".to_string(),
+                    ram: "1024".to_string(),
+                    memory_limit: "1GiB".to_string(),
+                    hdd: "4".to_string(),
+                    disk_limit: "4GiB".to_string(),
+                    config_path: "/opt/2fauth/.env".to_string(),
+                },
+                CommunityInstallProfile {
+                    name: "alpine".to_string(),
+                    short_os: "Alpine".to_string(),
+                    os_label: "Alpine 3.24".to_string(),
+                    image_alias: "alpine/3.24".to_string(),
+                    cpu: "1".to_string(),
+                    ram: "512".to_string(),
+                    memory_limit: "512MiB".to_string(),
+                    hdd: "2".to_string(),
+                    disk_limit: "2GiB".to_string(),
+                    config_path: String::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_ct_metadata_ignores_msg_menu_subshell_in_adguard_and_docker() {
+        let ct = r#"#!/usr/bin/env bash
+APP="Adguard"
+var_tags="${var_tags:-adblock}"
+var_cpu="${var_cpu:-1}"
+if [[ -z "${var_os:-}" ]] && command -v pveversion >/dev/null 2>&1; then
+  var_os=$(msg_menu "Choose the container OS" \
+    "debian" "Debian 13" \
+    "alpine" "Alpine (smaller footprint)")
+fi
+
+if [[ "${var_os:-}" == "alpine" ]]; then
+  var_ram="${var_ram:-256}"
+  var_disk="${var_disk:-1}"
+  var_version="${var_version:-3.24}"
+else
+  var_ram="${var_ram:-512}"
+  var_disk="${var_disk:-2}"
+  var_version="${var_version:-13}"
+fi
+"#;
+        let meta = parse_ct_metadata(ct, "adguard");
+        assert_eq!(meta.app_name, "Adguard");
+        assert_eq!(meta.os, "debian");
+        assert_eq!(meta.version, "13");
+        assert_eq!(meta.image_alias, "debian/13");
+        assert_eq!(meta.cpu_limit, "1");
+        assert_eq!(meta.memory_limit, "512MiB");
+        assert_eq!(meta.disk_gb, "2");
+        assert_eq!(meta.alpine_version, "3.24");
+        assert_eq!(meta.alpine_ram, "256");
+        assert_eq!(meta.alpine_disk, "1");
+    }
+
+    #[test]
+    fn normalize_image_alias_handles_distros_and_base() {
+        assert_eq!(normalize_image_alias("Arch Linux", "base"), "archlinux");
+        assert_eq!(normalize_image_alias("archlinux", "rolling"), "archlinux");
+        assert_eq!(normalize_image_alias("Fedora", "43"), "fedora/43");
+        assert_eq!(normalize_image_alias("Alpine Linux", "3.24"), "alpine/3.24");
+        assert_eq!(normalize_image_alias("Rocky Linux", "9"), "rockylinux/9");
     }
 
     #[tokio::test]
@@ -1005,9 +1842,9 @@ ENABLE_NESTING="0"
         let catalog = fetch_community_catalog()
             .await
             .expect("fetch_community_catalog");
-        assert!(catalog.iter().any(|a| a.slug == "redis"));
-        assert!(catalog.iter().any(|a| a.slug == "surfsense"));
-        assert!(catalog.iter().any(|a| a.slug == "t3code"));
+        assert!(catalog.apps.iter().any(|a| a.slug == "redis"));
+        assert!(catalog.apps.iter().any(|a| a.slug == "surfsense"));
+        assert!(catalog.apps.iter().any(|a| a.slug == "t3code"));
 
         let spec = fetch_community_app_spec("redis", CommunityRepo::Incus, "")
             .await
@@ -1027,6 +1864,7 @@ ENABLE_NESTING="0"
                 image_alias: "alpine/3.24",
                 memory_limit: "512MiB",
                 cpu_limit: "1",
+                disk_limit: "",
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",

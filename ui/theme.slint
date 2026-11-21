@@ -118,6 +118,13 @@ export struct UiProfile {
     memory: string,
 }
 
+export struct UiCommunityCategory {
+    id: string,
+    name: string,
+    description: string,
+    count: int,
+}
+
 export struct UiCommunityApp {
     slug: string,
     name: string,
@@ -125,6 +132,43 @@ export struct UiCommunityApp {
     distro_id: string,
     logo: UiLogo,
     is_dev: bool,
+}
+
+export struct UiCommunityNote {
+    tone: string,
+    text: string,
+}
+
+export struct UiCommunityProfile {
+    name: string,
+    short_os: string,
+    os_label: string,
+    image_alias: string,
+    cpu: string,
+    ram: string,
+    memory_limit: string,
+    hdd: string,
+    disk_limit: string,
+    config_path: string,
+}
+
+export struct UiCommunityDetails {
+    website: string,
+    documentation: string,
+    repository: string,
+    category_names: string,
+    date_created: string,
+    last_updated: string,
+    last_update_url: string,
+    last_update_label: string,
+    install_source_url: string,
+    ct_source_url: string,
+    runs_in: string,
+    updateable: bool,
+    port_label: string,
+    default_user: string,
+    default_passwd: string,
+    has_details: bool,
 }
 
 export global CubbyTheme {
@@ -147,6 +191,9 @@ export global CubbyTheme {
     out property <color> accent_soft: root.is_light ? rgba(194, 65, 12, 0.10) : rgba(249, 115, 22, 0.14);
 
     out property <color> live: root.is_light ? #16A34A : #22C55E;
+    out property <color> info: root.is_light ? #0F766E : #2DD4BF;
+    out property <color> info_bg: root.is_light ? #F0FDFA : #122021;
+    out property <color> info_border: root.is_light ? #99F6E4 : #1E3A3C;
     out property <color> warn: root.is_light ? #B45309 : #F59E0B;
     out property <color> warn_bg: root.is_light ? #FEF9EC : #1C1810;
     out property <color> warn_border: root.is_light ? #F0D9A0 : #3E3219;

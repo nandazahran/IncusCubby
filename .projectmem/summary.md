@@ -1,4 +1,4 @@
-# projectmem - Collapsible-sidebar
+# projectmem - tilefish
 
 _Last updated: 2026-11-21_
 
@@ -6,18 +6,35 @@ _Last updated: 2026-11-21_
 Local native Linux desktop GUI (Rust + Slint) to manage local Incus/LXC developer sandboxes over `/var/lib/incus/unix.socket`.
 
 ## Recent issues
-- [DONE] #0001 Nav sidebar toggle did not react immediately because clicked callback only invoked persistence round-trip [ui/advanced.slint:65] -> Direct sidebar_collapsed assignment in CubbyTopBar.clicked before persistence callback; verified synthetic Slint click collapsed=true, capture rail 70px physical = 56 logical vs expanded 260 = 208, settings seed true relaunch collapsed on startup. [ui/advanced.slint:65] (fixed)
+- [DONE] #0005 ui.on_open_url rejects all URLs not starting with IncusCubby repo URL, blocking Community Scripts links [src/main.rs:2411] -> Replaced IncusCubby URL prefix check in ui.on_open_url with is_safe_external_url allowing validated http/https URLs via xdg-open; cargo test 56 passed, clippy clean [src/main.rs:2409] (fixed)
+- [DONE] #0004 parse_ct_metadata captures $(msg_menu ...) subshell expression into var_os when ct script offers Debian/Alpine prompt [src/incus/community.rs:872] -> Validated var_os/var_version tokens in parse_ct_metadata, captured alpine branch defaults, normalized install profile aliases, added clickable OS profile selection; cargo test 55 passed, clippy clean [src/incus/community.rs:942] (fixed)
+- [DONE] #0003 CreateView right builder column overflows vertically and pushes 52px bottom Deploy/Create bar under CubbyResourceBar [ui/advanced.slint:1988] -> Wrapped CreateView right builder body in ScrollView with min-height: 0px, set explicit CubbyTextArea heights, pinned 52px bottom action bar; cargo test 51 passed, clippy clean [ui/advanced.slint:1992] (fixed)
+- [DONE] #0002 CubbyStatusDot in CubbyResourceBar and popup header shifted down ~7px by y: (parent.height - self.preferred-height) / 2 inside stretched HorizontalLayout [ui/components.slint:1419] -> Removed y: (parent.height - self.preferred-height) / 2 from CubbyStatusDot in CubbyResourceBar and popup header; cargo test 51 passed, clippy clean [ui/components.slint:1419] (fixed)
+- [DONE] #0001 3-column CubbyCatalogCard items have non-uniform widths due to intrinsic text/tag preferred-width in HorizontalLayout [ui/components.slint:449] -> Set min-width: 0px and preferred-width: 0px on CubbyCatalogCard and grid cell wrappers in CreateView, plus min-width: 0px on card title Text; cargo test 50 passed, 3 ignored [ui/components.slint:451] (fixed)
 
 ## Decisions
-- Nav rail drag resizes between 56px (icon-only floor, not hidden) and 320px; labels hide under 160px. Top-bar button remains separate and toggles full hide (0px) while preserving the dragged width. [ui/advanced.slint:3948]
+- No decisions logged yet.
 
 ## Notes
-- gotcha: Xwayland/KDE session rejects XTest motion + XSendEvent clicks; /dev/uinput not writable, no sudo. For GUI verification force X11 (WAYLAND_DISPLAY=) for capture, and drive Slint clicks via Window::dispatch_event before ui.run(); capture scale is 1.25. [ui/advanced.slint:65]
+- gotcha: Slint 1.18 lowers `visible` to a Clip wrapper; layout still reserves space for hidden elements, including repeated `for` children. Never use `for` + `visible` to render one-of-N content inside a layout; bind a single resolved value instead (see official-image detail overflow). [ui/advanced.slint:2051]
+- New feature: feat(create): unify catalog cards and fix selected-alias overflow [src/main.rs]
+- New feature: feat(create): add Community Scripts notes, details, profiles, sliders, and builder scroll [src/incus/community.rs]
+- New feature: feat(create): add storage limit, base OS switcher, reactive profiles, and unslop UI copy [src/incus/client.rs]
 
 ## Key files
-- `ui.run`
-- `1.25`
-- `CubbyTopBar.clicked`
+- `1.18`
+- `src/main.rs`
+- `ui/advanced.slint`
+- `ui/app.slint`
+- `ui/components.slint`
+- `parent.height`
+- `self.preferred`
+- `ui.on`
+- `src/incus/community.rs`
+- `ui/theme.slint`
+- `src/incus/client.rs`
+- `src/incus/models.rs`
+- `ui/simple.slint`
 
 ## Open questions
 - None logged yet.

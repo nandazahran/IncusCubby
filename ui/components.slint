@@ -436,6 +436,204 @@ export component CubbyDistroBadge inherits Rectangle {
         image-fit: contain;
     }
 }
+export component CubbyCatalogCard inherits Rectangle {
+    in property <UiLogo> logo;
+    in property <string> title: "";
+    in property <bool> title_mono: false;
+    in property <string> meta: "";
+    in property <string> meta_tone: "default"; // "default" | "live" | "warn"
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    min-width: 0px;
+    preferred-width: 0px;
+    height: 72px;
+    border-radius: CubbyTheme.radius_md;
+    border-width: 1px;
+    border-color: root.active ? CubbyTheme.accent : CubbyTheme.border;
+    background: ta.has-hover ? CubbyTheme.hover_fill : CubbyTheme.surface;
+    clip: true;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+
+        CubbyDistroBadge {
+            y: (parent.height - self.height) / 2;
+            logo: root.logo;
+            size: "md";
+        }
+
+        Text {
+            text: root.title;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            font-family: root.title_mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+            font-size: root.title_mono ? 12px : 13px;
+            font-weight: 500;
+            color: CubbyTheme.ink;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        if root.meta != "": CubbyTag {
+            y: (parent.height - self.height) / 2;
+            tone: root.meta_tone;
+            text: root.meta;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CubbyCatalogRow inherits Rectangle {
+    in property <UiLogo> logo;
+    in property <string> title: "";
+    in property <bool> title_mono: false;
+    in property <string> subtitle: "";
+    in property <bool> subtitle_mono: false;
+    in property <string> meta: "";
+    in property <string> meta_tone: "default"; // "default" | "live" | "warn"
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    height: 54px;
+    background: root.active
+        ? CubbyTheme.surface
+        : (ta.has-hover ? CubbyTheme.hover_fill : transparent);
+
+    if root.active: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 2px;
+        height: parent.height;
+        background: CubbyTheme.accent;
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+
+        CubbyDistroBadge {
+            y: (parent.height - self.height) / 2;
+            logo: root.logo;
+            size: "sm";
+        }
+
+        VerticalLayout {
+            y: (parent.height - self.preferred-height) / 2;
+            horizontal-stretch: 1;
+            spacing: 2px;
+
+            Text {
+                text: root.title;
+                font-family: root.title_mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+                font-size: root.title_mono ? 12px : 12.5px;
+                font-weight: 500;
+                color: CubbyTheme.ink;
+                overflow: elide;
+            }
+
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                font-family: root.subtitle_mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+                font-size: 11px;
+                color: CubbyTheme.ink_muted;
+                overflow: elide;
+            }
+        }
+
+        if root.meta != "": CubbyTag {
+            y: (parent.height - self.height) / 2;
+            tone: root.meta_tone;
+            text: root.meta;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: CubbyTheme.border;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CubbyDetailHead inherits HorizontalLayout {
+    in property <UiLogo> logo;
+    in property <string> title: "";
+    in property <bool> title_mono: false;
+    in property <string> subtitle: "";
+    in property <string> tag_text: "";
+    in property <string> tag_tone: "default";
+    in property <string> status_label: "";
+    in property <string> status_tone: "live";
+
+    vertical-stretch: 0;
+    spacing: 10px;
+    alignment: start;
+
+    CubbyDistroBadge {
+        y: (parent.height - self.height) / 2;
+        logo: root.logo;
+        size: "md";
+    }
+
+    VerticalLayout {
+        horizontal-stretch: 1;
+        spacing: 4px;
+
+        Text {
+            text: root.title;
+            font-family: root.title_mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
+            font-size: root.title_mono ? 13px : 15px;
+            font-weight: root.title_mono ? 500 : 600;
+            color: CubbyTheme.ink;
+            overflow: elide;
+        }
+
+        if root.tag_text != "": HorizontalLayout {
+            alignment: start;
+            CubbyTag {
+                tone: root.tag_tone;
+                text: root.tag_text;
+            }
+        }
+
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            font-family: CubbyTheme.font_sans;
+            font-size: 12px;
+            color: CubbyTheme.ink_secondary;
+            wrap: word-wrap;
+            height: min(self.preferred-height, 54px);
+            overflow: elide;
+        }
+    }
+
+    if root.status_label != "": CubbyStatusDot {
+        y: (parent.height - self.height) / 2;
+        tone: root.status_tone;
+        label: root.status_label;
+    }
+}
 
 export component CubbyBanner inherits Rectangle {
     in property <string> tone: "warn"; // "warn" | "err"
@@ -1099,6 +1297,86 @@ export component CubbySearchField inherits Rectangle {
     }
 }
 
+export component CubbySlider inherits VerticalLayout {
+    in property <int> value: 0;
+    in property <int> min_value: 0;
+    in property <int> max_value: 10;
+    in property <bool> enabled: true;
+    in property <[string]> tick_labels: [];
+    callback changed(int);
+
+    vertical-stretch: 0;
+    spacing: 2px;
+
+    property <float> ratio: root.max_value > root.min_value
+        ? clamp((root.value - root.min_value) / (root.max_value - root.min_value), 0.0, 1.0)
+        : 0.0;
+
+    Rectangle {
+        height: 20px;
+        opacity: root.enabled ? 1.0 : 0.45;
+
+        Rectangle {
+            x: 0px;
+            y: (parent.height - self.height) / 2;
+            width: parent.width;
+            height: 4px;
+            border-radius: 2px;
+            background: CubbyTheme.well;
+            border-width: 1px;
+            border-color: CubbyTheme.border;
+        }
+
+        Rectangle {
+            x: 0px;
+            y: (parent.height - self.height) / 2;
+            width: max(0px, (parent.width - 14px) * root.ratio + 7px);
+            height: 4px;
+            border-radius: 2px;
+            background: CubbyTheme.accent;
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) * root.ratio;
+            y: (parent.height - self.height) / 2;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            background: CubbyTheme.accent;
+            border-width: 2px;
+            border-color: CubbyTheme.surface;
+        }
+
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left)
+                    || (event.kind == PointerEventKind.move && self.pressed) {
+                    root.changed(
+                        round(
+                            root.min_value
+                            + clamp((self.mouse-x - 7px) / max(1px, self.width - 14px), 0.0, 1.0)
+                            * (root.max_value - root.min_value)
+                        )
+                    );
+                }
+            }
+        }
+    }
+
+    if root.tick_labels.length > 0: HorizontalLayout {
+        alignment: space-between;
+
+        for lbl in root.tick_labels: Text {
+            text: lbl;
+            font-family: CubbyTheme.font_mono;
+            font-size: 9.5px;
+            color: CubbyTheme.ink_muted;
+        }
+    }
+}
+
 export component CubbyResourceBar inherits Rectangle {
     in property <bool> socket_connected: false;
     in property <string> host_cpu_summary: "";
@@ -1139,7 +1417,6 @@ export component CubbyResourceBar inherits Rectangle {
         spacing: 14px;
 
         CubbyStatusDot {
-            y: (parent.height - self.preferred-height) / 2;
             tone: root.socket_connected ? "live" : "err";
             label: root.socket_connected ? "unix.socket" : "socket denied";
         }
@@ -1289,7 +1566,6 @@ export component CubbyResourceBar inherits Rectangle {
                                 vertical-alignment: center;
                             }
                             CubbyStatusDot {
-                                y: (parent.height - self.preferred-height) / 2;
                                 tone: root.socket_connected ? "live" : "err";
                                 label: root.socket_connected ? "unix.socket" : "socket denied";
                             }
@@ -1331,7 +1607,7 @@ export component CubbyResourceBar inherits Rectangle {
                     }
 
                     if root.storage_pools.length == 0: Text {
-                        text: "No pools loaded — open Resources page";
+                        text: "No pools loaded. Open the Resources page.";
                         font-family: CubbyTheme.font_sans;
                         font-size: 12px;
                         color: CubbyTheme.ink_muted;

@@ -19,8 +19,9 @@ use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
 use crate::incus::community::{
-    CommunityApp, CommunityAppSpec, CommunityRepo, build_container_runner_script,
-    curated_community_apps, fetch_community_app_spec, fetch_community_catalog, fetch_install_func,
+    CommunityApp, CommunityAppSpec, CommunityCategory, CommunityRepo,
+    build_container_runner_script, curated_community_apps, fetch_community_app_spec,
+    fetch_community_catalog, fetch_install_func,
 };
 use crate::incus::packages::{install_command, package_manager_label, upgrade_command};
 use crate::incus::remote_images::{
@@ -44,7 +45,7 @@ enum ProfileSaveMode {
 }
 
 enum PendingConfirm {
-    Backend(BackendCommand),
+    Backend(Box<BackendCommand>),
     ResetSettings,
 }
 
@@ -56,6 +57,7 @@ enum BackendCommand {
         image: String,
         memory: String,
         cpu: String,
+        disk: String,
         workspace: String,
         profiles: Vec<String>,
         cloud_init: String,
@@ -175,6 +177,7 @@ enum BackendCommand {
         image_alias: String,
         cpu: String,
         memory: String,
+        disk: String,
         workspace: String,
         profiles: Vec<String>,
         nesting: NestingMode,
@@ -235,13 +238,13 @@ impl BackendCommand {
             Self::DeleteNetwork { name } => format!("Deleting network {name}..."),
             Self::SaveProfile { name, .. } => format!("Saving profile {name}..."),
             Self::DeleteProfile { name } => format!("Deleting profile {name}..."),
-            Self::FetchRemoteImages => "Fetching remote image aliases...".to_string(),
+            Self::FetchRemoteImages => "Refreshing official images...".to_string(),
             Self::RefreshLocalImages => "Refreshing cached images...".to_string(),
             Self::DeleteImage { fingerprint } => {
                 let short: String = fingerprint.chars().take(12).collect();
                 format!("Deleting cached image {short}...")
             }
-            Self::FetchCommunityCatalog => "Loading community-scripts/Incus catalog...".to_string(),
+            Self::FetchCommunityCatalog => "Loading community scripts...".to_string(),
             Self::LoadCommunityAppSpec { slug } => format!("Loading '{slug}' script..."),
             Self::DeployCommunityApp {
                 slug,
@@ -259,6 +262,7 @@ impl BackendCommand {
 
 struct CatalogCaches {
     community_apps: Mutex<Vec<CommunityApp>>,
+    community_categories: Mutex<Vec<CommunityCategory>>,
     remote_images: Mutex<Vec<RemoteImage>>,
     instances: Mutex<Vec<InstanceSummary>>,
     local_images: Mutex<Vec<ImageSummary>>,
@@ -412,6 +416,15 @@ fn on_logo_ready_ui(ui: &AppWindow, key: &str, logo: UiLogo) {
                 remote_model.set_row_data(row, item);
             }
         }
+        let selected_alias = ui.get_create_image_alias();
+        for row in 0..remote_model.row_count() {
+            if let Some(item) = remote_model.row_data(row)
+                && item.alias == selected_alias
+            {
+                ui.set_selected_alias_logo(item.logo);
+                break;
+            }
+        }
 
         let images_model = ui.get_local_images();
         for row in 0..images_model.row_count() {
@@ -540,6 +553,7 @@ fn main() -> anyhow::Result<()> {
     let app_settings = AppSettings::load();
     let catalogs = Arc::new(CatalogCaches {
         community_apps: Mutex::new(curated_community_apps()),
+        community_categories: Mutex::new(Vec::new()),
         remote_images: Mutex::new(load_cached_images().unwrap_or_default()),
         instances: Mutex::new(Vec::new()),
         local_images: Mutex::new(Vec::new()),
@@ -619,7 +633,12 @@ fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings, catalogs: &Arc<C
         .lock()
         .expect("community catalog mutex poisoned")
         .clone();
-    apply_community_apps(&apps, "", "all");
+    let categories = catalogs
+        .community_categories
+        .lock()
+        .expect("community categories mutex poisoned")
+        .clone();
+    apply_community_apps(ui, &apps, &categories, "", "all", "");
     init_about_ui(ui);
 }
 
@@ -688,17 +707,30 @@ fn spawn_backend_worker(
                 let weak_startup = ui_weak.clone();
                 let catalog_startup = Arc::clone(&catalogs);
                 tokio::spawn(async move {
-                    if let Ok(apps) = fetch_community_catalog().await {
+                    if let Ok(catalog) = fetch_community_catalog().await {
                         catalog_startup
                             .community_apps
                             .lock()
                             .expect("community catalog mutex poisoned")
-                            .clone_from(&apps);
+                            .clone_from(&catalog.apps);
+                        catalog_startup
+                            .community_categories
+                            .lock()
+                            .expect("community categories mutex poisoned")
+                            .clone_from(&catalog.categories);
                         let _ = weak_startup.upgrade_in_event_loop(move |ui| {
                             let query = ui.get_community_search_query().to_string();
                             let repo_filter = ui.get_community_repo_filter().to_string();
-                            apply_community_apps(&apps, &query, &repo_filter);
-                            sync_instance_logos(&ui, &apps);
+                            let category_filter = ui.get_community_category_filter().to_string();
+                            apply_community_apps(
+                                &ui,
+                                &catalog.apps,
+                                &catalog.categories,
+                                &query,
+                                &repo_filter,
+                                &category_filter,
+                            );
+                            sync_instance_logos(&ui, &catalog.apps);
                         });
                     }
                 });
@@ -833,24 +865,37 @@ async fn handle_command(
     match cmd {
         BackendCommand::FetchCommunityCatalog => {
             let res = fetch_community_catalog().await;
-            if let Ok(ref apps) = res {
+            if let Ok(ref catalog) = res {
                 catalogs
                     .community_apps
                     .lock()
                     .expect("community catalog mutex poisoned")
-                    .clone_from(apps);
+                    .clone_from(&catalog.apps);
+                catalogs
+                    .community_categories
+                    .lock()
+                    .expect("community categories mutex poisoned")
+                    .clone_from(&catalog.categories);
             }
             let weak = ui_weak.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_busy(false);
                 match res {
-                    Ok(apps) => {
-                        let count = apps.len();
+                    Ok(catalog) => {
+                        let count = catalog.apps.len();
                         let query = ui.get_community_search_query().to_string();
                         let repo_filter = ui.get_community_repo_filter().to_string();
+                        let category_filter = ui.get_community_category_filter().to_string();
                         UI_LOGO_STORE.with(|store| store.borrow_mut().requested.clear());
-                        apply_community_apps(&apps, &query, &repo_filter);
-                        sync_instance_logos(&ui, &apps);
+                        apply_community_apps(
+                            &ui,
+                            &catalog.apps,
+                            &catalog.categories,
+                            &query,
+                            &repo_filter,
+                            &category_filter,
+                        );
+                        sync_instance_logos(&ui, &catalog.apps);
                         ui.set_status_message(format!("Loaded {count} community apps").into());
                     }
                     Err(err) => {
@@ -882,9 +927,78 @@ async fn handle_command(
                         ui.set_community_tags(spec.tags.into());
                         ui.set_community_is_dev(is_dev);
                         ui.set_community_source_repo(source_repo.into());
+                        let d = spec.details;
+                        let port_label = if d.port > 0 {
+                            format!(":{}", d.port)
+                        } else {
+                            String::new()
+                        };
+                        let has_details = !d.website.is_empty()
+                            || !d.documentation.is_empty()
+                            || !d.repository.is_empty()
+                            || !d.category_names.is_empty()
+                            || !d.date_created.is_empty()
+                            || !d.last_updated.is_empty()
+                            || !d.last_update_label.is_empty()
+                            || !spec.install_source_url.is_empty()
+                            || !spec.ct_source_url.is_empty()
+                            || !d.runs_in.is_empty()
+                            || d.port > 0
+                            || d.updateable;
+                        let notes_model = ModelRc::new(VecModel::from(
+                            d.notes
+                                .into_iter()
+                                .map(|n| UiCommunityNote {
+                                    tone: n.tone.into(),
+                                    text: n.text.into(),
+                                })
+                                .collect::<Vec<_>>(),
+                        ));
+                        let profiles_model = ModelRc::new(VecModel::from(
+                            d.install_profiles
+                                .into_iter()
+                                .map(|p| UiCommunityProfile {
+                                    name: p.name.into(),
+                                    short_os: p.short_os.into(),
+                                    os_label: p.os_label.into(),
+                                    image_alias: p.image_alias.into(),
+                                    cpu: p.cpu.into(),
+                                    ram: p.ram.into(),
+                                    memory_limit: p.memory_limit.into(),
+                                    hdd: p.hdd.into(),
+                                    disk_limit: p.disk_limit.into(),
+                                    config_path: p.config_path.into(),
+                                })
+                                .collect::<Vec<_>>(),
+                        ));
+                        ui.set_community_details(UiCommunityDetails {
+                            website: d.website.into(),
+                            documentation: d.documentation.into(),
+                            repository: d.repository.into(),
+                            category_names: d.category_names.into(),
+                            date_created: d.date_created.into(),
+                            last_updated: d.last_updated.into(),
+                            last_update_url: d.last_update_url.into(),
+                            last_update_label: d.last_update_label.into(),
+                            install_source_url: spec.install_source_url.into(),
+                            ct_source_url: spec.ct_source_url.into(),
+                            runs_in: d.runs_in.into(),
+                            updateable: d.updateable,
+                            port_label: port_label.into(),
+                            default_user: d.default_user.into(),
+                            default_passwd: d.default_passwd.into(),
+                            has_details,
+                        });
+                        ui.set_community_notes(notes_model);
+                        ui.set_community_profiles(profiles_model);
                         ui.set_create_image_alias(spec.image_alias.into());
                         ui.set_create_cpu(spec.cpu_limit.into());
                         ui.set_create_memory(spec.memory_limit.into());
+                        ui.set_create_disk(if spec.disk_limit.is_empty() {
+                            "8GiB".into()
+                        } else {
+                            spec.disk_limit.into()
+                        });
                         ui.set_create_nesting(spec.nesting);
                         ui.set_community_install_script(spec.install_script.into());
                         ui.set_community_output("".into());
@@ -903,6 +1017,7 @@ async fn handle_command(
             image_alias,
             cpu,
             memory,
+            disk,
             workspace,
             profiles,
             nesting,
@@ -915,6 +1030,7 @@ async fn handle_command(
                     image_alias: &image_alias,
                     cpu: &cpu,
                     memory: &memory,
+                    disk: &disk,
                     workspace: &workspace,
                     profiles,
                     nesting,
@@ -1443,6 +1559,7 @@ struct DeployCommunityRequest<'a> {
     image_alias: &'a str,
     cpu: &'a str,
     memory: &'a str,
+    disk: &'a str,
     workspace: &'a str,
     profiles: Vec<String>,
     nesting: NestingMode,
@@ -1462,6 +1579,7 @@ async fn deploy_community_sandbox(
             image_alias: req.image_alias,
             memory_limit: req.memory,
             cpu_limit: req.cpu,
+            disk_limit: req.disk,
             workspace_path: req.workspace,
             profiles: req.profiles,
             cloud_init_user_data: "",
@@ -1534,6 +1652,7 @@ async fn execute_instance_command(
             image,
             memory,
             cpu,
+            disk,
             workspace,
             profiles,
             cloud_init,
@@ -1546,6 +1665,7 @@ async fn execute_instance_command(
                     image_alias: &image,
                     memory_limit: &memory,
                     cpu_limit: &cpu,
+                    disk_limit: &disk,
                     workspace_path: &workspace,
                     profiles,
                     cloud_init_user_data: &cloud_init,
@@ -1744,6 +1864,7 @@ fn wire_ui_callbacks(
                   image,
                   memory,
                   cpu,
+                  disk,
                   workspace,
                   profiles_raw,
                   cloud_init,
@@ -1760,6 +1881,7 @@ fn wire_ui_callbacks(
                     image: image.trim().to_string(),
                     memory: memory.to_string(),
                     cpu: cpu.to_string(),
+                    disk: disk.trim().to_string(),
                     workspace: workspace.trim().to_string(),
                     profiles,
                     cloud_init: cloud_init.to_string(),
@@ -2145,6 +2267,25 @@ fn wire_ui_callbacks(
     {
         let weak = ui.as_weak();
         let caches = Arc::clone(catalogs);
+        ui.on_resolve_selected_alias(move |alias| {
+            let Some(ui) = weak.upgrade() else { return };
+            let remote_imgs = caches
+                .remote_images
+                .lock()
+                .expect("remote images mutex poisoned")
+                .clone();
+            let local_imgs = caches
+                .local_images
+                .lock()
+                .expect("local images mutex poisoned")
+                .clone();
+            apply_selected_alias(&ui, &remote_imgs, &local_imgs, alias.as_str());
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let caches = Arc::clone(catalogs);
         ui.on_filter_local_images(move |query| {
             if let Some(ui) = weak.upgrade() {
                 let local_imgs = caches
@@ -2227,7 +2368,7 @@ fn wire_ui_callbacks(
         ui.on_confirm_action(move || {
             match pending.borrow_mut().take() {
                 Some(PendingConfirm::Backend(cmd)) => {
-                    let _ = tx.send(cmd);
+                    let _ = tx.send(*cmd);
                 }
                 Some(PendingConfirm::ResetSettings) => {
                     let res = AppSettings::reset_file();
@@ -2283,8 +2424,8 @@ fn wire_ui_callbacks(
     {
         let weak = ui.as_weak();
         ui.on_open_url(move |url| {
-            let url_str = url.as_str();
-            if !url_str.starts_with("https://github.com/nandazahran/IncusCubby") {
+            let url_str = url.trim();
+            if !is_safe_external_url(url_str) {
                 return;
             }
             if let Err(err) = Command::new("xdg-open").arg(url_str).spawn()
@@ -2338,8 +2479,21 @@ fn wire_ui_callbacks(
                     .lock()
                     .expect("community catalog mutex poisoned")
                     .clone();
+                let categories = caches
+                    .community_categories
+                    .lock()
+                    .expect("community categories mutex poisoned")
+                    .clone();
                 let repo_filter = ui.get_community_repo_filter().to_string();
-                apply_community_apps(&apps, query.as_str(), &repo_filter);
+                let category_filter = ui.get_community_category_filter().to_string();
+                apply_community_apps(
+                    &ui,
+                    &apps,
+                    &categories,
+                    query.as_str(),
+                    &repo_filter,
+                    &category_filter,
+                );
             }
         });
     }
@@ -2352,6 +2506,9 @@ fn wire_ui_callbacks(
             if let Some(ui) = weak.upgrade() {
                 let logo_url = community_logo_url(&caches.community_apps, slug.as_str());
                 ui.set_community_app_logo(lookup_or_request_logo(slug.as_str(), &logo_url));
+                ui.set_community_details(UiCommunityDetails::default());
+                ui.set_community_notes(ModelRc::default());
+                ui.set_community_profiles(ModelRc::default());
             }
             let _ = tx.send(BackendCommand::LoadCommunityAppSpec {
                 slug: slug.to_string(),
@@ -2367,9 +2524,13 @@ fn wire_ui_callbacks(
                 ui.set_community_app_name("".into());
                 ui.set_community_description("".into());
                 ui.set_community_tags("".into());
+                ui.set_community_details(UiCommunityDetails::default());
+                ui.set_community_notes(ModelRc::default());
+                ui.set_community_profiles(ModelRc::default());
                 ui.set_community_install_script("".into());
                 ui.set_community_output("".into());
                 ui.set_create_image_alias("".into());
+                ui.set_create_disk("8GiB".into());
             }
         });
     }
@@ -2377,7 +2538,7 @@ fn wire_ui_callbacks(
     {
         let tx = tx.clone();
         ui.on_deploy_community_app(
-            move |slug, name, image, cpu, memory, workspace, profiles_raw, nesting| {
+            move |slug, name, image, cpu, memory, disk, workspace, profiles_raw, nesting| {
                 let profiles = parse_profiles_csv(&profiles_raw);
                 let nesting = if nesting {
                     NestingMode::Enabled
@@ -2390,6 +2551,7 @@ fn wire_ui_callbacks(
                     image_alias: image.trim().to_string(),
                     cpu: cpu.trim().to_string(),
                     memory: memory.trim().to_string(),
+                    disk: disk.trim().to_string(),
                     workspace: workspace.trim().to_string(),
                     profiles,
                     nesting,
@@ -2458,7 +2620,7 @@ fn request_confirm(
     message: &str,
     cmd: BackendCommand,
 ) {
-    *pending.borrow_mut() = Some(PendingConfirm::Backend(cmd));
+    *pending.borrow_mut() = Some(PendingConfirm::Backend(Box::new(cmd)));
     ui.set_confirm_message(message.into());
 }
 
@@ -2569,17 +2731,67 @@ fn apply_fetched_remote_aliases(ui: &AppWindow, imgs: &[RemoteImage], local_imgs
     ui.set_status_message(format!("Loaded {} remote image aliases", imgs.len()).into());
 }
 
+fn alias_cached_set(local_imgs: &[ImageSummary]) -> HashSet<String> {
+    local_imgs
+        .iter()
+        .filter(|img| !img.alias.is_empty())
+        .map(|img| img.alias.to_ascii_lowercase())
+        .collect()
+}
+
+fn remote_alias_subtitle(os: &str, release: &str) -> String {
+    if release.is_empty() {
+        os.to_string()
+    } else if os.is_empty() {
+        release.to_string()
+    } else {
+        format!("{os}, {release}")
+    }
+}
+
+fn remote_alias_row(img: &RemoteImage, cached: &HashSet<String>) -> UiRemoteAlias {
+    let distro_id = detect_distro_id(&img.os, &img.alias);
+    UiRemoteAlias {
+        distro_id: distro_id.into(),
+        logo: lookup_or_request_os_logo(distro_id),
+        is_cached: cached.contains(&img.alias.to_ascii_lowercase()),
+        alias: img.alias.clone().into(),
+        subtitle: remote_alias_subtitle(&img.os, &img.release).into(),
+        release_hint: img.release.clone().into(),
+    }
+}
+
+fn apply_selected_alias(
+    ui: &AppWindow,
+    remote_imgs: &[RemoteImage],
+    local_imgs: &[ImageSummary],
+    alias: &str,
+) {
+    let row = remote_imgs
+        .iter()
+        .find(|img| img.alias == alias)
+        .map(|img| remote_alias_row(img, &alias_cached_set(local_imgs)));
+    if let Some(row) = row {
+        ui.set_selected_alias_logo(row.logo);
+        ui.set_selected_alias_subtitle(row.subtitle);
+        ui.set_selected_alias_cached(row.is_cached);
+    } else {
+        ui.set_selected_alias_logo(UiLogo {
+            icon: slint::Image::default(),
+            accent: Color::default(),
+        });
+        ui.set_selected_alias_subtitle(String::new().into());
+        ui.set_selected_alias_cached(false);
+    }
+}
+
 fn apply_remote_aliases(
     ui: &AppWindow,
     remote_imgs: &[RemoteImage],
     local_imgs: &[ImageSummary],
     query: &str,
 ) {
-    let cached_aliases: HashSet<String> = local_imgs
-        .iter()
-        .filter(|img| !img.alias.is_empty())
-        .map(|img| img.alias.to_ascii_lowercase())
-        .collect();
+    let cached = alias_cached_set(local_imgs);
     let needle = query.trim().to_ascii_lowercase();
     let rows: Vec<UiRemoteAlias> = remote_imgs
         .iter()
@@ -2589,48 +2801,136 @@ fn apply_remote_aliases(
                 || img.os.to_ascii_lowercase().contains(&needle)
                 || img.release.to_ascii_lowercase().contains(&needle)
         })
-        .map(|img| {
-            let subtitle = if img.release.is_empty() {
-                img.os.clone()
-            } else if img.os.is_empty() {
-                img.release.clone()
-            } else {
-                format!("{}, {}", img.os, img.release)
-            };
-            let distro_id = detect_distro_id(&img.os, &img.alias);
-            UiRemoteAlias {
-                distro_id: distro_id.into(),
-                logo: lookup_or_request_os_logo(distro_id),
-                is_cached: cached_aliases.contains(&img.alias.to_ascii_lowercase()),
-                alias: img.alias.clone().into(),
-                subtitle: subtitle.into(),
-                release_hint: img.release.clone().into(),
-            }
-        })
+        .map(|img| remote_alias_row(img, &cached))
         .collect();
     ui.set_remote_aliases(ModelRc::from(Rc::new(VecModel::from(rows))));
+    apply_selected_alias(
+        ui,
+        remote_imgs,
+        local_imgs,
+        ui.get_create_image_alias().as_str(),
+    );
 }
 
-fn apply_community_apps(apps: &[CommunityApp], query: &str, repo_filter: &str) {
-    let needle = query.trim().to_ascii_lowercase();
-    let filtered: Vec<CommunityApp> = apps
+struct CommunityFilterResult {
+    apps: Vec<CommunityApp>,
+    category_counts: Vec<(CommunityCategory, usize)>,
+    total_in_repo: usize,
+    active_category: Option<CommunityCategory>,
+}
+
+fn filter_community_catalog(
+    apps: &[CommunityApp],
+    categories: &[CommunityCategory],
+    query: &str,
+    repo_filter: &str,
+    category_filter: &str,
+) -> CommunityFilterResult {
+    let repo_filtered: Vec<&CommunityApp> = apps
         .iter()
         .filter(|a| match repo_filter {
             "incus" => !a.is_dev,
             "devscripts" => a.is_dev,
             _ => true,
         })
+        .collect();
+
+    let total_in_repo = repo_filtered.len();
+    let mut counts_by_id: HashMap<&str, usize> = HashMap::new();
+    for app in &repo_filtered {
+        for cat_id in &app.categories {
+            *counts_by_id.entry(cat_id.as_str()).or_insert(0) += 1;
+        }
+    }
+
+    let category_counts: Vec<(CommunityCategory, usize)> = categories
+        .iter()
+        .filter_map(|cat| {
+            let count = counts_by_id.get(cat.id.as_str()).copied().unwrap_or(0);
+            (count > 0).then(|| (cat.clone(), count))
+        })
+        .collect();
+
+    let active_category = if category_filter.is_empty() {
+        None
+    } else {
+        categories.iter().find(|c| c.id == category_filter).cloned()
+    };
+
+    let needle = query.trim().to_ascii_lowercase();
+    let matching_cat_ids: HashSet<&str> = if needle.is_empty() {
+        HashSet::new()
+    } else {
+        categories
+            .iter()
+            .filter(|c| c.name.to_ascii_lowercase().contains(&needle))
+            .map(|c| c.id.as_str())
+            .collect()
+    };
+
+    let filtered: Vec<CommunityApp> = repo_filtered
+        .into_iter()
+        .filter(|a| category_filter.is_empty() || a.categories.iter().any(|c| c == category_filter))
         .filter(|a| {
             needle.is_empty()
                 || a.slug.to_ascii_lowercase().contains(&needle)
                 || a.name.to_ascii_lowercase().contains(&needle)
                 || a.description.to_ascii_lowercase().contains(&needle)
+                || a.categories
+                    .iter()
+                    .any(|c| matching_cat_ids.contains(c.as_str()))
         })
         .cloned()
         .collect();
+
+    CommunityFilterResult {
+        apps: filtered,
+        category_counts,
+        total_in_repo,
+        active_category,
+    }
+}
+
+fn apply_community_apps(
+    ui: &AppWindow,
+    apps: &[CommunityApp],
+    categories: &[CommunityCategory],
+    query: &str,
+    repo_filter: &str,
+    category_filter: &str,
+) {
+    let result = filter_community_catalog(apps, categories, query, repo_filter, category_filter);
+
+    let mut ui_categories: Vec<UiCommunityCategory> = Vec::new();
+    if !result.category_counts.is_empty() {
+        ui_categories.push(UiCommunityCategory {
+            id: "".into(),
+            name: "All categories".into(),
+            description: "".into(),
+            count: i32::try_from(result.total_in_repo).unwrap_or(i32::MAX),
+        });
+        for (cat, count) in result.category_counts {
+            ui_categories.push(UiCommunityCategory {
+                id: cat.id.into(),
+                name: cat.name.into(),
+                description: cat.description.into(),
+                count: i32::try_from(count).unwrap_or(i32::MAX),
+            });
+        }
+    }
+    ui.set_community_categories(ModelRc::from(Rc::new(VecModel::from(ui_categories))));
+
+    if let Some(active) = result.active_category {
+        ui.set_community_active_category_name(active.name.into());
+        ui.set_community_active_category_desc(active.description.into());
+    } else {
+        ui.set_community_active_category_name("".into());
+        ui.set_community_active_category_desc("".into());
+    }
+
     let model = UI_LOGO_STORE.with(|store| store.borrow().community_model.clone());
     if let Some(model) = model {
-        model.set_apps(filtered);
+        model.set_apps(result.apps);
     }
 }
 
@@ -2884,5 +3184,123 @@ fn to_ui_instance(inst: InstanceSummary, logo_url: &str) -> UiInstance {
         snapshots: ModelRc::from(Rc::new(VecModel::from(snaps))),
         mounts: ModelRc::from(Rc::new(VecModel::from(mounts))),
         proxies: ModelRc::from(Rc::new(VecModel::from(proxies))),
+    }
+}
+
+fn is_safe_external_url(url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    if url
+        .bytes()
+        .any(|b| b.is_ascii_whitespace() || b.is_ascii_control())
+    {
+        return false;
+    }
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    !host.is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_alias_helpers() {
+        assert_eq!(remote_alias_subtitle("Alpine", "3.21"), "Alpine, 3.21");
+        assert_eq!(remote_alias_subtitle("", "3.21"), "3.21");
+
+        let cached = alias_cached_set(&[ImageSummary {
+            fingerprint: String::new(),
+            alias: "alpine/3.21".into(),
+            description: String::new(),
+            architecture: String::new(),
+            size_bytes: 0,
+            size_display: String::new(),
+        }]);
+        assert!(cached.contains("alpine/3.21"));
+    }
+
+    #[test]
+    fn community_category_filtering_and_counts() {
+        let categories = vec![
+            CommunityCategory {
+                id: "cat-db".into(),
+                name: "Databases".into(),
+                description: "SQL and NoSQL".into(),
+                sort_order: 1,
+            },
+            CommunityCategory {
+                id: "cat-ai".into(),
+                name: "AI & ML".into(),
+                description: "Inference servers".into(),
+                sort_order: 2,
+            },
+            CommunityCategory {
+                id: "cat-empty".into(),
+                name: "Unused".into(),
+                description: String::new(),
+                sort_order: 3,
+            },
+        ];
+        let apps = vec![
+            CommunityApp {
+                slug: "postgresql".into(),
+                name: "PostgreSQL".into(),
+                description: "Relational database".into(),
+                logo_url: String::new(),
+                categories: vec!["cat-db".into()],
+                repo: CommunityRepo::Incus,
+                is_dev: false,
+            },
+            CommunityApp {
+                slug: "ollama".into(),
+                name: "Ollama".into(),
+                description: "Local LLM".into(),
+                logo_url: String::new(),
+                categories: vec!["cat-ai".into()],
+                repo: CommunityRepo::DevScripts,
+                is_dev: true,
+            },
+        ];
+
+        let all = filter_community_catalog(&apps, &categories, "", "all", "");
+        assert_eq!(all.total_in_repo, 2);
+        assert_eq!(all.category_counts.len(), 2);
+        assert_eq!(all.apps.len(), 2);
+        assert!(all.active_category.is_none());
+
+        let db_only = filter_community_catalog(&apps, &categories, "", "all", "cat-db");
+        assert_eq!(db_only.apps.len(), 1);
+        assert_eq!(db_only.apps[0].slug, "postgresql");
+        assert_eq!(
+            db_only.active_category.as_ref().map(|c| c.name.as_str()),
+            Some("Databases")
+        );
+
+        let dev_only = filter_community_catalog(&apps, &categories, "", "devscripts", "");
+        assert_eq!(dev_only.total_in_repo, 1);
+        assert_eq!(dev_only.category_counts.len(), 1);
+        assert_eq!(dev_only.category_counts[0].0.id, "cat-ai");
+        assert_eq!(dev_only.category_counts[0].1, 1);
+    }
+
+    #[test]
+    fn external_url_validation_allows_http_https_and_rejects_unsafe() {
+        assert!(is_safe_external_url("https://2fauth.app/"));
+        assert!(is_safe_external_url(
+            "https://github.com/community-scripts/Incus/blob/main/ct/adguard.sh"
+        ));
+        assert!(is_safe_external_url("http://example.com/docs?q=1#top"));
+        assert!(!is_safe_external_url(""));
+        assert!(!is_safe_external_url("--help"));
+        assert!(!is_safe_external_url("javascript:alert(1)"));
+        assert!(!is_safe_external_url("file:///etc/passwd"));
+        assert!(!is_safe_external_url("https:///no-host"));
+        assert!(!is_safe_external_url("https://example.com/has space"));
+        assert!(!is_safe_external_url("https://example.com/\nfoo"));
     }
 }

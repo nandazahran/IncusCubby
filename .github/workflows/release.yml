@@ -19,11 +19,11 @@ jobs:
         include:
           - runner: ubuntu-latest
             arch: x86_64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-26.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Resolve version
         shell: bash
         run: echo "VERSION=$(sed -n 's/^version = \"\(.*\)\"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
@@ -61,7 +61,7 @@ jobs:
           rpm -qip "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
           rpm -qlp "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
           rpm -qpR "incus-cubby-${VERSION}-1.${{ matrix.arch }}.rpm"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
           path: |
@@ -80,7 +80,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Verify the tag matches Cargo.toml
@@ -90,7 +90,7 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
             exit 1
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true

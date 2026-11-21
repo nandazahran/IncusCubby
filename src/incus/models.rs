@@ -297,6 +297,8 @@ pub struct ApiProfile {
     pub description: String,
     #[serde(default, deserialize_with = "null_to_default")]
     pub config: HashMap<String, String>,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub devices: HashMap<String, HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
