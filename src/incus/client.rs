@@ -204,11 +204,7 @@ impl IncusClient {
 
     async fn resolve_root_pool(&self, profile_names: &[String]) -> String {
         if let Ok(resp) = self
-            .send_json::<(), Vec<ApiProfile>>(
-                Method::GET,
-                "/1.0/profiles?recursion=1",
-                None::<&()>,
-            )
+            .send_json::<(), Vec<ApiProfile>>(Method::GET, "/1.0/profiles?recursion=1", None::<&()>)
             .await
             && let Some(profiles) = resp.metadata
         {
@@ -1934,7 +1930,10 @@ pub(super) mod tests {
         let seen_clone = Arc::clone(&seen);
 
         let (sock, handle) = spawn_mock_incus(move |method, uri, body| {
-            seen_clone.lock().unwrap().push((method.clone(), uri.clone(), body));
+            seen_clone
+                .lock()
+                .unwrap()
+                .push((method.clone(), uri.clone(), body));
             if method == "GET" && uri == "/1.0/profiles?recursion=1" {
                 let resp = r#"{
                     "type": "sync",

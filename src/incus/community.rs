@@ -17,12 +17,10 @@ const COMMUNITY_DEVSCRIPTS_RAW_URL: &str =
     "https://raw.githubusercontent.com/community-scripts/DevScripts/main";
 const COMMUNITY_PROXMOX_RAW_URL: &str =
     "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main";
-const COMMUNITY_INCUS_BLOB_URL: &str =
-    "https://github.com/community-scripts/Incus/blob/main";
+const COMMUNITY_INCUS_BLOB_URL: &str = "https://github.com/community-scripts/Incus/blob/main";
 const COMMUNITY_DEVSCRIPTS_BLOB_URL: &str =
     "https://github.com/community-scripts/DevScripts/blob/main";
-const COMMUNITY_PROXMOX_BLOB_URL: &str =
-    "https://github.com/community-scripts/ProxmoxVE/blob/main";
+const COMMUNITY_PROXMOX_BLOB_URL: &str = "https://github.com/community-scripts/ProxmoxVE/blob/main";
 const COMMUNITY_SCRIPTS_CORE_URL: &str =
     "https://raw.githubusercontent.com/community-scripts/core/main";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -740,9 +738,11 @@ fn parse_categories_from_payload(payload: &str) -> Vec<CommunityCategory> {
         })
         .collect();
     categories.sort_by(|a, b| {
-        a.sort_order
-            .cmp(&b.sort_order)
-            .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+        a.sort_order.cmp(&b.sort_order).then_with(|| {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+        })
     });
     categories
 }

@@ -19,8 +19,9 @@ use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
 use crate::incus::community::{
-    CommunityApp, CommunityAppSpec, CommunityCategory, CommunityRepo, build_container_runner_script,
-    curated_community_apps, fetch_community_app_spec, fetch_community_catalog, fetch_install_func,
+    CommunityApp, CommunityAppSpec, CommunityCategory, CommunityRepo,
+    build_container_runner_script, curated_community_apps, fetch_community_app_spec,
+    fetch_community_catalog, fetch_install_func,
 };
 use crate::incus::packages::{install_command, package_manager_label, upgrade_command};
 use crate::incus::remote_images::{
@@ -2853,10 +2854,7 @@ fn filter_community_catalog(
     let active_category = if category_filter.is_empty() {
         None
     } else {
-        categories
-            .iter()
-            .find(|c| c.id == category_filter)
-            .cloned()
+        categories.iter().find(|c| c.id == category_filter).cloned()
     };
 
     let needle = query.trim().to_ascii_lowercase();
@@ -2872,9 +2870,7 @@ fn filter_community_catalog(
 
     let filtered: Vec<CommunityApp> = repo_filtered
         .into_iter()
-        .filter(|a| {
-            category_filter.is_empty() || a.categories.iter().any(|c| c == category_filter)
-        })
+        .filter(|a| category_filter.is_empty() || a.categories.iter().any(|c| c == category_filter))
         .filter(|a| {
             needle.is_empty()
                 || a.slug.to_ascii_lowercase().contains(&needle)
