@@ -89,12 +89,14 @@ pub struct CommunityNote {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommunityInstallProfile {
     pub name: String,
+    pub short_os: String,
     pub os_label: String,
     pub image_alias: String,
     pub cpu: String,
     pub ram: String,
     pub memory_limit: String,
     pub hdd: String,
+    pub disk_limit: String,
     pub config_path: String,
 }
 
@@ -126,6 +128,7 @@ pub struct CommunityAppSpec {
     pub image_alias: String,
     pub cpu_limit: String,
     pub memory_limit: String,
+    pub disk_limit: String,
     pub nesting: bool,
     pub repo: CommunityRepo,
     pub ct_script: String,
@@ -313,10 +316,42 @@ fn format_ram_limit(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         String::new()
-    } else if trimmed.bytes().all(|b| b.is_ascii_digit()) {
-        format!("{trimmed}MiB")
+    } else if let Ok(mb) = trimmed.parse::<u64>() {
+        if mb >= 1024 && mb.is_multiple_of(1024) {
+            format!("{}GiB", mb / 1024)
+        } else {
+            format!("{mb}MiB")
+        }
     } else {
         trimmed.to_string()
+    }
+}
+
+fn format_disk_limit(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else if trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        format!("{trimmed}GiB")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn short_os_label(os: &str) -> String {
+    let trimmed = os.trim();
+    match trimmed.to_ascii_lowercase().as_str() {
+        "" => String::new(),
+        "arch linux" | "archlinux" => "Arch".to_string(),
+        "alpine linux" | "alpine" => "Alpine".to_string(),
+        "debian" => "Debian".to_string(),
+        "ubuntu" => "Ubuntu".to_string(),
+        "fedora" => "Fedora".to_string(),
+        "rocky linux" | "rockylinux" => "Rocky".to_string(),
+        "alma linux" | "almalinux" => "Alma".to_string(),
+        "centos" => "CentOS".to_string(),
+        "opensuse" | "opensuse leap" | "opensuse-leap" => "openSUSE".to_string(),
+        _ => slug_to_display_name(trimmed.split_whitespace().next().unwrap_or(trimmed)),
     }
 }
 
@@ -569,10 +604,10 @@ pub fn parse_community_script_detail_html(html: &str) -> Option<CommunityScriptD
             .unwrap_or_default();
         let runs_in = match runs_in_raw.as_str() {
             "" => String::new(),
-            "lxc" => "CONTAINER".to_string(),
+            "lxc" => "Container".to_string(),
             "vm" => "VM".to_string(),
-            "pve" => "HOST".to_string(),
-            other => other.to_ascii_uppercase(),
+            "pve" => "Host".to_string(),
+            other => slug_to_display_name(other),
         };
 
         let last_update_url = sanitize_http_url(&raw.last_update_commit);
@@ -594,8 +629,10 @@ pub fn parse_community_script_detail_html(html: &str) -> Option<CommunityScriptD
                     .filter(|s| !s.is_empty())
                     .collect::<Vec<_>>()
                     .join(" ");
+                let short_os = short_os_label(&res.os);
                 let image_alias = normalize_image_alias(&res.os, &res.version);
                 let memory_limit = format_ram_limit(&res.ram);
+                let disk_limit = format_disk_limit(&res.hdd);
                 if res.cpu.is_empty()
                     && res.ram.is_empty()
                     && res.hdd.is_empty()
@@ -606,12 +643,14 @@ pub fn parse_community_script_detail_html(html: &str) -> Option<CommunityScriptD
                 }
                 Some(CommunityInstallProfile {
                     name,
+                    short_os,
                     os_label,
                     image_alias,
                     cpu: res.cpu,
                     ram: res.ram,
                     memory_limit,
                     hdd: res.hdd,
+                    disk_limit,
                     config_path: method.config_path.trim().to_string(),
                 })
             })
@@ -1168,12 +1207,14 @@ pub async fn fetch_community_app_spec(
             .to_string();
         details.install_profiles.push(CommunityInstallProfile {
             name: "default".to_string(),
+            short_os: short_os_label(&meta.os),
             os_label,
             image_alias: meta.image_alias.clone(),
             cpu: meta.cpu_limit.clone(),
             ram,
             memory_limit: meta.memory_limit.clone(),
             hdd: meta.disk_gb.clone(),
+            disk_limit: format_disk_limit(&meta.disk_gb),
             config_path: String::new(),
         });
 
@@ -1199,21 +1240,24 @@ pub async fn fetch_community_app_spec(
             };
             details.install_profiles.push(CommunityInstallProfile {
                 name: "alpine".to_string(),
+                short_os: "Alpine".to_string(),
                 os_label: format!("Alpine {alp_ver}"),
                 image_alias: normalize_image_alias("alpine", &alp_ver),
                 cpu: alp_cpu,
                 memory_limit: format_ram_limit(&alp_ram),
                 ram: alp_ram,
+                disk_limit: format_disk_limit(&meta.alpine_disk),
                 hdd: meta.alpine_disk.clone(),
                 config_path: String::new(),
             });
         }
     }
     if details.runs_in.is_empty() {
-        details.runs_in = "CONTAINER".to_string();
+        details.runs_in = "Container".to_string();
     }
 
-    let (image_alias, cpu_limit, memory_limit) = if let Some(first) =
+    let fallback_disk = format_disk_limit(&meta.disk_gb);
+    let (image_alias, cpu_limit, memory_limit, disk_limit) = if let Some(first) =
         details.install_profiles.first()
         && first.name == "default"
         && !first.image_alias.is_empty()
@@ -1230,9 +1274,19 @@ pub async fn fetch_community_app_spec(
             } else {
                 first.memory_limit.clone()
             },
+            if first.disk_limit.is_empty() {
+                fallback_disk
+            } else {
+                first.disk_limit.clone()
+            },
         )
     } else {
-        (meta.image_alias, meta.cpu_limit, meta.memory_limit)
+        (
+            meta.image_alias,
+            meta.cpu_limit,
+            meta.memory_limit,
+            fallback_disk,
+        )
     };
 
     let blob_base = repo.github_blob_base_url();
@@ -1244,6 +1298,7 @@ pub async fn fetch_community_app_spec(
         image_alias,
         cpu_limit,
         memory_limit,
+        disk_limit,
         nesting: meta.nesting,
         repo,
         ct_script,
@@ -1516,7 +1571,7 @@ var_nesting="${var_nesting:-0}"
                 version: "13".to_string(),
                 image_alias: "debian/13".to_string(),
                 cpu_limit: "2".to_string(),
-                memory_limit: "2048MiB".to_string(),
+                memory_limit: "2GiB".to_string(),
                 disk_gb: String::new(),
                 alpine_version: "3.24".to_string(),
                 alpine_cpu: "1".to_string(),
@@ -1547,7 +1602,7 @@ fi
         assert_eq!(meta.version, "24.04");
         assert_eq!(meta.image_alias, "ubuntu/24.04");
         assert_eq!(meta.cpu_limit, "4");
-        assert_eq!(meta.memory_limit, "4096MiB");
+        assert_eq!(meta.memory_limit, "4GiB");
         assert!(meta.nesting);
     }
 
@@ -1589,6 +1644,7 @@ ENABLE_NESTING="0"
             image_alias: "ubuntu/24.04".to_string(),
             cpu_limit: "2".to_string(),
             memory_limit: "2048MiB".to_string(),
+            disk_limit: String::new(),
             nesting: true,
             repo: CommunityRepo::Incus,
             ct_script: String::new(),
@@ -1629,6 +1685,7 @@ ENABLE_NESTING="0"
             image_alias: "archlinux".to_string(),
             cpu_limit: "2".to_string(),
             memory_limit: "1024MiB".to_string(),
+            disk_limit: String::new(),
             nesting: true,
             repo: CommunityRepo::DevScripts,
             ct_script: String::new(),
@@ -1698,7 +1755,7 @@ fi
             "https://github.com/community-scripts/ProxmoxVE/pull/17996"
         );
         assert_eq!(details.last_update_label, "PR #17996");
-        assert_eq!(details.runs_in, "CONTAINER");
+        assert_eq!(details.runs_in, "Container");
         assert!(details.updateable);
         assert_eq!(details.port, 80);
         assert_eq!(details.default_user, "admin");
@@ -1708,22 +1765,26 @@ fi
             vec![
                 CommunityInstallProfile {
                     name: "default".to_string(),
+                    short_os: "Debian".to_string(),
                     os_label: "Debian 13".to_string(),
                     image_alias: "debian/13".to_string(),
                     cpu: "2".to_string(),
                     ram: "1024".to_string(),
-                    memory_limit: "1024MiB".to_string(),
+                    memory_limit: "1GiB".to_string(),
                     hdd: "4".to_string(),
+                    disk_limit: "4GiB".to_string(),
                     config_path: "/opt/2fauth/.env".to_string(),
                 },
                 CommunityInstallProfile {
                     name: "alpine".to_string(),
+                    short_os: "Alpine".to_string(),
                     os_label: "Alpine 3.24".to_string(),
                     image_alias: "alpine/3.24".to_string(),
                     cpu: "1".to_string(),
                     ram: "512".to_string(),
                     memory_limit: "512MiB".to_string(),
                     hdd: "2".to_string(),
+                    disk_limit: "2GiB".to_string(),
                     config_path: String::new(),
                 },
             ]
@@ -1804,6 +1865,7 @@ fi
                 image_alias: "alpine/3.24",
                 memory_limit: "512MiB",
                 cpu_limit: "1",
+                disk_limit: "",
                 workspace_path: "",
                 profiles: Vec::new(),
                 cloud_init_user_data: "",

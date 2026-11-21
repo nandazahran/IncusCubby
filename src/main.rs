@@ -44,7 +44,7 @@ enum ProfileSaveMode {
 }
 
 enum PendingConfirm {
-    Backend(BackendCommand),
+    Backend(Box<BackendCommand>),
     ResetSettings,
 }
 
@@ -56,6 +56,7 @@ enum BackendCommand {
         image: String,
         memory: String,
         cpu: String,
+        disk: String,
         workspace: String,
         profiles: Vec<String>,
         cloud_init: String,
@@ -175,6 +176,7 @@ enum BackendCommand {
         image_alias: String,
         cpu: String,
         memory: String,
+        disk: String,
         workspace: String,
         profiles: Vec<String>,
         nesting: NestingMode,
@@ -235,13 +237,13 @@ impl BackendCommand {
             Self::DeleteNetwork { name } => format!("Deleting network {name}..."),
             Self::SaveProfile { name, .. } => format!("Saving profile {name}..."),
             Self::DeleteProfile { name } => format!("Deleting profile {name}..."),
-            Self::FetchRemoteImages => "Fetching remote image aliases...".to_string(),
+            Self::FetchRemoteImages => "Refreshing official images...".to_string(),
             Self::RefreshLocalImages => "Refreshing cached images...".to_string(),
             Self::DeleteImage { fingerprint } => {
                 let short: String = fingerprint.chars().take(12).collect();
                 format!("Deleting cached image {short}...")
             }
-            Self::FetchCommunityCatalog => "Loading community-scripts/Incus catalog...".to_string(),
+            Self::FetchCommunityCatalog => "Loading community scripts...".to_string(),
             Self::LoadCommunityAppSpec { slug } => format!("Loading '{slug}' script..."),
             Self::DeployCommunityApp {
                 slug,
@@ -956,12 +958,14 @@ async fn handle_command(
                                 .into_iter()
                                 .map(|p| UiCommunityProfile {
                                     name: p.name.into(),
+                                    short_os: p.short_os.into(),
                                     os_label: p.os_label.into(),
                                     image_alias: p.image_alias.into(),
                                     cpu: p.cpu.into(),
                                     ram: p.ram.into(),
                                     memory_limit: p.memory_limit.into(),
                                     hdd: p.hdd.into(),
+                                    disk_limit: p.disk_limit.into(),
                                     config_path: p.config_path.into(),
                                 })
                                 .collect::<Vec<_>>(),
@@ -986,10 +990,14 @@ async fn handle_command(
                         });
                         ui.set_community_notes(notes_model);
                         ui.set_community_profiles(profiles_model);
-                        ui.set_community_selected_profile(0);
                         ui.set_create_image_alias(spec.image_alias.into());
                         ui.set_create_cpu(spec.cpu_limit.into());
                         ui.set_create_memory(spec.memory_limit.into());
+                        ui.set_create_disk(if spec.disk_limit.is_empty() {
+                            "8GiB".into()
+                        } else {
+                            spec.disk_limit.into()
+                        });
                         ui.set_create_nesting(spec.nesting);
                         ui.set_community_install_script(spec.install_script.into());
                         ui.set_community_output("".into());
@@ -1008,6 +1016,7 @@ async fn handle_command(
             image_alias,
             cpu,
             memory,
+            disk,
             workspace,
             profiles,
             nesting,
@@ -1020,6 +1029,7 @@ async fn handle_command(
                     image_alias: &image_alias,
                     cpu: &cpu,
                     memory: &memory,
+                    disk: &disk,
                     workspace: &workspace,
                     profiles,
                     nesting,
@@ -1548,6 +1558,7 @@ struct DeployCommunityRequest<'a> {
     image_alias: &'a str,
     cpu: &'a str,
     memory: &'a str,
+    disk: &'a str,
     workspace: &'a str,
     profiles: Vec<String>,
     nesting: NestingMode,
@@ -1567,6 +1578,7 @@ async fn deploy_community_sandbox(
             image_alias: req.image_alias,
             memory_limit: req.memory,
             cpu_limit: req.cpu,
+            disk_limit: req.disk,
             workspace_path: req.workspace,
             profiles: req.profiles,
             cloud_init_user_data: "",
@@ -1639,6 +1651,7 @@ async fn execute_instance_command(
             image,
             memory,
             cpu,
+            disk,
             workspace,
             profiles,
             cloud_init,
@@ -1651,6 +1664,7 @@ async fn execute_instance_command(
                     image_alias: &image,
                     memory_limit: &memory,
                     cpu_limit: &cpu,
+                    disk_limit: &disk,
                     workspace_path: &workspace,
                     profiles,
                     cloud_init_user_data: &cloud_init,
@@ -1849,6 +1863,7 @@ fn wire_ui_callbacks(
                   image,
                   memory,
                   cpu,
+                  disk,
                   workspace,
                   profiles_raw,
                   cloud_init,
@@ -1865,6 +1880,7 @@ fn wire_ui_callbacks(
                     image: image.trim().to_string(),
                     memory: memory.to_string(),
                     cpu: cpu.to_string(),
+                    disk: disk.trim().to_string(),
                     workspace: workspace.trim().to_string(),
                     profiles,
                     cloud_init: cloud_init.to_string(),
@@ -2351,7 +2367,7 @@ fn wire_ui_callbacks(
         ui.on_confirm_action(move || {
             match pending.borrow_mut().take() {
                 Some(PendingConfirm::Backend(cmd)) => {
-                    let _ = tx.send(cmd);
+                    let _ = tx.send(*cmd);
                 }
                 Some(PendingConfirm::ResetSettings) => {
                     let res = AppSettings::reset_file();
@@ -2492,7 +2508,6 @@ fn wire_ui_callbacks(
                 ui.set_community_details(UiCommunityDetails::default());
                 ui.set_community_notes(ModelRc::default());
                 ui.set_community_profiles(ModelRc::default());
-                ui.set_community_selected_profile(0);
             }
             let _ = tx.send(BackendCommand::LoadCommunityAppSpec {
                 slug: slug.to_string(),
@@ -2511,10 +2526,10 @@ fn wire_ui_callbacks(
                 ui.set_community_details(UiCommunityDetails::default());
                 ui.set_community_notes(ModelRc::default());
                 ui.set_community_profiles(ModelRc::default());
-                ui.set_community_selected_profile(0);
                 ui.set_community_install_script("".into());
                 ui.set_community_output("".into());
                 ui.set_create_image_alias("".into());
+                ui.set_create_disk("8GiB".into());
             }
         });
     }
@@ -2522,7 +2537,7 @@ fn wire_ui_callbacks(
     {
         let tx = tx.clone();
         ui.on_deploy_community_app(
-            move |slug, name, image, cpu, memory, workspace, profiles_raw, nesting| {
+            move |slug, name, image, cpu, memory, disk, workspace, profiles_raw, nesting| {
                 let profiles = parse_profiles_csv(&profiles_raw);
                 let nesting = if nesting {
                     NestingMode::Enabled
@@ -2535,6 +2550,7 @@ fn wire_ui_callbacks(
                     image_alias: image.trim().to_string(),
                     cpu: cpu.trim().to_string(),
                     memory: memory.trim().to_string(),
+                    disk: disk.trim().to_string(),
                     workspace: workspace.trim().to_string(),
                     profiles,
                     nesting,
@@ -2603,7 +2619,7 @@ fn request_confirm(
     message: &str,
     cmd: BackendCommand,
 ) {
-    *pending.borrow_mut() = Some(PendingConfirm::Backend(cmd));
+    *pending.borrow_mut() = Some(PendingConfirm::Backend(Box::new(cmd)));
     ui.set_confirm_message(message.into());
 }
 

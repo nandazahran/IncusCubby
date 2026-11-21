@@ -1442,6 +1442,7 @@ component CreateView inherits HorizontalLayout {
     in property <bool> selected_alias_cached: false;
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
+    in-out property <string> create_disk: "8GiB";
     in-out property <string> create_profiles: "default";
     in-out property <string> create_workspace: "";
     in-out property <bool> create_nesting: false;
@@ -1468,7 +1469,6 @@ component CreateView inherits HorizontalLayout {
     in property <UiCommunityDetails> community_details;
     in property <[UiCommunityNote]> community_notes: [];
     in property <[UiCommunityProfile]> community_profiles: [];
-    in-out property <int> community_selected_profile: 0;
     in property <string> community_install_script: "";
     in property <string> community_output: "";
     in property <[string]> profile_names: ["default"];
@@ -1486,40 +1486,100 @@ component CreateView inherits HorizontalLayout {
     callback resolve_selected_alias(string);
     callback select_community_app(string);
     callback browse_workspace_folder();
-    callback create_instance(string, string, string, string, string, string, string, string, bool);
-    callback deploy_community_app(string, string, string, string, string, string, string, bool);
+    callback create_instance(string, string, string, string, string, string, string, string, string, bool);
+    callback deploy_community_app(string, string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
     callback cancel_to_sandboxes();
     callback clear_community_selection();
     callback open_url(string);
 
     pure function mem_step_label(idx: int) -> string {
-        if idx <= 0 { return "512MiB"; }
-        if idx == 1 { return "1GiB"; }
-        if idx == 2 { return "2GiB"; }
-        if idx == 3 { return "3GiB"; }
-        if idx == 4 { return "4GiB"; }
-        if idx == 5 { return "6GiB"; }
-        if idx == 6 { return "8GiB"; }
-        if idx == 7 { return "12GiB"; }
-        if idx == 8 { return "16GiB"; }
-        if idx == 9 { return "24GiB"; }
+        if idx <= 0 { return "256MiB"; }
+        if idx == 1 { return "512MiB"; }
+        if idx == 2 { return "1GiB"; }
+        if idx == 3 { return "2GiB"; }
+        if idx == 4 { return "3GiB"; }
+        if idx == 5 { return "4GiB"; }
+        if idx == 6 { return "6GiB"; }
+        if idx == 7 { return "8GiB"; }
+        if idx == 8 { return "12GiB"; }
+        if idx == 9 { return "16GiB"; }
+        if idx == 10 { return "24GiB"; }
         return "32GiB";
     }
 
     pure function mem_to_step(s: string) -> int {
-        if s == "256MiB" || s == "512MiB" { return 0; }
-        if s == "1GiB" || s == "1024MiB" { return 1; }
-        if s == "2GiB" || s == "2048MiB" { return 2; }
-        if s == "3GiB" || s == "3072MiB" { return 3; }
-        if s == "4GiB" || s == "4096MiB" { return 4; }
-        if s == "6GiB" || s == "6144MiB" { return 5; }
-        if s == "8GiB" || s == "8192MiB" { return 6; }
-        if s == "12GiB" || s == "12288MiB" { return 7; }
-        if s == "16GiB" || s == "16384MiB" { return 8; }
-        if s == "24GiB" || s == "24576MiB" { return 9; }
-        if s == "32GiB" || s == "32768MiB" { return 10; }
-        return 4;
+        if s == "256MiB" { return 0; }
+        if s == "512MiB" { return 1; }
+        if s == "1GiB" || s == "1024MiB" { return 2; }
+        if s == "2GiB" || s == "2048MiB" { return 3; }
+        if s == "3GiB" || s == "3072MiB" { return 4; }
+        if s == "4GiB" || s == "4096MiB" { return 5; }
+        if s == "6GiB" || s == "6144MiB" { return 6; }
+        if s == "8GiB" || s == "8192MiB" { return 7; }
+        if s == "12GiB" || s == "12288MiB" { return 8; }
+        if s == "16GiB" || s == "16384MiB" { return 9; }
+        if s == "24GiB" || s == "24576MiB" { return 10; }
+        if s == "32GiB" || s == "32768MiB" { return 11; }
+        return 5;
+    }
+
+    pure function normalize_mem(s: string) -> string {
+        if s == "1024MiB" || s == "1G" || s == "1GB" { return "1GiB"; }
+        if s == "2048MiB" || s == "2G" || s == "2GB" { return "2GiB"; }
+        if s == "3072MiB" || s == "3G" || s == "3GB" { return "3GiB"; }
+        if s == "4096MiB" || s == "4G" || s == "4GB" { return "4GiB"; }
+        if s == "6144MiB" || s == "6G" || s == "6GB" { return "6GiB"; }
+        if s == "8192MiB" || s == "8G" || s == "8GB" { return "8GiB"; }
+        if s == "12288MiB" || s == "12G" || s == "12GB" { return "12GiB"; }
+        if s == "16384MiB" || s == "16G" || s == "16GB" { return "16GiB"; }
+        if s == "24576MiB" || s == "24G" || s == "24GB" { return "24GiB"; }
+        if s == "32768MiB" || s == "32G" || s == "32GB" { return "32GiB"; }
+        return s;
+    }
+
+    pure function disk_step_label(idx: int) -> string {
+        if idx <= 0 { return "1GiB"; }
+        if idx == 1 { return "2GiB"; }
+        if idx == 2 { return "4GiB"; }
+        if idx == 3 { return "8GiB"; }
+        if idx == 4 { return "12GiB"; }
+        if idx == 5 { return "16GiB"; }
+        if idx == 6 { return "24GiB"; }
+        if idx == 7 { return "32GiB"; }
+        if idx == 8 { return "48GiB"; }
+        if idx == 9 { return "64GiB"; }
+        return "128GiB";
+    }
+
+    pure function disk_to_step(s: string) -> int {
+        if s == "1GiB" || s == "1GB" || s == "1G" { return 0; }
+        if s == "2GiB" || s == "2GB" || s == "2G" { return 1; }
+        if s == "4GiB" || s == "4GB" || s == "4G" { return 2; }
+        if s == "8GiB" || s == "8GB" || s == "8G" { return 3; }
+        if s == "12GiB" || s == "12GB" || s == "12G" { return 4; }
+        if s == "16GiB" || s == "16GB" || s == "16G" { return 5; }
+        if s == "24GiB" || s == "24GB" || s == "24G" { return 6; }
+        if s == "32GiB" || s == "32GB" || s == "32G" { return 7; }
+        if s == "48GiB" || s == "48GB" || s == "48G" { return 8; }
+        if s == "64GiB" || s == "64GB" || s == "64G" { return 9; }
+        if s == "128GiB" || s == "128GB" || s == "128G" { return 10; }
+        return 3;
+    }
+
+    pure function normalize_disk(s: string) -> string {
+        if s == "1GB" || s == "1G" { return "1GiB"; }
+        if s == "2GB" || s == "2G" { return "2GiB"; }
+        if s == "4GB" || s == "4G" { return "4GiB"; }
+        if s == "8GB" || s == "8G" { return "8GiB"; }
+        if s == "12GB" || s == "12G" { return "12GiB"; }
+        if s == "16GB" || s == "16G" { return "16GiB"; }
+        if s == "24GB" || s == "24G" { return "24GiB"; }
+        if s == "32GB" || s == "32G" { return "32GiB"; }
+        if s == "48GB" || s == "48G" { return "48GiB"; }
+        if s == "64GB" || s == "64G" { return "64GiB"; }
+        if s == "128GB" || s == "128G" { return "128GiB"; }
+        return s;
     }
 
     pure function cpu_to_int(s: string) -> int {
@@ -1568,7 +1628,7 @@ component CreateView inherits HorizontalLayout {
                     Text {
                         text: root.create_use_community
                             ? root.community_apps.length + " apps"
-                            : "images.linuxcontainers.org";
+                            : root.remote_aliases.length + " images";
                         font-family: CubbyTheme.font_mono;
                         font-size: 10.5px;
                         color: CubbyTheme.ink_muted;
@@ -1586,14 +1646,14 @@ component CreateView inherits HorizontalLayout {
 
                     CubbySegmentOption {
                         horizontal-stretch: 1;
-                        label: "Official Images";
+                        label: "Official images";
                         active: !root.create_use_community;
                         clicked => { root.create_use_community = false; }
                     }
 
                     CubbySegmentOption {
                         horizontal-stretch: 1;
-                        label: "Community Scripts";
+                        label: "Community scripts";
                         active: root.create_use_community;
                         clicked => {
                             root.create_use_community = true;
@@ -1624,7 +1684,7 @@ component CreateView inherits HorizontalLayout {
                         y: (parent.height - self.height) / 2;
 
                         CubbySegmentOption {
-                            label: "Official Images";
+                            label: "Official images";
                             active: !root.create_use_community;
                             clicked => {
                                 root.create_use_community = false;
@@ -1632,7 +1692,7 @@ component CreateView inherits HorizontalLayout {
                             }
                         }
                         CubbySegmentOption {
-                            label: "Community Scripts";
+                            label: "Community scripts";
                             active: root.create_use_community;
                             clicked => {
                                 root.create_use_community = true;
@@ -1653,7 +1713,7 @@ component CreateView inherits HorizontalLayout {
                             }
                         }
                         CubbySegmentOption {
-                            label: "Incus";
+                            label: "Stable";
                             active: root.community_repo_filter == "incus";
                             clicked => {
                                 root.community_repo_filter = "incus";
@@ -1661,7 +1721,7 @@ component CreateView inherits HorizontalLayout {
                             }
                         }
                         CubbySegmentOption {
-                            label: "DevScripts";
+                            label: "Development";
                             active: root.community_repo_filter == "devscripts";
                             clicked => {
                                 root.community_repo_filter = "devscripts";
@@ -1675,7 +1735,7 @@ component CreateView inherits HorizontalLayout {
                     Text {
                         text: root.create_use_community
                             ? root.community_apps.length + " apps"
-                            : "images.linuxcontainers.org";
+                            : root.remote_aliases.length + " images";
                         font-family: CubbyTheme.font_mono;
                         font-size: 10.5px;
                         color: CubbyTheme.ink_muted;
@@ -1687,7 +1747,7 @@ component CreateView inherits HorizontalLayout {
                         icon: "refresh";
                         tone: "outline";
                         size: "md";
-                        tooltip: root.create_use_community ? "Reload catalog" : "Fetch remote aliases";
+                        tooltip: root.create_use_community ? "Reload catalog" : "Refresh images";
                         enabled: !root.busy;
                         clicked => {
                             if root.create_use_community {
@@ -1717,7 +1777,7 @@ component CreateView inherits HorizontalLayout {
                         x: 14px;
                         y: 16px;
                         width: parent.width - 28px;
-                        text: "No matching official aliases.";
+                        text: "No matching images.";
                         font-family: CubbyTheme.font_sans;
                         font-size: 12px;
                         color: CubbyTheme.ink_muted;
@@ -1804,7 +1864,7 @@ component CreateView inherits HorizontalLayout {
                             vertical-alignment: center;
                         }
                         Text {
-                            text: root.remote_aliases.length + " aliases";
+                            text: root.remote_aliases.length + " images";
                             font-family: CubbyTheme.font_mono;
                             font-size: 10.5px;
                             color: CubbyTheme.ink_muted;
@@ -2062,7 +2122,7 @@ component CreateView inherits HorizontalLayout {
                             vertical-alignment: center;
                         }
                         Text {
-                            text: "Incus + DevScripts";
+                            text: "Stable + development";
                             font-family: CubbyTheme.font_mono;
                             font-size: 10.5px;
                             color: CubbyTheme.ink_muted;
@@ -2115,8 +2175,8 @@ component CreateView inherits HorizontalLayout {
 
             if root.create_use_community && root.community_selected_slug != "" && root.community_is_dev: CubbyBanner {
                 tone: "warn";
-                title: "Testing script (community-scripts/DevScripts)";
-                body: "DevScripts are community testing candidates. Review Install Script Preview before deploying.";
+                title: "Development script";
+                body: "This script is in development. Review the script preview before deploying.";
             }
 
 
@@ -2146,10 +2206,8 @@ component CreateView inherits HorizontalLayout {
                     subtitle: root.community_description;
                     tag_text: root.community_tags;
                     tag_tone: "default";
-                    status_label: root.community_source_repo != ""
-                        ? root.community_source_repo
-                        : "community-scripts";
-                    status_tone: "live";
+                    status_label: root.community_is_dev ? "development" : "stable";
+                    status_tone: root.community_is_dev ? "warn" : "live";
                 }
 
                 if root.community_notes.length > 0: VerticalLayout {
@@ -2158,14 +2216,6 @@ component CreateView inherits HorizontalLayout {
                     Rectangle {
                         height: 1px;
                         background: CubbyTheme.border;
-                    }
-
-                    Text {
-                        text: "NOTES";
-                        font-family: CubbyTheme.font_mono;
-                        font-size: 10.5px;
-                        font-weight: 600;
-                        color: CubbyTheme.ink_muted;
                     }
 
                     for note in root.community_notes: Rectangle {
@@ -2208,9 +2258,9 @@ component CreateView inherits HorizontalLayout {
                                 }
 
                                 Text {
-                                    text: is-err ? "IMPORTANT" : (is-warn ? "WARNING" : "INFORMATION");
-                                    font-family: CubbyTheme.font_mono;
-                                    font-size: 10.5px;
+                                    text: is-err ? "Important" : (is-warn ? "Warning" : "Note");
+                                    font-family: CubbyTheme.font_sans;
+                                    font-size: 11.5px;
                                     font-weight: 600;
                                     color: tone-fg;
                                     vertical-alignment: center;
@@ -2231,9 +2281,6 @@ component CreateView inherits HorizontalLayout {
 
             CubbyPanel {
                 title: "Sandbox configuration";
-                meta: root.create_use_community
-                    ? (root.community_selected_slug != "" ? "App defaults, container only" : "Community script")
-                    : "Official image";
 
                 // Row 1: Name, Type, Image Alias
                 HorizontalLayout {
@@ -2265,7 +2312,7 @@ component CreateView inherits HorizontalLayout {
                             height: 32px;
                             CubbySegmentOption {
                                 horizontal-stretch: 1;
-                                label: "container";
+                                label: "Container";
                                 active: root.create_type != "virtual-machine";
                                 enabled: !root.busy && !root.create_use_community;
                                 clicked => { root.create_type = "container"; }
@@ -2287,9 +2334,48 @@ component CreateView inherits HorizontalLayout {
                         CubbyInput {
                             mono: true;
                             text <=> root.create_image_alias;
-                            placeholder: "debian/12";
+                            placeholder: "debian/13";
                             enabled: !root.busy;
                             edited(q) => { root.resolve_selected_alias(q); }
+                        }
+                    }
+
+                    if root.create_use_community: VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text { text: "Image base"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                            if root.community_profiles.length <= 1: Text { text: "locked"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                        }
+                        CubbySegmentTrack {
+                            height: 32px;
+                            for prof in root.community_profiles: CubbySegmentOption {
+                                horizontal-stretch: 1;
+                                label: prof.short_os != "" ? prof.short_os : prof.name;
+                                active: prof.image_alias != "" ? root.create_image_alias == prof.image_alias : root.community_profiles.length == 1;
+                                enabled: !root.busy && root.community_profiles.length > 1;
+                                clicked => {
+                                    if prof.image_alias != "" {
+                                        root.create_image_alias = prof.image_alias;
+                                    }
+                                    if prof.cpu != "" {
+                                        root.create_cpu = prof.cpu;
+                                    }
+                                    if prof.memory_limit != "" {
+                                        root.create_memory = prof.memory_limit;
+                                    }
+                                    if prof.disk_limit != "" {
+                                        root.create_disk = prof.disk_limit;
+                                    }
+                                }
+                            }
+                            if root.community_profiles.length == 0: CubbySegmentOption {
+                                horizontal-stretch: 1;
+                                label: root.create_image_alias != "" ? root.create_image_alias : "default";
+                                active: true;
+                                enabled: false;
+                            }
                         }
                     }
                 }
@@ -2307,10 +2393,10 @@ component CreateView inherits HorizontalLayout {
                             CubbySlider {
                                 horizontal-stretch: 1;
                                 min_value: 0;
-                                max_value: 10;
+                                max_value: 11;
                                 value: root.mem_to_step(root.create_memory);
                                 enabled: !root.busy;
-                                tick_labels: ["512M", "2G", "4G", "8G", "16G", "32G"];
+                                tick_labels: ["256M", "1G", "4G", "8G", "16G", "32G"];
                                 changed(v) => { root.create_memory = root.mem_step_label(v); }
                             }
                             CubbyInput {
@@ -2349,6 +2435,31 @@ component CreateView inherits HorizontalLayout {
                     }
                 }
 
+                // Row 2b: Storage Limit Slider + Custom Input
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "Storage limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CubbySlider {
+                            horizontal-stretch: 1;
+                            min_value: 0;
+                            max_value: 10;
+                            value: root.disk_to_step(root.create_disk);
+                            enabled: !root.busy;
+                            tick_labels: ["1G", "4G", "16G", "32G", "64G", "128G"];
+                            changed(v) => { root.create_disk = root.disk_step_label(v); }
+                        }
+                        CubbyInput {
+                            width: 78px;
+                            mono: true;
+                            text <=> root.create_disk;
+                            placeholder: "8GiB";
+                            enabled: !root.busy;
+                        }
+                    }
+                }
+
                 // Row 3: Profiles, Workspace, Nesting
                 HorizontalLayout {
                     spacing: 10px;
@@ -2382,8 +2493,8 @@ component CreateView inherits HorizontalLayout {
                         HorizontalLayout {
                             alignment: space-between;
                             spacing: 6px;
-                            Text { text: "Host workspace bind mount"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; overflow: elide; }
-                            Text { text: "mounted at /workspace"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
+                            Text { text: "Workspace folder"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; overflow: elide; }
+                            Text { text: "/workspace"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
                         }
                         HorizontalLayout {
                             spacing: 6px;
@@ -2391,7 +2502,7 @@ component CreateView inherits HorizontalLayout {
                                 horizontal-stretch: 1;
                                 mono: true;
                                 text <=> root.create_workspace;
-                                placeholder: "Optional host directory (~/projects/app)";
+                                placeholder: "~/projects/app";
                                 enabled: !root.busy;
                             }
                             CubbyIconButton {
@@ -2432,8 +2543,8 @@ component CreateView inherits HorizontalLayout {
 
             // Bottom Expandable Code/Script Panel (synced bottom position for both modes)
             if !root.create_use_community: CubbyPanel {
-                title: "Optional Cloud-Init User Data";
-                meta: "applied on /cloud images";
+                title: "Cloud-init user data";
+                meta: "On /cloud images";
 
                 CubbyTextArea {
                     height: 180px;
@@ -2577,8 +2688,8 @@ component CreateView inherits HorizontalLayout {
                     preferred-width: 0px;
                     title: "Install profiles";
                     meta: root.community_profiles.length > 1
-                        ? root.community_profiles.length + " profiles · choose OS"
-                        : "1 profile";
+                        ? root.community_profiles.length + " presets"
+                        : "";
 
                     VerticalLayout {
                         alignment: start;
@@ -2596,11 +2707,11 @@ component CreateView inherits HorizontalLayout {
                             spacing: 6px;
 
                             Text {
-                                text: "DEFAULT CREDENTIALS";
-                                font-family: CubbyTheme.font_mono;
-                                font-size: 10px;
-                                font-weight: 600;
-                                color: CubbyTheme.ink_muted;
+                                text: "Default credentials";
+                                font-family: CubbyTheme.font_sans;
+                                font-size: 11.5px;
+                                font-weight: 500;
+                                color: CubbyTheme.ink_secondary;
                             }
 
                             HorizontalLayout {
@@ -2619,8 +2730,12 @@ component CreateView inherits HorizontalLayout {
                         }
                     }
 
-                    for prof[idx] in root.community_profiles: Rectangle {
-                        property <bool> is-selected: idx == root.community_selected_profile;
+                    for prof in root.community_profiles: Rectangle {
+                        property <bool> is-selected:
+                            (prof.image_alias == "" || root.create_image_alias == prof.image_alias)
+                            && (prof.cpu == "" || root.create_cpu == prof.cpu)
+                            && (prof.memory_limit == "" || root.normalize_mem(root.create_memory) == root.normalize_mem(prof.memory_limit))
+                            && (prof.disk_limit == "" || root.normalize_disk(root.create_disk) == root.normalize_disk(prof.disk_limit));
                         background: is-selected
                             ? CubbyTheme.accent_soft
                             : (prof-ta.has-hover && !root.busy ? CubbyTheme.hover_fill : CubbyTheme.well);
@@ -2686,7 +2801,6 @@ component CreateView inherits HorizontalLayout {
                             enabled: !root.busy;
                             mouse-cursor: !root.busy ? pointer : default;
                             clicked => {
-                                root.community_selected_profile = idx;
                                 if prof.image_alias != "" {
                                     root.create_image_alias = prof.image_alias;
                                 }
@@ -2696,6 +2810,9 @@ component CreateView inherits HorizontalLayout {
                                 if prof.memory_limit != "" {
                                     root.create_memory = prof.memory_limit;
                                 }
+                                if prof.disk_limit != "" {
+                                    root.create_disk = prof.disk_limit;
+                                }
                             }
                         }
                     }
@@ -2704,15 +2821,14 @@ component CreateView inherits HorizontalLayout {
             }
 
             if root.create_use_community && root.community_selected_slug != "": CubbyPanel {
-                title: "Install script & deploy";
-                meta: "ct/" + root.community_selected_slug + ".sh + install/" + root.community_selected_slug + "-install.sh";
+                title: "Install script";
 
                 // Run in existing sandbox bar
                 HorizontalLayout {
                     spacing: 8px;
 
                     Text {
-                        text: "Or run in running sandbox:";
+                        text: "Run in existing sandbox";
                         font-family: CubbyTheme.font_sans;
                         font-size: 12px;
                         color: CubbyTheme.ink_secondary;
@@ -2749,12 +2865,12 @@ component CreateView inherits HorizontalLayout {
 
                     CubbySegmentTrack {
                         CubbySegmentOption {
-                            label: "Install Script Preview";
+                            label: "Script preview";
                             active: root.community_view_tab == 0 && root.community_output == "";
                             clicked => { root.community_view_tab = 0; }
                         }
                         CubbySegmentOption {
-                            label: "Deploy Output";
+                            label: "Deploy output";
                             active: root.community_view_tab == 1 || root.community_output != "";
                             clicked => { root.community_view_tab = 1; }
                         }
@@ -2766,7 +2882,7 @@ component CreateView inherits HorizontalLayout {
                     read_only: true;
                     mono: true;
                     text: (root.community_view_tab == 1 || root.community_output != "")
-                        ? (root.community_output != "" ? root.community_output : "Deploy output will appear here after clicking Deploy.")
+                        ? (root.community_output != "" ? root.community_output : "No output yet.")
                         : root.community_install_script;
                 }
             }
@@ -2795,8 +2911,8 @@ component CreateView inherits HorizontalLayout {
                     y: (parent.height - self.height) / 2;
                     horizontal-stretch: 1;
                     uri: root.create_use_community
-                        ? "App: " + root.community_selected_slug + " -> " + (root.create_name != "" ? root.create_name : root.community_selected_slug) + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + ")"
-                        : (root.create_name != "" ? root.create_name : "new-sandbox") + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + ")";
+                        ? "App: " + root.community_selected_slug + " -> " + (root.create_name != "" ? root.create_name : root.community_selected_slug) + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + (root.create_disk != "" ? ", " + root.create_disk : "") + ")"
+                        : (root.create_name != "" ? root.create_name : "new-sandbox") + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + (root.create_disk != "" ? ", " + root.create_disk : "") + ")";
                 }
 
                 CubbyIconButton {
@@ -2828,6 +2944,7 @@ component CreateView inherits HorizontalLayout {
                                 root.create_image_alias,
                                 root.create_cpu,
                                 root.create_memory,
+                                root.create_disk,
                                 root.create_workspace,
                                 root.create_profiles,
                                 root.create_nesting
@@ -2839,6 +2956,7 @@ component CreateView inherits HorizontalLayout {
                                 root.create_image_alias,
                                 root.create_memory,
                                 root.create_cpu,
+                                root.create_disk,
                                 root.create_workspace,
                                 root.create_profiles,
                                 root.create_cloud_init,
@@ -3852,7 +3970,7 @@ component AboutView inherits ScrollView {
                         color: CubbyTheme.ink;
                     }
                     Text {
-                        text: "Zero telemetry, zero accounts — verify every network call in source.";
+                        text: "Zero telemetry, zero accounts. Verify every network call in source.";
                         font-family: CubbyTheme.font_sans;
                         font-size: 12px;
                         color: CubbyTheme.ink_secondary;
@@ -4235,6 +4353,7 @@ export component AdvancedShell inherits VerticalLayout {
     in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
+    in-out property <string> create_disk: "8GiB";
     in-out property <string> create_profiles: "default";
     in-out property <string> create_workspace: "";
     in-out property <bool> create_nesting: false;
@@ -4259,7 +4378,6 @@ export component AdvancedShell inherits VerticalLayout {
     in property <UiCommunityDetails> community_details;
     in property <[UiCommunityNote]> community_notes: [];
     in property <[UiCommunityProfile]> community_profiles: [];
-    in-out property <int> community_selected_profile: 0;
     in property <string> community_install_script: "";
     in property <string> community_output: "";
 
@@ -4311,8 +4429,8 @@ export component AdvancedShell inherits VerticalLayout {
     callback fetch_community_catalog();
     callback select_community_app(string);
     callback browse_workspace_folder();
-    callback create_instance(string, string, string, string, string, string, string, string, bool);
-    callback deploy_community_app(string, string, string, string, string, string, string, bool);
+    callback create_instance(string, string, string, string, string, string, string, string, string, bool);
+    callback deploy_community_app(string, string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
     callback refresh_infra();
     callback create_storage_volume(string, string);
@@ -4583,6 +4701,7 @@ export component AdvancedShell inherits VerticalLayout {
             create_image_alias <=> root.create_image_alias;
             create_cpu <=> root.create_cpu;
             create_memory <=> root.create_memory;
+            create_disk <=> root.create_disk;
             create_profiles <=> root.create_profiles;
             create_workspace <=> root.create_workspace;
             create_nesting <=> root.create_nesting;
@@ -4608,7 +4727,6 @@ export component AdvancedShell inherits VerticalLayout {
             community_details: root.community_details;
             community_notes: root.community_notes;
             community_profiles: root.community_profiles;
-            community_selected_profile <=> root.community_selected_profile;
             community_install_script: root.community_install_script;
             community_output: root.community_output;
             profile_names: root.profile_names;
@@ -4627,8 +4745,8 @@ export component AdvancedShell inherits VerticalLayout {
             select_community_app(s) => { root.select_community_app(s); }
             clear_community_selection => { root.clear_community_selection(); }
             browse_workspace_folder => { root.browse_workspace_folder(); }
-            create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
-            deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
+            create_instance(n, t, i, m, c, d, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, d, w, p, ci, nest); }
+            deploy_community_app(s, n, i, c, m, d, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, d, w, p, nest); }
             request_run_community_in_instance(s, inst) => { root.request_run_community_in_instance(s, inst); }
             cancel_to_sandboxes => { root.active_tab = "sandboxes"; }
             open_url(u) => { root.open_url(u); }

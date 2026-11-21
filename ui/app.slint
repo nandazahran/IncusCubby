@@ -92,6 +92,7 @@ export component AppWindow inherits Window {
     in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
+    in-out property <string> create_disk: "8GiB";
     in-out property <string> create_profiles: "default";
     in-out property <string> create_workspace: "";
     in-out property <bool> create_nesting: false;
@@ -116,7 +117,6 @@ export component AppWindow inherits Window {
     in property <UiCommunityDetails> community_details;
     in property <[UiCommunityNote]> community_notes: [];
     in property <[UiCommunityProfile]> community_profiles: [];
-    in-out property <int> community_selected_profile: 0;
     in property <string> community_install_script: "";
     in property <string> community_output: "";
 
@@ -159,7 +159,7 @@ export component AppWindow inherits Window {
     callback filter_sandboxes(string);
     callback select_instance(int);
     callback select_instance_by_name(string);
-    callback create_instance(string, string, string, string, string, string, string, string, bool);
+    callback create_instance(string, string, string, string, string, string, string, string, string, bool);
     callback clone_instance(string, string);
     callback set_instance_state(string, string);
     callback update_instance_limits(string, string, string);
@@ -198,7 +198,7 @@ export component AppWindow inherits Window {
     callback filter_community_apps(string);
     callback select_community_app(string);
     callback clear_community_selection();
-    callback deploy_community_app(string, string, string, string, string, string, string, bool);
+    callback deploy_community_app(string, string, string, string, string, string, string, string, bool);
     callback request_run_community_in_instance(string, string);
     callback browse_workspace_folder();
     callback open_url(string);
@@ -262,6 +262,7 @@ export component AppWindow inherits Window {
         create_image_alias <=> root.create_image_alias;
         create_cpu <=> root.create_cpu;
         create_memory <=> root.create_memory;
+        create_disk <=> root.create_disk;
         create_profiles <=> root.create_profiles;
         create_workspace <=> root.create_workspace;
         create_nesting <=> root.create_nesting;
@@ -285,7 +286,6 @@ export component AppWindow inherits Window {
         community_details: root.community_details;
         community_notes: root.community_notes;
         community_profiles: root.community_profiles;
-        community_selected_profile <=> root.community_selected_profile;
         community_install_script: root.community_install_script;
         community_output: root.community_output;
         available_terminals: root.available_terminals;
@@ -335,8 +335,8 @@ export component AppWindow inherits Window {
         select_community_app(s) => { root.select_community_app(s); }
         clear_community_selection => { root.clear_community_selection(); }
         browse_workspace_folder => { root.browse_workspace_folder(); }
-        create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
-        deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
+        create_instance(n, t, i, m, c, d, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, d, w, p, ci, nest); }
+        deploy_community_app(s, n, i, c, m, d, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, d, w, p, nest); }
         request_run_community_in_instance(s, inst) => { root.request_run_community_in_instance(s, inst); }
         refresh_infra => { root.refresh_infra(); }
         create_storage_volume(p, n) => { root.create_storage_volume(p, n); }
@@ -419,11 +419,11 @@ export component AppWindow inherits Window {
         create_snapshot(i, s) => { root.create_snapshot(i, s); }
         request_restore_snapshot(i, s) => { root.request_restore_snapshot(i, s); }
         browse_workspace_folder => { root.browse_workspace_folder(); }
-        create_instance(n, t, i, m, c, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, w, p, ci, nest); }
+        create_instance(n, t, i, m, c, d, w, p, ci, nest) => { root.create_instance(n, t, i, m, c, d, w, p, ci, nest); }
         filter_community_apps(q) => { root.filter_community_apps(q); }
         fetch_community_catalog => { root.fetch_community_catalog(); }
         select_community_app(s) => { root.select_community_app(s); }
-        deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
+        deploy_community_app(s, n, i, c, m, d, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, d, w, p, nest); }
         save_settings(t, i) => { root.save_settings(t, i); }
         request_reset_settings => { root.request_reset_settings(); }
         open_url(u) => { root.open_url(u); }
