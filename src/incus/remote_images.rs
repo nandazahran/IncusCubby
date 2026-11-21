@@ -35,9 +35,8 @@ struct SimplestreamsProduct {
 }
 
 fn cache_file() -> Option<PathBuf> {
-    crate::logos::app_cache_dir().map(|dir| {
-        dir.join(format!("remote-images-{}.json", std::env::consts::ARCH))
-    })
+    crate::logos::app_cache_dir()
+        .map(|dir| dir.join(format!("remote-images-{}.json", std::env::consts::ARCH)))
 }
 
 fn load_cached_images_from(path: &std::path::Path) -> Option<Vec<RemoteImage>> {
@@ -187,10 +186,7 @@ mod tests {
         let cache_root =
             std::env::temp_dir().join(format!("incus-cubby-test-{}", std::process::id()));
         let cache_dir = cache_root.join("incus-cubby");
-        let path = cache_dir.join(format!(
-            "remote-images-{}.json",
-            std::env::consts::ARCH
-        ));
+        let path = cache_dir.join(format!("remote-images-{}.json", std::env::consts::ARCH));
 
         let sample = vec![
             RemoteImage {
