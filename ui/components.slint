@@ -1297,6 +1297,86 @@ export component CubbySearchField inherits Rectangle {
     }
 }
 
+export component CubbySlider inherits VerticalLayout {
+    in property <int> value: 0;
+    in property <int> min_value: 0;
+    in property <int> max_value: 10;
+    in property <bool> enabled: true;
+    in property <[string]> tick_labels: [];
+    callback changed(int);
+
+    vertical-stretch: 0;
+    spacing: 2px;
+
+    property <float> ratio: root.max_value > root.min_value
+        ? clamp((root.value - root.min_value) / (root.max_value - root.min_value), 0.0, 1.0)
+        : 0.0;
+
+    Rectangle {
+        height: 20px;
+        opacity: root.enabled ? 1.0 : 0.45;
+
+        Rectangle {
+            x: 0px;
+            y: (parent.height - self.height) / 2;
+            width: parent.width;
+            height: 4px;
+            border-radius: 2px;
+            background: CubbyTheme.well;
+            border-width: 1px;
+            border-color: CubbyTheme.border;
+        }
+
+        Rectangle {
+            x: 0px;
+            y: (parent.height - self.height) / 2;
+            width: max(0px, (parent.width - 14px) * root.ratio + 7px);
+            height: 4px;
+            border-radius: 2px;
+            background: CubbyTheme.accent;
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) * root.ratio;
+            y: (parent.height - self.height) / 2;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            background: CubbyTheme.accent;
+            border-width: 2px;
+            border-color: CubbyTheme.surface;
+        }
+
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left)
+                    || (event.kind == PointerEventKind.move && self.pressed) {
+                    root.changed(
+                        round(
+                            root.min_value
+                            + clamp((self.mouse-x - 7px) / max(1px, self.width - 14px), 0.0, 1.0)
+                            * (root.max_value - root.min_value)
+                        )
+                    );
+                }
+            }
+        }
+    }
+
+    if root.tick_labels.length > 0: HorizontalLayout {
+        alignment: space-between;
+
+        for lbl in root.tick_labels: Text {
+            text: lbl;
+            font-family: CubbyTheme.font_mono;
+            font-size: 9.5px;
+            color: CubbyTheme.ink_muted;
+        }
+    }
+}
+
 export component CubbyResourceBar inherits Rectangle {
     in property <bool> socket_connected: false;
     in property <string> host_cpu_summary: "";
@@ -1337,7 +1417,6 @@ export component CubbyResourceBar inherits Rectangle {
         spacing: 14px;
 
         CubbyStatusDot {
-            y: (parent.height - self.preferred-height) / 2;
             tone: root.socket_connected ? "live" : "err";
             label: root.socket_connected ? "unix.socket" : "socket denied";
         }
@@ -1487,7 +1566,6 @@ export component CubbyResourceBar inherits Rectangle {
                                 vertical-alignment: center;
                             }
                             CubbyStatusDot {
-                                y: (parent.height - self.preferred-height) / 2;
                                 tone: root.socket_connected ? "live" : "err";
                                 label: root.socket_connected ? "unix.socket" : "socket denied";
                             }

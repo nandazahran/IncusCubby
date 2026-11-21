@@ -3,6 +3,10 @@ import {
     CubbyTheme,
     CubbyOsLogos,
     UiCommunityApp,
+    UiCommunityCategory,
+    UiCommunityDetails,
+    UiCommunityNote,
+    UiCommunityProfile,
     UiImage,
     UiInstance,
     UiLogo,
@@ -21,6 +25,7 @@ import {
     CubbyCodeBox,
     CubbyDetailHead,
     CubbyDistroBadge,
+    CubbyIcon,
     CubbyIconButton,
     CubbyInput,
     CubbyMark,
@@ -31,6 +36,7 @@ import {
     CubbySegmentOption,
     CubbySegmentTrack,
     CubbySelect,
+    CubbySlider,
     CubbyStatusDot,
     CubbyTag,
     CubbyTextArea,
@@ -1350,6 +1356,82 @@ component SandboxesView inherits HorizontalLayout {
     }
 }
 
+component DetailTextLink inherits Rectangle {
+    in property <string> label: "";
+    in property <string> url: "";
+    callback clicked(string);
+
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    width: link-inner.preferred-width;
+    height: 20px;
+
+    link-inner := HorizontalLayout {
+        spacing: 4px;
+
+        Text {
+            text: root.label;
+            font-family: CubbyTheme.font_sans;
+            font-size: 12px;
+            font-weight: 500;
+            color: CubbyTheme.accent;
+            opacity: link-ta.has-hover ? 0.78 : 1.0;
+            vertical-alignment: center;
+        }
+
+        CubbyIcon {
+            y: (parent.height - self.height) / 2;
+            name: "external-link";
+            icon_size: 11px;
+            tint: CubbyTheme.accent;
+            opacity: link-ta.has-hover ? 0.78 : 1.0;
+        }
+    }
+
+    link-ta := TouchArea {
+        enabled: root.url != "";
+        mouse-cursor: root.url != "" ? pointer : default;
+        clicked => { root.clicked(root.url); }
+    }
+}
+
+component ProfileStatBox inherits Rectangle {
+    in property <string> value: "";
+    in property <string> unit: "";
+
+    horizontal-stretch: 1;
+    min-width: 0px;
+    preferred-width: 0px;
+    height: 46px;
+    background: CubbyTheme.surface;
+    border-width: 1px;
+    border-color: CubbyTheme.border;
+    border-radius: CubbyTheme.radius_sm;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 1px;
+
+        Text {
+            text: root.value != "" ? root.value : "—";
+            font-family: CubbyTheme.font_mono;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: CubbyTheme.ink;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.unit;
+            font-family: CubbyTheme.font_mono;
+            font-size: 9.5px;
+            color: CubbyTheme.ink_muted;
+            horizontal-alignment: center;
+        }
+    }
+}
+
 component CreateView inherits HorizontalLayout {
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
@@ -1368,8 +1450,12 @@ component CreateView inherits HorizontalLayout {
     in property <[UiRemoteAlias]> remote_aliases: [];
     in-out property <string> remote_search_query: "";
     in property <[UiCommunityApp]> community_apps: [];
+    in property <[UiCommunityCategory]> community_categories: [];
     in-out property <string> community_search_query: "";
     in-out property <string> community_repo_filter: "all";
+    in-out property <string> community_category_filter: "";
+    in property <string> community_active_category_name: "";
+    in property <string> community_active_category_desc: "";
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
@@ -1379,6 +1465,10 @@ component CreateView inherits HorizontalLayout {
     in property <string> community_tags: "";
     in property <bool> community_is_dev: false;
     in property <string> community_source_repo: "";
+    in property <UiCommunityDetails> community_details;
+    in property <[UiCommunityNote]> community_notes: [];
+    in property <[UiCommunityProfile]> community_profiles: [];
+    in-out property <int> community_selected_profile: 0;
     in property <string> community_install_script: "";
     in property <string> community_output: "";
     in property <[string]> profile_names: ["default"];
@@ -1401,6 +1491,56 @@ component CreateView inherits HorizontalLayout {
     callback request_run_community_in_instance(string, string);
     callback cancel_to_sandboxes();
     callback clear_community_selection();
+    callback open_url(string);
+
+    pure function mem_step_label(idx: int) -> string {
+        if idx <= 0 { return "512MiB"; }
+        if idx == 1 { return "1GiB"; }
+        if idx == 2 { return "2GiB"; }
+        if idx == 3 { return "3GiB"; }
+        if idx == 4 { return "4GiB"; }
+        if idx == 5 { return "6GiB"; }
+        if idx == 6 { return "8GiB"; }
+        if idx == 7 { return "12GiB"; }
+        if idx == 8 { return "16GiB"; }
+        if idx == 9 { return "24GiB"; }
+        return "32GiB";
+    }
+
+    pure function mem_to_step(s: string) -> int {
+        if s == "256MiB" || s == "512MiB" { return 0; }
+        if s == "1GiB" || s == "1024MiB" { return 1; }
+        if s == "2GiB" || s == "2048MiB" { return 2; }
+        if s == "3GiB" || s == "3072MiB" { return 3; }
+        if s == "4GiB" || s == "4096MiB" { return 4; }
+        if s == "6GiB" || s == "6144MiB" { return 5; }
+        if s == "8GiB" || s == "8192MiB" { return 6; }
+        if s == "12GiB" || s == "12288MiB" { return 7; }
+        if s == "16GiB" || s == "16384MiB" { return 8; }
+        if s == "24GiB" || s == "24576MiB" { return 9; }
+        if s == "32GiB" || s == "32768MiB" { return 10; }
+        return 4;
+    }
+
+    pure function cpu_to_int(s: string) -> int {
+        if s == "1" { return 1; }
+        if s == "2" { return 2; }
+        if s == "3" { return 3; }
+        if s == "4" { return 4; }
+        if s == "5" { return 5; }
+        if s == "6" { return 6; }
+        if s == "7" { return 7; }
+        if s == "8" { return 8; }
+        if s == "9" { return 9; }
+        if s == "10" { return 10; }
+        if s == "11" { return 11; }
+        if s == "12" { return 12; }
+        if s == "13" { return 13; }
+        if s == "14" { return 14; }
+        if s == "15" { return 15; }
+        if s == "16" { return 16; }
+        return 2;
+    }
 
     // Left Source & Catalog Sidebar
     Rectangle {
@@ -1408,7 +1548,7 @@ component CreateView inherits HorizontalLayout {
         background: CubbyTheme.bg;
 
         VerticalLayout {
-            Rectangle {
+            if root.has-selection: Rectangle {
                 height: 44px;
 
                 HorizontalLayout {
@@ -1469,7 +1609,16 @@ component CreateView inherits HorizontalLayout {
                 HorizontalLayout {
                     padding-left: 14px;
                     padding-right: 14px;
-                    spacing: 10px;
+                    spacing: 12px;
+
+                    Text {
+                        text: "Source & catalog";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 12.5px;
+                        font-weight: 600;
+                        color: CubbyTheme.ink;
+                        vertical-alignment: center;
+                    }
 
                     CubbySegmentTrack {
                         y: (parent.height - self.height) / 2;
@@ -1523,24 +1672,30 @@ component CreateView inherits HorizontalLayout {
 
                     Rectangle { horizontal-stretch: 1; }
 
-                    if !root.create_use_community: CubbyIconButton {
-                        y: (parent.height - self.height) / 2;
-                        icon: "cloud-download";
-                        tone: "outline";
-                        size: "md";
-                        tooltip: "Fetch remote aliases";
-                        enabled: !root.busy;
-                        clicked => { root.fetch_remote_images(); }
+                    Text {
+                        text: root.create_use_community
+                            ? root.community_apps.length + " apps"
+                            : "images.linuxcontainers.org";
+                        font-family: CubbyTheme.font_mono;
+                        font-size: 10.5px;
+                        color: CubbyTheme.ink_muted;
+                        vertical-alignment: center;
                     }
 
-                    if root.create_use_community: CubbyIconButton {
+                    CubbyIconButton {
                         y: (parent.height - self.height) / 2;
                         icon: "refresh";
                         tone: "outline";
                         size: "md";
-                        tooltip: "Reload catalog";
+                        tooltip: root.create_use_community ? "Reload catalog" : "Fetch remote aliases";
                         enabled: !root.busy;
-                        clicked => { root.fetch_community_catalog(); }
+                        clicked => {
+                            if root.create_use_community {
+                                root.fetch_community_catalog();
+                            } else {
+                                root.fetch_remote_images();
+                            }
+                        }
                     }
                 }
             }
@@ -1595,7 +1750,6 @@ component CreateView inherits HorizontalLayout {
                                         height: 100%;
                                         logo: root.remote_aliases[alias-card.alias-index].logo;
                                         title: root.remote_aliases[alias-card.alias-index].alias;
-                                        title_mono: true;
                                         meta: root.remote_aliases[alias-card.alias-index].is_cached ? "cached" : "remote";
                                         meta_tone: root.remote_aliases[alias-card.alias-index].is_cached ? "live" : "default";
                                         active: root.remote_aliases[alias-card.alias-index].alias == root.create_image_alias;
@@ -1617,7 +1771,6 @@ component CreateView inherits HorizontalLayout {
                         for item in root.remote_aliases: CubbyCatalogRow {
                             logo: item.logo;
                             title: item.alias;
-                            title_mono: true;
                             subtitle: item.subtitle;
                             meta: item.is_cached ? "cached" : "remote";
                             meta_tone: item.is_cached ? "live" : "default";
@@ -1674,7 +1827,191 @@ component CreateView inherits HorizontalLayout {
                     vertical-stretch: 1;
                     clip: true;
 
-                    if root.community_apps.length == 0: Text {
+                    if !root.has-selection: HorizontalLayout {
+                        width: 100%;
+                        height: 100%;
+
+                        if root.community_categories.length > 0: Rectangle {
+                            width: 220px;
+                            background: CubbyTheme.bg;
+
+                            ListView {
+                                width: 100%;
+                                height: 100%;
+
+                                for cat in root.community_categories: Rectangle {
+                                    property <bool> is-cat: cat.id == root.community_category_filter;
+                                    height: 36px;
+                                    background: is-cat
+                                        ? CubbyTheme.surface
+                                        : (cat-ta.has-hover ? CubbyTheme.hover_fill : transparent);
+
+                                    if is-cat: Rectangle {
+                                        x: 0px;
+                                        y: 0px;
+                                        width: 2px;
+                                        height: parent.height;
+                                        background: CubbyTheme.accent;
+                                    }
+
+                                    HorizontalLayout {
+                                        padding-left: 14px;
+                                        padding-right: 12px;
+                                        spacing: 8px;
+
+                                        Text {
+                                            text: cat.name;
+                                            font-family: CubbyTheme.font_sans;
+                                            font-size: 12px;
+                                            font-weight: is-cat ? 600 : 400;
+                                            color: is-cat ? CubbyTheme.ink : CubbyTheme.ink_secondary;
+                                            horizontal-stretch: 1;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+
+                                        Text {
+                                            text: cat.count;
+                                            font-family: CubbyTheme.font_mono;
+                                            font-size: 10.5px;
+                                            color: CubbyTheme.ink_muted;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    cat-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            root.community_category_filter = cat.id;
+                                            root.filter_community_apps(root.community_search_query);
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                x: parent.width - 1px;
+                                y: 0px;
+                                width: 1px;
+                                height: parent.height;
+                                background: CubbyTheme.border;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+
+                            if root.community_active_category_name != "": Rectangle {
+                                min-height: cat-hdr.preferred-height;
+                                vertical-stretch: 0;
+                                background: CubbyTheme.surface;
+
+                                cat-hdr := HorizontalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 16px;
+                                    padding-top: 10px;
+                                    padding-bottom: 10px;
+                                    spacing: 12px;
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+
+                                        Text {
+                                            text: root.community_active_category_name;
+                                            font-family: CubbyTheme.font_sans;
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            color: CubbyTheme.ink;
+                                            overflow: elide;
+                                        }
+
+                                        if root.community_active_category_desc != "": Text {
+                                            text: root.community_active_category_desc;
+                                            font-family: CubbyTheme.font_sans;
+                                            font-size: 11.5px;
+                                            color: CubbyTheme.ink_secondary;
+                                            overflow: elide;
+                                        }
+                                    }
+
+                                    Text {
+                                        text: root.community_apps.length + " apps";
+                                        font-family: CubbyTheme.font_mono;
+                                        font-size: 10.5px;
+                                        color: CubbyTheme.ink_muted;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                Rectangle {
+                                    y: parent.height - 1px;
+                                    width: parent.width;
+                                    height: 1px;
+                                    background: CubbyTheme.border;
+                                }
+                            }
+
+                            Rectangle {
+                                vertical-stretch: 1;
+                                clip: true;
+
+                                if root.community_apps.length == 0: Text {
+                                    x: 14px;
+                                    y: 16px;
+                                    width: parent.width - 28px;
+                                    text: "No matching community apps.";
+                                    font-family: CubbyTheme.font_sans;
+                                    font-size: 12px;
+                                    color: CubbyTheme.ink_muted;
+                                }
+
+                                if root.community_apps.length > 0: ListView {
+                                    width: 100%;
+                                    height: 100%;
+
+                                    for row in Math.ceil(root.community_apps.length / 3): Rectangle {
+                                        height: 84px;
+
+                                        HorizontalLayout {
+                                            padding-left: 14px;
+                                            padding-right: 14px;
+                                            padding-top: 6px;
+                                            padding-bottom: 6px;
+                                            spacing: 12px;
+
+                                            for col in 3: card := Rectangle {
+                                                property <int> app-index: Math.min(row * 3 + col, Math.max(0, root.community_apps.length - 1));
+                                                horizontal-stretch: 1;
+                                                min-width: 0px;
+                                                preferred-width: 0px;
+                                                property <bool> has-app: row * 3 + col < root.community_apps.length;
+                                                visible: has-app;
+
+                                                CubbyCatalogCard {
+                                                    width: 100%;
+                                                    height: 100%;
+                                                    logo: root.community_apps[card.app-index].logo;
+                                                    title: root.community_apps[card.app-index].name;
+                                                    meta: root.community_apps[card.app-index].is_dev ? "dev" : "";
+                                                    meta_tone: "warn";
+                                                    active: root.community_apps[card.app-index].slug == root.community_selected_slug;
+                                                    enabled: card.has-app && !root.busy;
+                                                    clicked => {
+                                                        root.community_view_tab = 0;
+                                                        root.select_community_app(root.community_apps[card.app-index].slug);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.community_apps.length == 0 && root.has-selection: Text {
                         x: 14px;
                         y: 16px;
                         width: parent.width - 28px;
@@ -1700,47 +2037,6 @@ component CreateView inherits HorizontalLayout {
                             clicked => {
                                 root.community_view_tab = 0;
                                 root.select_community_app(app.slug);
-                            }
-                        }
-                    }
-
-                    if root.community_apps.length > 0 && !root.has-selection: ListView {
-                        width: 100%;
-                        height: 100%;
-
-                        for row in Math.ceil(root.community_apps.length / 3): Rectangle {
-                            height: 84px;
-
-                            HorizontalLayout {
-                                padding-left: 14px;
-                                padding-right: 14px;
-                                padding-top: 6px;
-                                padding-bottom: 6px;
-                                spacing: 12px;
-
-                                for col in 3: card := Rectangle {
-                                    property <int> app-index: Math.min(row * 3 + col, Math.max(0, root.community_apps.length - 1));
-                                    horizontal-stretch: 1;
-                                    min-width: 0px;
-                                    preferred-width: 0px;
-                                    property <bool> has-app: row * 3 + col < root.community_apps.length;
-                                    visible: has-app;
-
-                                    CubbyCatalogCard {
-                                        width: 100%;
-                                        height: 100%;
-                                        logo: root.community_apps[card.app-index].logo;
-                                        title: root.community_apps[card.app-index].name;
-                                        meta: root.community_apps[card.app-index].is_dev ? "dev" : "";
-                                        meta_tone: "warn";
-                                        active: root.community_apps[card.app-index].slug == root.community_selected_slug;
-                                        enabled: card.has-app && !root.busy;
-                                        clicked => {
-                                            root.community_view_tab = 0;
-                                            root.select_community_app(root.community_apps[card.app-index].slug);
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -1791,13 +2087,17 @@ component CreateView inherits HorizontalLayout {
         horizontal-stretch: 1;
         visible: root.has-selection;
 
-        VerticalLayout {
+        ScrollView {
             vertical-stretch: 1;
-            padding-left: 20px;
-            padding-right: 20px;
-            padding-top: 16px;
-            padding-bottom: 14px;
-            spacing: 12px;
+            min-height: 0px;
+
+            VerticalLayout {
+                alignment: start;
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 16px;
+                padding-bottom: 14px;
+                spacing: 12px;
 
             CubbyActionButton {
                 icon: "back";
@@ -1820,10 +2120,23 @@ component CreateView inherits HorizontalLayout {
             }
 
 
-            // Community Selected App Details
+            // Selected Item Header (synced top position for both Official Images and Community Scripts)
+            if !root.create_use_community && root.create_image_alias != "": CubbyPanel {
+                title: "Selected image";
+                meta: root.create_image_alias;
+
+                CubbyDetailHead {
+                    logo: root.selected_alias_logo;
+                    title: root.create_image_alias;
+                    subtitle: root.selected_alias_subtitle;
+                    status_label: root.selected_alias_cached ? "cached" : "remote";
+                    status_tone: root.selected_alias_cached ? "live" : "muted";
+                }
+            }
+
             if root.create_use_community && root.community_selected_slug != "": CubbyPanel {
-                vertical-stretch: 1;
-                pad_body: true;
+                title: "Selected app";
+                meta: root.community_selected_slug;
 
                 CubbyDetailHead {
                     logo: root.community_app_logo;
@@ -1839,90 +2152,80 @@ component CreateView inherits HorizontalLayout {
                     status_tone: "live";
                 }
 
-                // Run in existing sandbox bar
-                HorizontalLayout {
+                if root.community_notes.length > 0: VerticalLayout {
                     spacing: 8px;
 
-                    Text {
-                        text: "Or run in running sandbox:";
-                        font-family: CubbyTheme.font_sans;
-                        font-size: 12px;
-                        color: CubbyTheme.ink_secondary;
-                        vertical-alignment: center;
-                    }
-
-                    CubbySelect {
-                        horizontal-stretch: 1;
-                        model: root.running_instance_names;
-                        current_value <=> root.community_target_instance;
-                        placeholder: "No running sandboxes";
-                        enabled: !root.busy;
-                    }
-
-                    CubbyIconButton {
-                        icon: "play";
-                        tone: "outline";
-                        size: "md";
-                        tooltip: "Run in selected sandbox";
-                        enabled: !root.busy && root.community_target_instance != "";
-                        clicked => {
-                            root.community_view_tab = 1;
-                            root.request_run_community_in_instance(
-                                root.community_selected_slug,
-                                root.community_target_instance
-                            );
-                        }
-                    }
-                }
-
-                // Preview / Deploy Output switcher
-                HorizontalLayout {
-                    alignment: space-between;
-
-                    CubbySegmentTrack {
-                        CubbySegmentOption {
-                            label: "Install Script Preview";
-                            active: root.community_view_tab == 0 && root.community_output == "";
-                            clicked => { root.community_view_tab = 0; }
-                        }
-                        CubbySegmentOption {
-                            label: "Deploy Output";
-                            active: root.community_view_tab == 1 || root.community_output != "";
-                            clicked => { root.community_view_tab = 1; }
-                        }
+                    Rectangle {
+                        height: 1px;
+                        background: CubbyTheme.border;
                     }
 
                     Text {
-                        text: "ct/" + root.community_selected_slug + ".sh + install/" + root.community_selected_slug + "-install.sh";
+                        text: "NOTES";
                         font-family: CubbyTheme.font_mono;
                         font-size: 10.5px;
+                        font-weight: 600;
                         color: CubbyTheme.ink_muted;
-                        vertical-alignment: center;
                     }
-                }
 
-                CubbyTextArea {
-                    vertical-stretch: 1;
-                    min-height: 64px;
-                    read_only: true;
-                    mono: true;
-                    text: (root.community_view_tab == 1 || root.community_output != "")
-                        ? (root.community_output != "" ? root.community_output : "Deploy output will appear here after clicking Deploy.")
-                        : root.community_install_script;
-                }
-            }
+                    for note in root.community_notes: Rectangle {
+                        property <bool> is-err: note.tone == "err";
+                        property <bool> is-warn: note.tone == "warn";
+                        property <color> tone-fg: is-err ? CubbyTheme.err : (is-warn ? CubbyTheme.warn : CubbyTheme.info);
+                        property <color> tone-bg: is-err ? CubbyTheme.err_bg : (is-warn ? CubbyTheme.warn_bg : CubbyTheme.info_bg);
+                        property <color> tone-border: is-err ? CubbyTheme.err_border : (is-warn ? CubbyTheme.warn_border : CubbyTheme.info_border);
 
-            if !root.create_use_community && root.create_image_alias != "": CubbyPanel {
-                title: "Selected image";
-                meta: root.create_image_alias;
+                        background: tone-bg;
+                        border-width: 1px;
+                        border-color: tone-border;
+                        border-radius: CubbyTheme.radius_md;
+                        min-height: note-body.preferred-height;
 
-                CubbyDetailHead {
-                    logo: root.selected_alias_logo;
-                    title: root.create_image_alias;
-                    title_mono: true;
-                    subtitle: root.selected_alias_subtitle;
-                    status_label: root.selected_alias_cached ? "cached" : "remote";
-                    status_tone: root.selected_alias_cached ? "live" : "muted";
+                        Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: 2px;
+                            height: parent.height;
+                            background: tone-fg;
+                        }
+
+                        note-body := VerticalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            padding-top: 9px;
+                            padding-bottom: 9px;
+                            spacing: 4px;
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+
+                                CubbyIcon {
+                                    y: (parent.height - self.height) / 2;
+                                    name: is-err || is-warn ? "alert" : "info";
+                                    icon_size: 13px;
+                                    tint: tone-fg;
+                                }
+
+                                Text {
+                                    text: is-err ? "IMPORTANT" : (is-warn ? "WARNING" : "INFORMATION");
+                                    font-family: CubbyTheme.font_mono;
+                                    font-size: 10.5px;
+                                    font-weight: 600;
+                                    color: tone-fg;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: note.text;
+                                font-family: CubbyTheme.font_sans;
+                                font-size: 12px;
+                                color: CubbyTheme.ink;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1977,7 +2280,7 @@ component CreateView inherits HorizontalLayout {
                         }
                     }
 
-                    VerticalLayout {
+                    if !root.create_use_community: VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
                         Text { text: "Image alias"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
@@ -1991,23 +2294,24 @@ component CreateView inherits HorizontalLayout {
                     }
                 }
 
-                // Row 2: Memory & CPU Presets + Custom
+                // Row 2: Memory & CPU Sliders + Custom Inputs
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: 14px;
 
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 4px;
                         Text { text: "Memory limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         HorizontalLayout {
-                            spacing: 6px;
-                            CubbySegmentTrack {
+                            spacing: 8px;
+                            CubbySlider {
                                 horizontal-stretch: 1;
-                                height: 32px;
-                                CubbySegmentOption { horizontal-stretch: 1; label: "2GiB"; active: root.create_memory == "2GiB"; enabled: !root.busy; clicked => { root.create_memory = "2GiB"; } }
-                                CubbySegmentOption { horizontal-stretch: 1; label: "4GiB"; active: root.create_memory == "4GiB"; enabled: !root.busy; clicked => { root.create_memory = "4GiB"; } }
-                                CubbySegmentOption { horizontal-stretch: 1; label: "8GiB"; active: root.create_memory == "8GiB"; enabled: !root.busy; clicked => { root.create_memory = "8GiB"; } }
-                                CubbySegmentOption { horizontal-stretch: 1; label: "16GiB"; active: root.create_memory == "16GiB"; enabled: !root.busy; clicked => { root.create_memory = "16GiB"; } }
+                                min_value: 0;
+                                max_value: 10;
+                                value: root.mem_to_step(root.create_memory);
+                                enabled: !root.busy;
+                                tick_labels: ["512M", "2G", "4G", "8G", "16G", "32G"];
+                                changed(v) => { root.create_memory = root.mem_step_label(v); }
                             }
                             CubbyInput {
                                 width: 78px;
@@ -2024,17 +2328,18 @@ component CreateView inherits HorizontalLayout {
                         spacing: 4px;
                         Text { text: "CPU limit"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
                         HorizontalLayout {
-                            spacing: 6px;
-                            CubbySegmentTrack {
+                            spacing: 8px;
+                            CubbySlider {
                                 horizontal-stretch: 1;
-                                height: 32px;
-                                CubbySegmentOption { horizontal-stretch: 1; label: "1"; active: root.create_cpu == "1"; enabled: !root.busy; clicked => { root.create_cpu = "1"; } }
-                                CubbySegmentOption { horizontal-stretch: 1; label: "2"; active: root.create_cpu == "2"; enabled: !root.busy; clicked => { root.create_cpu = "2"; } }
-                                CubbySegmentOption { horizontal-stretch: 1; label: "4"; active: root.create_cpu == "4"; enabled: !root.busy; clicked => { root.create_cpu = "4"; } }
-                                CubbySegmentOption { horizontal-stretch: 1; label: "8"; active: root.create_cpu == "8"; enabled: !root.busy; clicked => { root.create_cpu = "8"; } }
+                                min_value: 1;
+                                max_value: 16;
+                                value: root.cpu_to_int(root.create_cpu);
+                                enabled: !root.busy;
+                                tick_labels: ["1", "4", "8", "12", "16"];
+                                changed(v) => { root.create_cpu = "" + v; }
                             }
                             CubbyInput {
-                                width: 52px;
+                                width: 54px;
                                 mono: true;
                                 text <=> root.create_cpu;
                                 placeholder: "2";
@@ -2125,25 +2430,353 @@ component CreateView inherits HorizontalLayout {
                 }
             }
 
-            // Official: Cloud-Init User Data
+            // Bottom Expandable Code/Script Panel (synced bottom position for both modes)
             if !root.create_use_community: CubbyPanel {
-                vertical-stretch: 1;
                 title: "Optional Cloud-Init User Data";
                 meta: "applied on /cloud images";
 
                 CubbyTextArea {
-                    vertical-stretch: 1;
+                    height: 180px;
                     mono: true;
                     text <=> root.create_cloud_init;
                     placeholder: "#cloud-config\npackages:\n  - git\n  - curl";
                     enabled: !root.busy;
                 }
             }
+
+            if root.create_use_community && root.community_selected_slug != "" && (root.community_details.has_details || root.community_profiles.length > 0): HorizontalLayout {
+                spacing: 12px;
+
+                CubbyPanel {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    title: "App & script details";
+                    meta: root.community_details.updateable ? "Updateable" : "";
+
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 9px;
+
+                    if root.community_details.website != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Website"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        DetailTextLink { label: "Link"; url: root.community_details.website; clicked(u) => { root.open_url(u); } }
+                    }
+
+                    if root.community_details.documentation != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Docs"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        DetailTextLink { label: "Link"; url: root.community_details.documentation; clicked(u) => { root.open_url(u); } }
+                    }
+
+                    if root.community_details.repository != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Repository"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        DetailTextLink { label: "Link"; url: root.community_details.repository; clicked(u) => { root.open_url(u); } }
+                    }
+
+                    if (root.community_details.website != "" || root.community_details.documentation != "" || root.community_details.repository != "") && (root.community_details.category_names != "" || root.community_details.date_created != "" || root.community_details.install_source_url != ""): Rectangle {
+                        height: 1px;
+                        background: CubbyTheme.border;
+                    }
+
+                    if root.community_details.category_names != "": HorizontalLayout {
+                        alignment: space-between;
+                        spacing: 10px;
+                        Text { text: "Category"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        Text { text: root.community_details.category_names; font-family: CubbyTheme.font_sans; font-size: 12px; font-weight: 500; color: CubbyTheme.accent; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    }
+
+                    if root.community_details.date_created != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Added"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        Text { text: root.community_details.date_created; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink; vertical-alignment: center; }
+                    }
+
+                    if root.community_details.install_source_url != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Install source"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        DetailTextLink { label: "View"; url: root.community_details.install_source_url; clicked(u) => { root.open_url(u); } }
+                    }
+
+                    if root.community_details.ct_source_url != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Update source"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        DetailTextLink { label: "View"; url: root.community_details.ct_source_url; clicked(u) => { root.open_url(u); } }
+                    }
+
+                    if root.community_details.runs_in != "" || root.community_details.port_label != "": HorizontalLayout {
+                        alignment: space-between;
+                        Text { text: "Runs in"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            if root.community_details.runs_in != "": Rectangle {
+                                width: run-lbl.preferred-width + 14px;
+                                height: 20px;
+                                border-radius: CubbyTheme.radius_sm;
+                                border-width: 1px;
+                                border-color: CubbyTheme.border;
+                                background: CubbyTheme.well;
+                                run-lbl := Text {
+                                    text: root.community_details.runs_in;
+                                    font-family: CubbyTheme.font_mono;
+                                    font-size: 10.5px;
+                                    color: CubbyTheme.ink;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            if root.community_details.port_label != "": Rectangle {
+                                width: port-lbl.preferred-width + 12px;
+                                height: 20px;
+                                border-radius: CubbyTheme.radius_sm;
+                                border-width: 1px;
+                                border-color: CubbyTheme.border;
+                                background: CubbyTheme.well;
+                                port-lbl := Text {
+                                    text: root.community_details.port_label;
+                                    font-family: CubbyTheme.font_mono;
+                                    font-size: 10.5px;
+                                    color: CubbyTheme.ink_secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.community_details.last_update_label != "" || root.community_details.last_updated != "": HorizontalLayout {
+                        alignment: space-between;
+                        spacing: 8px;
+                        Text { text: "Last change"; font-family: CubbyTheme.font_sans; font-size: 12px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            if root.community_details.last_update_url != "": DetailTextLink {
+                                label: root.community_details.last_update_label;
+                                url: root.community_details.last_update_url;
+                                clicked(u) => { root.open_url(u); }
+                            }
+                            if root.community_details.last_updated != "": Text {
+                                text: root.community_details.last_update_url != ""
+                                    ? "(" + root.community_details.last_updated + ")"
+                                    : root.community_details.last_updated;
+                                font-family: CubbyTheme.font_sans;
+                                font-size: 11.5px;
+                                color: CubbyTheme.ink_muted;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    }
+                }
+
+                CubbyPanel {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    title: "Install profiles";
+                    meta: root.community_profiles.length > 1
+                        ? root.community_profiles.length + " profiles · choose OS"
+                        : "1 profile";
+
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 8px;
+
+                    if root.community_details.default_user != "" || root.community_details.default_passwd != "": Rectangle {
+                        background: CubbyTheme.well;
+                        border-width: 1px;
+                        border-color: CubbyTheme.border;
+                        border-radius: CubbyTheme.radius_md;
+                        min-height: creds-box.preferred-height;
+
+                        creds-box := VerticalLayout {
+                            padding: 10px;
+                            spacing: 6px;
+
+                            Text {
+                                text: "DEFAULT CREDENTIALS";
+                                font-family: CubbyTheme.font_mono;
+                                font-size: 10px;
+                                font-weight: 600;
+                                color: CubbyTheme.ink_muted;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 12px;
+                                if root.community_details.default_user != "": HorizontalLayout {
+                                    spacing: 6px;
+                                    Text { text: "User"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                                    Text { text: root.community_details.default_user; font-family: CubbyTheme.font_mono; font-size: 11.5px; color: CubbyTheme.ink; vertical-alignment: center; }
+                                }
+                                if root.community_details.default_passwd != "": HorizontalLayout {
+                                    spacing: 6px;
+                                    Text { text: "Pass"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; vertical-alignment: center; }
+                                    Text { text: root.community_details.default_passwd; font-family: CubbyTheme.font_mono; font-size: 11.5px; color: CubbyTheme.ink; vertical-alignment: center; }
+                                }
+                            }
+                        }
+                    }
+
+                    for prof[idx] in root.community_profiles: Rectangle {
+                        property <bool> is-selected: idx == root.community_selected_profile;
+                        background: is-selected
+                            ? CubbyTheme.accent_soft
+                            : (prof-ta.has-hover && !root.busy ? CubbyTheme.hover_fill : CubbyTheme.well);
+                        border-width: 1px;
+                        border-color: is-selected
+                            ? CubbyTheme.accent
+                            : (prof-ta.has-hover && !root.busy ? CubbyTheme.ink_muted : CubbyTheme.border);
+                        border-radius: CubbyTheme.radius_md;
+                        min-height: prof-box.preferred-height;
+
+                        prof-box := VerticalLayout {
+                            padding: 10px;
+                            spacing: 8px;
+
+                            HorizontalLayout {
+                                alignment: space-between;
+                                spacing: 8px;
+
+                                Text {
+                                    text: prof.name;
+                                    font-family: CubbyTheme.font_sans;
+                                    font-size: 12.5px;
+                                    font-weight: 600;
+                                    color: CubbyTheme.ink;
+                                    vertical-alignment: center;
+                                }
+
+                                if prof.os_label != "": Rectangle {
+                                    width: os-lbl.preferred-width + 12px;
+                                    height: 20px;
+                                    border-radius: CubbyTheme.radius_sm;
+                                    border-width: 1px;
+                                    border-color: is-selected ? CubbyTheme.accent : CubbyTheme.border;
+                                    background: CubbyTheme.surface;
+                                    os-lbl := Text {
+                                        text: prof.os_label;
+                                        font-family: CubbyTheme.font_mono;
+                                        font-size: 10.5px;
+                                        color: is-selected ? CubbyTheme.accent : CubbyTheme.ink_secondary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                ProfileStatBox { value: prof.cpu; unit: "CPU"; }
+                                ProfileStatBox { value: prof.ram; unit: "RAM (MiB)"; }
+                                ProfileStatBox { value: prof.hdd; unit: "HDD (GB)"; }
+                            }
+
+                            if prof.config_path != "": Text {
+                                text: prof.config_path;
+                                font-family: CubbyTheme.font_mono;
+                                font-size: 11px;
+                                color: CubbyTheme.ink_muted;
+                                overflow: elide;
+                            }
+                        }
+
+                        prof-ta := TouchArea {
+                            enabled: !root.busy;
+                            mouse-cursor: !root.busy ? pointer : default;
+                            clicked => {
+                                root.community_selected_profile = idx;
+                                if prof.image_alias != "" {
+                                    root.create_image_alias = prof.image_alias;
+                                }
+                                if prof.cpu != "" {
+                                    root.create_cpu = prof.cpu;
+                                }
+                                if prof.memory_limit != "" {
+                                    root.create_memory = prof.memory_limit;
+                                }
+                            }
+                        }
+                    }
+                    }
+                }
+            }
+
+            if root.create_use_community && root.community_selected_slug != "": CubbyPanel {
+                title: "Install script & deploy";
+                meta: "ct/" + root.community_selected_slug + ".sh + install/" + root.community_selected_slug + "-install.sh";
+
+                // Run in existing sandbox bar
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: "Or run in running sandbox:";
+                        font-family: CubbyTheme.font_sans;
+                        font-size: 12px;
+                        color: CubbyTheme.ink_secondary;
+                        vertical-alignment: center;
+                    }
+
+                    CubbySelect {
+                        horizontal-stretch: 1;
+                        model: root.running_instance_names;
+                        current_value <=> root.community_target_instance;
+                        placeholder: "No running sandboxes";
+                        enabled: !root.busy;
+                    }
+
+                    CubbyIconButton {
+                        icon: "play";
+                        tone: "outline";
+                        size: "md";
+                        tooltip: "Run in selected sandbox";
+                        enabled: !root.busy && root.community_target_instance != "";
+                        clicked => {
+                            root.community_view_tab = 1;
+                            root.request_run_community_in_instance(
+                                root.community_selected_slug,
+                                root.community_target_instance
+                            );
+                        }
+                    }
+                }
+
+                // Preview / Deploy Output switcher
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    CubbySegmentTrack {
+                        CubbySegmentOption {
+                            label: "Install Script Preview";
+                            active: root.community_view_tab == 0 && root.community_output == "";
+                            clicked => { root.community_view_tab = 0; }
+                        }
+                        CubbySegmentOption {
+                            label: "Deploy Output";
+                            active: root.community_view_tab == 1 || root.community_output != "";
+                            clicked => { root.community_view_tab = 1; }
+                        }
+                    }
+                }
+
+                CubbyTextArea {
+                    height: 220px;
+                    read_only: true;
+                    mono: true;
+                    text: (root.community_view_tab == 1 || root.community_output != "")
+                        ? (root.community_output != "" ? root.community_output : "Deploy output will appear here after clicking Deploy.")
+                        : root.community_install_script;
+                }
+            }
+            }
         }
 
         // Bottom Sticky Action Bar
         Rectangle {
             height: 52px;
+            vertical-stretch: 0;
             background: CubbyTheme.surface;
 
             Rectangle {
@@ -2162,7 +2795,7 @@ component CreateView inherits HorizontalLayout {
                     y: (parent.height - self.height) / 2;
                     horizontal-stretch: 1;
                     uri: root.create_use_community
-                        ? "App: " + root.community_selected_slug + " -> " + (root.create_name != "" ? root.create_name : root.community_selected_slug) + " (" + root.create_cpu + " CPU, " + root.create_memory + ")"
+                        ? "App: " + root.community_selected_slug + " -> " + (root.create_name != "" ? root.create_name : root.community_selected_slug) + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + ")"
                         : (root.create_name != "" ? root.create_name : "new-sandbox") + " (" + root.create_image_alias + ", " + root.create_cpu + " CPU, " + root.create_memory + ")";
                 }
 
@@ -3608,8 +4241,12 @@ export component AdvancedShell inherits VerticalLayout {
     in-out property <string> create_cloud_init: "";
 
     in property <[UiCommunityApp]> community_apps: [];
+    in property <[UiCommunityCategory]> community_categories: [];
     in-out property <string> community_search_query: "";
     in-out property <string> community_repo_filter: "all";
+    in-out property <string> community_category_filter: "";
+    in property <string> community_active_category_name: "";
+    in property <string> community_active_category_desc: "";
     in property <[string]> running_instance_names: [];
     in-out property <string> community_target_instance: "";
     in property <string> community_selected_slug: "";
@@ -3619,6 +4256,10 @@ export component AdvancedShell inherits VerticalLayout {
     in property <string> community_tags: "";
     in property <bool> community_is_dev: false;
     in property <string> community_source_repo: "";
+    in property <UiCommunityDetails> community_details;
+    in property <[UiCommunityNote]> community_notes: [];
+    in property <[UiCommunityProfile]> community_profiles: [];
+    in-out property <int> community_selected_profile: 0;
     in property <string> community_install_script: "";
     in property <string> community_output: "";
 
@@ -3949,8 +4590,12 @@ export component AdvancedShell inherits VerticalLayout {
             remote_aliases: root.remote_aliases;
             remote_search_query <=> root.remote_search_query;
             community_apps: root.community_apps;
+            community_categories: root.community_categories;
             community_search_query <=> root.community_search_query;
             community_repo_filter <=> root.community_repo_filter;
+            community_category_filter <=> root.community_category_filter;
+            community_active_category_name: root.community_active_category_name;
+            community_active_category_desc: root.community_active_category_desc;
             running_instance_names: root.running_instance_names;
             community_target_instance <=> root.community_target_instance;
             community_selected_slug: root.community_selected_slug;
@@ -3960,6 +4605,10 @@ export component AdvancedShell inherits VerticalLayout {
             community_tags: root.community_tags;
             community_is_dev: root.community_is_dev;
             community_source_repo: root.community_source_repo;
+            community_details: root.community_details;
+            community_notes: root.community_notes;
+            community_profiles: root.community_profiles;
+            community_selected_profile <=> root.community_selected_profile;
             community_install_script: root.community_install_script;
             community_output: root.community_output;
             profile_names: root.profile_names;
@@ -3982,6 +4631,7 @@ export component AdvancedShell inherits VerticalLayout {
             deploy_community_app(s, n, i, c, m, w, p, nest) => { root.deploy_community_app(s, n, i, c, m, w, p, nest); }
             request_run_community_in_instance(s, inst) => { root.request_run_community_in_instance(s, inst); }
             cancel_to_sandboxes => { root.active_tab = "sandboxes"; }
+            open_url(u) => { root.open_url(u); }
         }
 
         if root.active_tab == "infra": InfraView {
