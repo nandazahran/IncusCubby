@@ -15,8 +15,11 @@ import {
 import {
     CubbyActionButton,
     CubbyBanner,
+    CubbyCatalogCard,
+    CubbyCatalogRow,
     CubbyCheckBox,
     CubbyCodeBox,
+    CubbyDetailHead,
     CubbyDistroBadge,
     CubbyIconButton,
     CubbyInput,
@@ -1352,6 +1355,9 @@ component CreateView inherits HorizontalLayout {
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
     in-out property <string> create_image_alias: "";
+    in property <UiLogo> selected_alias_logo;
+    in property <string> selected_alias_subtitle: "";
+    in property <bool> selected_alias_cached: false;
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
     in-out property <string> create_profiles: "default";
@@ -1387,6 +1393,7 @@ component CreateView inherits HorizontalLayout {
     callback fetch_remote_images();
     callback filter_community_apps(string);
     callback fetch_community_catalog();
+    callback resolve_selected_alias(string);
     callback select_community_app(string);
     callback browse_workspace_folder();
     callback create_instance(string, string, string, string, string, string, string, string, bool);
@@ -1470,7 +1477,10 @@ component CreateView inherits HorizontalLayout {
                         CubbySegmentOption {
                             label: "Official Images";
                             active: !root.create_use_community;
-                            clicked => { root.create_use_community = false; }
+                            clicked => {
+                                root.create_use_community = false;
+                                root.resolve_selected_alias(root.create_image_alias);
+                            }
                         }
                         CubbySegmentOption {
                             label: "Community Scripts";
@@ -1558,79 +1568,60 @@ component CreateView inherits HorizontalLayout {
                         color: CubbyTheme.ink_muted;
                     }
 
-                    if root.remote_aliases.length > 0: ListView {
+                    if root.remote_aliases.length > 0 && !root.has-selection: ListView {
                         width: 100%;
                         height: 100%;
 
-                        for item in root.remote_aliases: Rectangle {
-                            property <bool> is-sel: item.alias == root.create_image_alias;
-                            height: 54px;
-                            background: is-sel
-                                ? CubbyTheme.surface
-                                : (al-ta.has-hover ? CubbyTheme.hover_fill : transparent);
-
-                            if is-sel: Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: 2px;
-                                height: parent.height;
-                                background: CubbyTheme.accent;
-                            }
+                        for row in Math.ceil(root.remote_aliases.length / 3): Rectangle {
+                            height: 84px;
 
                             HorizontalLayout {
                                 padding-left: 14px;
                                 padding-right: 14px;
-                                spacing: 10px;
+                                padding-top: 6px;
+                                padding-bottom: 6px;
+                                spacing: 12px;
 
-                                CubbyDistroBadge {
-                                    y: (parent.height - self.height) / 2;
-                                    logo: item.logo;
-                                    size: "sm";
-                                }
-
-                                VerticalLayout {
-                                    y: (parent.height - self.preferred-height) / 2;
+                                for col in 3: alias-card := Rectangle {
                                     horizontal-stretch: 1;
-                                    spacing: 2px;
+                                    property <int> alias-index: Math.min(row * 3 + col, Math.max(0, root.remote_aliases.length - 1));
+                                    property <bool> has-alias: row * 3 + col < root.remote_aliases.length;
+                                    visible: has-alias;
 
-                                    Text {
-                                        text: item.alias;
-                                        font-family: CubbyTheme.font_mono;
-                                        font-size: 12px;
-                                        font-weight: 500;
-                                        color: CubbyTheme.ink;
-                                        overflow: elide;
-                                    }
-
-                                    if item.subtitle != "": Text {
-                                        text: item.subtitle;
-                                        font-family: CubbyTheme.font_sans;
-                                        font-size: 11px;
-                                        color: CubbyTheme.ink_muted;
-                                        overflow: elide;
+                                    CubbyCatalogCard {
+                                        logo: root.remote_aliases[alias-card.alias-index].logo;
+                                        title: root.remote_aliases[alias-card.alias-index].alias;
+                                        title_mono: true;
+                                        meta: root.remote_aliases[alias-card.alias-index].is_cached ? "cached" : "remote";
+                                        meta_tone: root.remote_aliases[alias-card.alias-index].is_cached ? "live" : "default";
+                                        active: root.remote_aliases[alias-card.alias-index].alias == root.create_image_alias;
+                                        enabled: alias-card.has-alias && !root.busy;
+                                        clicked => {
+                                            root.create_image_alias = root.remote_aliases[alias-card.alias-index].alias;
+                                            root.resolve_selected_alias(root.create_image_alias);
+                                        }
                                     }
                                 }
-
-                                Text {
-                                    text: item.is_cached ? "cached" : "remote";
-                                    font-family: CubbyTheme.font_mono;
-                                    font-size: 10.5px;
-                                    color: item.is_cached ? CubbyTheme.live : CubbyTheme.ink_muted;
-                                    vertical-alignment: center;
-                                }
                             }
+                        }
+                    }
 
-                            Rectangle {
-                                y: parent.height - 1px;
-                                width: parent.width;
-                                height: 1px;
-                                background: CubbyTheme.border;
-                            }
+                    if root.remote_aliases.length > 0 && root.has-selection: ListView {
+                        width: 100%;
+                        height: 100%;
 
-                            al-ta := TouchArea {
-                                enabled: !root.busy;
-                                mouse-cursor: pointer;
-                                clicked => { root.create_image_alias = item.alias; }
+                        for item in root.remote_aliases: CubbyCatalogRow {
+                            logo: item.logo;
+                            title: item.alias;
+                            title_mono: true;
+                            subtitle: item.subtitle;
+                            meta: item.is_cached ? "cached" : "remote";
+                            meta_tone: item.is_cached ? "live" : "default";
+                            active: item.alias == root.create_image_alias;
+                            enabled: !root.busy;
+                            clicked => {
+                                root.create_image_alias = item.alias;
+                                root.resolve_selected_alias(item.alias);
                             }
                         }
                     }
@@ -1693,84 +1684,18 @@ component CreateView inherits HorizontalLayout {
                         width: 100%;
                         height: 100%;
 
-                        for app in root.community_apps: Rectangle {
-                            property <bool> is-sel: app.slug == root.community_selected_slug;
-                            height: 54px;
-                            background: is-sel
-                                ? CubbyTheme.surface
-                                : (cs-ta.has-hover ? CubbyTheme.hover_fill : transparent);
-
-                            if is-sel: Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: 2px;
-                                height: parent.height;
-                                background: CubbyTheme.accent;
-                            }
-
-                            HorizontalLayout {
-                                padding-left: 14px;
-                                padding-right: 14px;
-                                spacing: 10px;
-
-                                CubbyDistroBadge {
-                                    y: (parent.height - self.height) / 2;
-                                    logo: app.logo;
-                                    size: "sm";
-                                }
-
-                                VerticalLayout {
-                                    y: (parent.height - self.preferred-height) / 2;
-                                    horizontal-stretch: 1;
-                                    spacing: 2px;
-
-                                    Text {
-                                        text: app.name;
-                                        font-family: CubbyTheme.font_sans;
-                                        font-size: 12.5px;
-                                        font-weight: 500;
-                                        color: CubbyTheme.ink;
-                                        overflow: elide;
-                                    }
-
-                                    Text {
-                                        text: app.description != "" ? app.description : app.slug;
-                                        font-family: CubbyTheme.font_sans;
-                                        font-size: 11px;
-                                        color: CubbyTheme.ink_muted;
-                                        overflow: elide;
-                                    }
-                                }
-
-                                if app.is_dev: CubbyTag {
-                                    y: (parent.height - self.height) / 2;
-                                    tone: "warn";
-                                    text: "dev";
-                                }
-
-                                if !app.is_dev: Text {
-                                    text: app.slug;
-                                    font-family: CubbyTheme.font_mono;
-                                    font-size: 10.5px;
-                                    color: CubbyTheme.ink_muted;
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            Rectangle {
-                                y: parent.height - 1px;
-                                width: parent.width;
-                                height: 1px;
-                                background: CubbyTheme.border;
-                            }
-
-                            cs-ta := TouchArea {
-                                enabled: !root.busy;
-                                mouse-cursor: pointer;
-                                clicked => {
-                                    root.community_view_tab = 0;
-                                    root.select_community_app(app.slug);
-                                }
+                        for app in root.community_apps: CubbyCatalogRow {
+                            logo: app.logo;
+                            title: app.name;
+                            subtitle: app.slug;
+                            subtitle_mono: true;
+                            meta: app.is_dev ? "dev" : "";
+                            meta_tone: "warn";
+                            active: app.slug == root.community_selected_slug;
+                            enabled: !root.busy;
+                            clicked => {
+                                root.community_view_tab = 0;
+                                root.select_community_app(app.slug);
                             }
                         }
                     }
@@ -1791,48 +1716,17 @@ component CreateView inherits HorizontalLayout {
 
                                 for col in 3: card := Rectangle {
                                     property <int> app-index: Math.min(row * 3 + col, Math.max(0, root.community_apps.length - 1));
+                                    horizontal-stretch: 1;
                                     property <bool> has-app: row * 3 + col < root.community_apps.length;
                                     visible: has-app;
-                                    horizontal-stretch: 1;
-                                    border-radius: CubbyTheme.radius_md;
-                                    border-width: 1px;
-                                    border-color: root.community_apps[card.app-index].slug == root.community_selected_slug
-                                        ? CubbyTheme.accent
-                                        : CubbyTheme.border;
-                                    background: card-ta.has-hover ? CubbyTheme.hover_fill : CubbyTheme.surface;
 
-                                    HorizontalLayout {
-                                        padding-left: 12px;
-                                        padding-right: 12px;
-                                        spacing: 10px;
-
-                                        CubbyDistroBadge {
-                                            y: (parent.height - self.height) / 2;
-                                            logo: root.community_apps[card.app-index].logo;
-                                            size: "md";
-                                        }
-
-                                        Text {
-                                            text: root.community_apps[card.app-index].name;
-                                            horizontal-stretch: 1;
-                                            font-family: CubbyTheme.font_sans;
-                                            font-size: 13px;
-                                            font-weight: 500;
-                                            color: CubbyTheme.ink;
-                                            vertical-alignment: center;
-                                            overflow: elide;
-                                        }
-
-                                        if root.community_apps[card.app-index].is_dev: CubbyTag {
-                                            y: (parent.height - self.height) / 2;
-                                            tone: "warn";
-                                            text: "dev";
-                                        }
-                                    }
-
-                                    card-ta := TouchArea {
+                                    CubbyCatalogCard {
+                                        logo: root.community_apps[card.app-index].logo;
+                                        title: root.community_apps[card.app-index].name;
+                                        meta: root.community_apps[card.app-index].is_dev ? "dev" : "";
+                                        meta_tone: "warn";
+                                        active: root.community_apps[card.app-index].slug == root.community_selected_slug;
                                         enabled: card.has-app && !root.busy;
-                                        mouse-cursor: pointer;
                                         clicked => {
                                             root.community_view_tab = 0;
                                             root.select_community_app(root.community_apps[card.app-index].slug);
@@ -1923,56 +1817,18 @@ component CreateView inherits HorizontalLayout {
                 vertical-stretch: 1;
                 pad_body: true;
 
-                // App Header
-                HorizontalLayout {
-                    spacing: 10px;
-                    alignment: space-between;
-
-                    HorizontalLayout {
-                        spacing: 10px;
-                        horizontal-stretch: 1;
-
-                        CubbyDistroBadge {
-                            y: (parent.height - self.height) / 2;
-                            logo: root.community_app_logo;
-                            size: "md";
-                        }
-
-                        Text {
-                            text: root.community_app_name + " (" + root.community_selected_slug + ")";
-                            font-family: CubbyTheme.font_sans;
-                            font-size: 15px;
-                            font-weight: 600;
-                            color: CubbyTheme.ink;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-
-                        if root.community_is_dev: CubbyTag {
-                            y: (parent.height - self.height) / 2;
-                            tone: "warn";
-                            text: "DevScripts";
-                        }
-
-                        if root.community_tags != "": CubbyTag {
-                            y: (parent.height - self.height) / 2;
-                            text: root.community_tags;
-                        }
-                    }
-
-                    CubbyStatusDot {
-                        y: (parent.height - self.height) / 2;
-                        tone: "live";
-                        label: root.community_source_repo != "" ? root.community_source_repo : "community-scripts";
-                    }
-                }
-
-                if root.community_description != "": Text {
-                    text: root.community_description;
-                    font-family: CubbyTheme.font_sans;
-                    font-size: 12px;
-                    color: CubbyTheme.ink_secondary;
-                    wrap: word-wrap;
+                CubbyDetailHead {
+                    logo: root.community_app_logo;
+                    title: root.community_app_name != ""
+                        ? root.community_app_name
+                        : root.community_selected_slug;
+                    subtitle: root.community_description;
+                    tag_text: root.community_tags;
+                    tag_tone: "default";
+                    status_label: root.community_source_repo != ""
+                        ? root.community_source_repo
+                        : "community-scripts";
+                    status_tone: "live";
                 }
 
                 // Run in existing sandbox bar
@@ -2039,6 +1895,7 @@ component CreateView inherits HorizontalLayout {
 
                 CubbyTextArea {
                     vertical-stretch: 1;
+                    min-height: 64px;
                     read_only: true;
                     mono: true;
                     text: (root.community_view_tab == 1 || root.community_output != "")
@@ -2051,37 +1908,13 @@ component CreateView inherits HorizontalLayout {
                 title: "Selected image";
                 meta: root.create_image_alias;
 
-                for item in root.remote_aliases: HorizontalLayout {
-                    visible: item.alias == root.create_image_alias;
-                    spacing: 10px;
-
-                    CubbyDistroBadge {
-                        y: (parent.height - self.height) / 2;
-                        logo: item.logo;
-                        size: "md";
-                    }
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 2px;
-
-                        Text {
-                            text: item.alias;
-                            font-family: CubbyTheme.font_mono;
-                            font-size: 13px;
-                            font-weight: 500;
-                            color: CubbyTheme.ink;
-                            overflow: elide;
-                        }
-
-                        if item.subtitle != "": Text {
-                            text: item.subtitle;
-                            font-family: CubbyTheme.font_sans;
-                            font-size: 11.5px;
-                            color: CubbyTheme.ink_muted;
-                            overflow: elide;
-                        }
-                    }
+                CubbyDetailHead {
+                    logo: root.selected_alias_logo;
+                    title: root.create_image_alias;
+                    title_mono: true;
+                    subtitle: root.selected_alias_subtitle;
+                    status_label: root.selected_alias_cached ? "cached" : "remote";
+                    status_tone: root.selected_alias_cached ? "live" : "muted";
                 }
             }
 
@@ -2145,6 +1978,7 @@ component CreateView inherits HorizontalLayout {
                             text <=> root.create_image_alias;
                             placeholder: "debian/12";
                             enabled: !root.busy;
+                            edited(q) => { root.resolve_selected_alias(q); }
                         }
                     }
                 }
@@ -3753,6 +3587,9 @@ export component AdvancedShell inherits VerticalLayout {
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
+    in property <UiLogo> selected_alias_logo;
+    in property <string> selected_alias_subtitle: "";
+    in property <bool> selected_alias_cached: false;
     in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
@@ -3793,6 +3630,7 @@ export component AdvancedShell inherits VerticalLayout {
     callback toggle_theme(bool);
     callback toggle_sidebar_collapsed(bool);
     callback set_nav_width(int);
+    callback resolve_selected_alias(string);
     callback clear_community_selection();
     callback confirm_action();
     callback cancel_confirm();
@@ -4089,6 +3927,9 @@ export component AdvancedShell inherits VerticalLayout {
             create_use_community <=> root.create_use_community;
             create_name <=> root.create_name;
             create_type <=> root.create_type;
+            selected_alias_logo: root.selected_alias_logo;
+            selected_alias_subtitle: root.selected_alias_subtitle;
+            selected_alias_cached: root.selected_alias_cached;
             create_image_alias <=> root.create_image_alias;
             create_cpu <=> root.create_cpu;
             create_memory <=> root.create_memory;
@@ -4124,6 +3965,7 @@ export component AdvancedShell inherits VerticalLayout {
                 root.filter_community_apps(q);
             }
             fetch_community_catalog => { root.fetch_community_catalog(); }
+            resolve_selected_alias(a) => { root.resolve_selected_alias(a); }
             select_community_app(s) => { root.select_community_app(s); }
             clear_community_selection => { root.clear_community_selection(); }
             browse_workspace_folder => { root.browse_workspace_folder(); }
@@ -4174,6 +4016,7 @@ export component AdvancedShell inherits VerticalLayout {
             use_image_alias(alias) => {
                 root.create_use_community = false;
                 root.create_image_alias = alias;
+                root.resolve_selected_alias(alias);
                 root.active_tab = "create";
             }
         }

@@ -78,6 +78,9 @@ export component AppWindow inherits Window {
     in-out property <bool> create_use_community: false;
     in-out property <string> create_name: "";
     in-out property <string> create_type: "container";
+    in property <UiLogo> selected_alias_logo;
+    in property <string> selected_alias_subtitle: "";
+    in property <bool> selected_alias_cached: false;
     in-out property <string> create_image_alias: "";
     in-out property <string> create_cpu: "2";
     in-out property <string> create_memory: "4GiB";
@@ -164,6 +167,7 @@ export component AppWindow inherits Window {
     callback create_storage_volume(string, string);
     callback request_delete_storage_volume(string, string);
     callback create_network(string, bool);
+    callback resolve_selected_alias(string);
     callback request_delete_network(string);
     callback save_profile(string, string, string, string, bool);
     callback request_delete_profile(string);
@@ -236,6 +240,9 @@ export component AppWindow inherits Window {
         create_use_community <=> root.create_use_community;
         create_name <=> root.create_name;
         create_type <=> root.create_type;
+        selected_alias_logo: root.selected_alias_logo;
+        selected_alias_subtitle: root.selected_alias_subtitle;
+        selected_alias_cached: root.selected_alias_cached;
         create_image_alias <=> root.create_image_alias;
         create_cpu <=> root.create_cpu;
         create_memory <=> root.create_memory;
@@ -298,6 +305,7 @@ export component AppWindow inherits Window {
         pull_instance_file(i, c, h) => { root.pull_instance_file(i, c, h); }
         filter_remote_aliases(q) => { root.filter_remote_aliases(q); }
         fetch_remote_images => { root.fetch_remote_images(); }
+        resolve_selected_alias(a) => { root.resolve_selected_alias(a); }
         filter_community_apps(q) => { root.filter_community_apps(q); }
         fetch_community_catalog => { root.fetch_community_catalog(); }
         select_community_app(s) => { root.select_community_app(s); }

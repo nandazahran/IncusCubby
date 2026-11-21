@@ -412,6 +412,15 @@ fn on_logo_ready_ui(ui: &AppWindow, key: &str, logo: UiLogo) {
                 remote_model.set_row_data(row, item);
             }
         }
+        let selected_alias = ui.get_create_image_alias();
+        for row in 0..remote_model.row_count() {
+            if let Some(item) = remote_model.row_data(row)
+                && item.alias == selected_alias
+            {
+                ui.set_selected_alias_logo(item.logo);
+                break;
+            }
+        }
 
         let images_model = ui.get_local_images();
         for row in 0..images_model.row_count() {
@@ -2145,6 +2154,25 @@ fn wire_ui_callbacks(
     {
         let weak = ui.as_weak();
         let caches = Arc::clone(catalogs);
+        ui.on_resolve_selected_alias(move |alias| {
+            let Some(ui) = weak.upgrade() else { return };
+            let remote_imgs = caches
+                .remote_images
+                .lock()
+                .expect("remote images mutex poisoned")
+                .clone();
+            let local_imgs = caches
+                .local_images
+                .lock()
+                .expect("local images mutex poisoned")
+                .clone();
+            apply_selected_alias(&ui, &remote_imgs, &local_imgs, alias.as_str());
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let caches = Arc::clone(catalogs);
         ui.on_filter_local_images(move |query| {
             if let Some(ui) = weak.upgrade() {
                 let local_imgs = caches
@@ -2569,17 +2597,67 @@ fn apply_fetched_remote_aliases(ui: &AppWindow, imgs: &[RemoteImage], local_imgs
     ui.set_status_message(format!("Loaded {} remote image aliases", imgs.len()).into());
 }
 
+fn alias_cached_set(local_imgs: &[ImageSummary]) -> HashSet<String> {
+    local_imgs
+        .iter()
+        .filter(|img| !img.alias.is_empty())
+        .map(|img| img.alias.to_ascii_lowercase())
+        .collect()
+}
+
+fn remote_alias_subtitle(os: &str, release: &str) -> String {
+    if release.is_empty() {
+        os.to_string()
+    } else if os.is_empty() {
+        release.to_string()
+    } else {
+        format!("{os}, {release}")
+    }
+}
+
+fn remote_alias_row(img: &RemoteImage, cached: &HashSet<String>) -> UiRemoteAlias {
+    let distro_id = detect_distro_id(&img.os, &img.alias);
+    UiRemoteAlias {
+        distro_id: distro_id.into(),
+        logo: lookup_or_request_os_logo(distro_id),
+        is_cached: cached.contains(&img.alias.to_ascii_lowercase()),
+        alias: img.alias.clone().into(),
+        subtitle: remote_alias_subtitle(&img.os, &img.release).into(),
+        release_hint: img.release.clone().into(),
+    }
+}
+
+fn apply_selected_alias(
+    ui: &AppWindow,
+    remote_imgs: &[RemoteImage],
+    local_imgs: &[ImageSummary],
+    alias: &str,
+) {
+    let row = remote_imgs
+        .iter()
+        .find(|img| img.alias == alias)
+        .map(|img| remote_alias_row(img, &alias_cached_set(local_imgs)));
+    if let Some(row) = row {
+        ui.set_selected_alias_logo(row.logo);
+        ui.set_selected_alias_subtitle(row.subtitle);
+        ui.set_selected_alias_cached(row.is_cached);
+    } else {
+        ui.set_selected_alias_logo(UiLogo {
+            icon: slint::Image::default(),
+            accent: Color::default(),
+        });
+        ui.set_selected_alias_subtitle(String::new().into());
+        ui.set_selected_alias_cached(false);
+    }
+}
+
 fn apply_remote_aliases(
     ui: &AppWindow,
     remote_imgs: &[RemoteImage],
     local_imgs: &[ImageSummary],
     query: &str,
 ) {
-    let cached_aliases: HashSet<String> = local_imgs
-        .iter()
-        .filter(|img| !img.alias.is_empty())
-        .map(|img| img.alias.to_ascii_lowercase())
-        .collect();
+    let cached = alias_cached_set(local_imgs);
     let needle = query.trim().to_ascii_lowercase();
     let rows: Vec<UiRemoteAlias> = remote_imgs
         .iter()
@@ -2589,26 +2667,15 @@ fn apply_remote_aliases(
                 || img.os.to_ascii_lowercase().contains(&needle)
                 || img.release.to_ascii_lowercase().contains(&needle)
         })
-        .map(|img| {
-            let subtitle = if img.release.is_empty() {
-                img.os.clone()
-            } else if img.os.is_empty() {
-                img.release.clone()
-            } else {
-                format!("{}, {}", img.os, img.release)
-            };
-            let distro_id = detect_distro_id(&img.os, &img.alias);
-            UiRemoteAlias {
-                distro_id: distro_id.into(),
-                logo: lookup_or_request_os_logo(distro_id),
-                is_cached: cached_aliases.contains(&img.alias.to_ascii_lowercase()),
-                alias: img.alias.clone().into(),
-                subtitle: subtitle.into(),
-                release_hint: img.release.clone().into(),
-            }
-        })
+        .map(|img| remote_alias_row(img, &cached))
         .collect();
     ui.set_remote_aliases(ModelRc::from(Rc::new(VecModel::from(rows))));
+    apply_selected_alias(
+        ui,
+        remote_imgs,
+        local_imgs,
+        ui.get_create_image_alias().as_str(),
+    );
 }
 
 fn apply_community_apps(apps: &[CommunityApp], query: &str, repo_filter: &str) {
@@ -2884,5 +2951,26 @@ fn to_ui_instance(inst: InstanceSummary, logo_url: &str) -> UiInstance {
         snapshots: ModelRc::from(Rc::new(VecModel::from(snaps))),
         mounts: ModelRc::from(Rc::new(VecModel::from(mounts))),
         proxies: ModelRc::from(Rc::new(VecModel::from(proxies))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_alias_helpers() {
+        assert_eq!(remote_alias_subtitle("Alpine", "3.21"), "Alpine, 3.21");
+        assert_eq!(remote_alias_subtitle("", "3.21"), "3.21");
+
+        let cached = alias_cached_set(&[ImageSummary {
+            fingerprint: String::new(),
+            alias: "alpine/3.21".into(),
+            description: String::new(),
+            architecture: String::new(),
+            size_bytes: 0,
+            size_display: String::new(),
+        }]);
+        assert!(cached.contains("alpine/3.21"));
     }
 }
