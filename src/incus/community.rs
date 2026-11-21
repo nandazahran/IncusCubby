@@ -598,8 +598,7 @@ pub fn parse_community_script_detail_html(html: &str) -> Option<CommunityScriptD
 
         let runs_in_raw = expand
             .script_type
-            .map(|t| t.type_name.trim().to_ascii_lowercase())
-            .unwrap_or_default();
+            .map_or_default(|t| t.type_name.trim().to_ascii_lowercase());
         let runs_in = match runs_in_raw.as_str() {
             "" => String::new(),
             "lxc" => "Container".to_string(),
