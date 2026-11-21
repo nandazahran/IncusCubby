@@ -1584,11 +1584,15 @@ component CreateView inherits HorizontalLayout {
 
                                 for col in 3: alias-card := Rectangle {
                                     horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    preferred-width: 0px;
                                     property <int> alias-index: Math.min(row * 3 + col, Math.max(0, root.remote_aliases.length - 1));
                                     property <bool> has-alias: row * 3 + col < root.remote_aliases.length;
                                     visible: has-alias;
 
                                     CubbyCatalogCard {
+                                        width: 100%;
+                                        height: 100%;
                                         logo: root.remote_aliases[alias-card.alias-index].logo;
                                         title: root.remote_aliases[alias-card.alias-index].alias;
                                         title_mono: true;
@@ -1717,10 +1721,14 @@ component CreateView inherits HorizontalLayout {
                                 for col in 3: card := Rectangle {
                                     property <int> app-index: Math.min(row * 3 + col, Math.max(0, root.community_apps.length - 1));
                                     horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    preferred-width: 0px;
                                     property <bool> has-app: row * 3 + col < root.community_apps.length;
                                     visible: has-app;
 
                                     CubbyCatalogCard {
+                                        width: 100%;
+                                        height: 100%;
                                         logo: root.community_apps[card.app-index].logo;
                                         title: root.community_apps[card.app-index].name;
                                         meta: root.community_apps[card.app-index].is_dev ? "dev" : "";
@@ -2068,7 +2076,8 @@ component CreateView inherits HorizontalLayout {
                         spacing: 4px;
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Host workspace bind mount"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; }
+                            spacing: 6px;
+                            Text { text: "Host workspace bind mount"; font-family: CubbyTheme.font_sans; font-size: 11.5px; color: CubbyTheme.ink_secondary; overflow: elide; }
                             Text { text: "mounted at /workspace"; font-family: CubbyTheme.font_mono; font-size: 10.5px; color: CubbyTheme.ink_muted; }
                         }
                         HorizontalLayout {

@@ -448,6 +448,8 @@ export component CubbyCatalogCard inherits Rectangle {
 
     horizontal-stretch: 1;
     vertical-stretch: 0;
+    min-width: 0px;
+    preferred-width: 0px;
     height: 72px;
     border-radius: CubbyTheme.radius_md;
     border-width: 1px;
@@ -469,6 +471,7 @@ export component CubbyCatalogCard inherits Rectangle {
         Text {
             text: root.title;
             horizontal-stretch: 1;
+            min-width: 0px;
             font-family: root.title_mono ? CubbyTheme.font_mono : CubbyTheme.font_sans;
             font-size: root.title_mono ? 12px : 13px;
             font-weight: 500;
@@ -606,9 +609,12 @@ export component CubbyDetailHead inherits HorizontalLayout {
             overflow: elide;
         }
 
-        if root.tag_text != "": CubbyTag {
-            tone: root.tag_tone;
-            text: root.tag_text;
+        if root.tag_text != "": HorizontalLayout {
+            alignment: start;
+            CubbyTag {
+                tone: root.tag_tone;
+                text: root.tag_text;
+            }
         }
 
         if root.subtitle != "": Text {
