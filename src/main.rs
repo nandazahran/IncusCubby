@@ -592,6 +592,7 @@ fn init_settings_ui(ui: &AppWindow, app_settings: &AppSettings, catalogs: &Arc<C
     ui.set_simple_mode(app_settings.simple_mode);
     ui.set_light_theme(app_settings.light_theme);
     ui.set_sidebar_collapsed(app_settings.sidebar_collapsed);
+    ui.set_nav_width(app_settings.nav_width.clamp(56, 320) as f32);
     if app_settings.simple_mode {
         ui.window().set_size(LogicalSize::new(520.0, 608.0));
     }
@@ -1680,6 +1681,18 @@ fn wire_ui_callbacks(
         });
     }
 
+    {
+        let settings = Rc::clone(&settings_state);
+        ui.on_set_nav_width(move |width| {
+            let mut updated = settings.borrow().clone();
+            let clamped = width.clamp(56, 320);
+            if updated.nav_width != clamped {
+                updated.nav_width = clamped;
+                let _ = updated.save();
+                *settings.borrow_mut() = updated;
+            }
+        });
+    }
     {
         let weak = ui.as_weak();
         let pending = Rc::clone(&pending_confirm);

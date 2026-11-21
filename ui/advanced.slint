@@ -62,8 +62,11 @@ component CubbyTopBar inherits Rectangle {
             icon: "panel-left";
             tone: "ghost";
             size: "sm";
-            tooltip: "Toggle sidebar";
-            clicked => { root.toggle_sidebar_collapsed(!root.sidebar_collapsed); }
+            tooltip: root.sidebar_collapsed ? "Show sidebar" : "Hide sidebar";
+            clicked => {
+                root.sidebar_collapsed = !root.sidebar_collapsed;
+                root.toggle_sidebar_collapsed(root.sidebar_collapsed);
+            }
         }
 
         CubbyMark {
@@ -3709,6 +3712,10 @@ export component AdvancedShell inherits VerticalLayout {
     in property <bool> busy: false;
     in property <bool> simple_mode: false;
     in-out property <bool> sidebar_collapsed: false;
+    in-out property <length> nav_width: 208px;
+    property <bool> resizing_nav: false;
+    property <length> resize_start_width: 208px;
+    property <length> resize_start_x: 0px;
     in property <string> host_cpu_summary: "";
     in property <string> host_mem_summary: "";
     in property <string> host_detail_cpu: "";
@@ -3785,6 +3792,7 @@ export component AdvancedShell inherits VerticalLayout {
     callback toggle_simple_mode(bool);
     callback toggle_theme(bool);
     callback toggle_sidebar_collapsed(bool);
+    callback set_nav_width(int);
     callback clear_community_selection();
     callback confirm_action();
     callback cancel_confirm();
@@ -3937,10 +3945,10 @@ export component AdvancedShell inherits VerticalLayout {
         vertical-stretch: 1;
 
         Rectangle {
-            width: root.sidebar_collapsed ? 56px : 208px;
+            width: root.sidebar_collapsed ? 0px : root.nav_width;
             background: CubbyTheme.surface;
             clip: true;
-            animate width { duration: 120ms; easing: ease-out; }
+            animate width { duration: root.resizing_nav ? 0ms : 120ms; easing: ease-out; }
 
             VerticalLayout {
                 padding: 8px;
@@ -3949,35 +3957,35 @@ export component AdvancedShell inherits VerticalLayout {
                 CubbyNavItem {
                     icon: "box";
                     label: "Sandboxes";
-                    collapsed: root.sidebar_collapsed;
+                    collapsed: root.nav_width < 160px;
                     active: root.active_tab == "sandboxes";
                     clicked => { root.active_tab = "sandboxes"; }
                 }
                 CubbyNavItem {
                     icon: "plus";
                     label: "Create";
-                    collapsed: root.sidebar_collapsed;
+                    collapsed: root.nav_width < 160px;
                     active: root.active_tab == "create";
                     clicked => { root.active_tab = "create"; }
                 }
                 CubbyNavItem {
                     icon: "server";
                     label: "Resources";
-                    collapsed: root.sidebar_collapsed;
+                    collapsed: root.nav_width < 160px;
                     active: root.active_tab == "infra";
                     clicked => { root.active_tab = "infra"; }
                 }
                 CubbyNavItem {
                     icon: "layers";
                     label: "Profiles";
-                    collapsed: root.sidebar_collapsed;
+                    collapsed: root.nav_width < 160px;
                     active: root.active_tab == "profiles";
                     clicked => { root.active_tab = "profiles"; }
                 }
                 CubbyNavItem {
                     icon: "hard-drive";
                     label: "Images";
-                    collapsed: root.sidebar_collapsed;
+                    collapsed: root.nav_width < 160px;
                     active: root.active_tab == "images";
                     clicked => { root.active_tab = "images"; }
                 }
@@ -3987,7 +3995,7 @@ export component AdvancedShell inherits VerticalLayout {
                 CubbyNavItem {
                     icon: "settings";
                     label: "Settings";
-                    collapsed: root.sidebar_collapsed;
+                    collapsed: root.nav_width < 160px;
                     active: root.active_tab == "settings" || root.active_tab == "about" || root.active_tab == "legal";
                     clicked => { root.active_tab = "settings"; }
                 }
@@ -3999,6 +4007,27 @@ export component AdvancedShell inherits VerticalLayout {
                 width: 1px;
                 height: parent.height;
                 background: CubbyTheme.border;
+            }
+
+            resize-handle := TouchArea {
+                x: parent.width - 8px;
+                y: 0px;
+                width: 8px;
+                height: parent.height;
+                mouse-cursor: col-resize;
+
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                        root.resize_start_width = root.nav_width;
+                        root.resize_start_x = self.x + self.mouse-x;
+                        root.resizing_nav = true;
+                    } else if event.kind == PointerEventKind.move && root.resizing_nav {
+                        root.nav_width = max(56px, min(320px, root.resize_start_width + ((self.x + self.mouse-x) - root.resize_start_x)));
+                    } else if event.kind == PointerEventKind.up && root.resizing_nav && event.button == PointerEventButton.left {
+                        root.resizing_nav = false;
+                        root.set_nav_width(round(root.nav_width / 1px));
+                    }
+                }
             }
         }
 
